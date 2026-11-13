@@ -7,6 +7,10 @@ const baseAdapter = createOpenAIEmbeddingAdapter("github");
 
 export default {
   ...baseAdapter,
+  buildBody: (model, params) => baseAdapter.buildBody(model, {
+    ...params,
+    input: Array.isArray(params.input) ? params.input : [params.input],
+  }),
   buildHeaders: (creds) => ({
     "Content-Type": "application/json",
     "Authorization": `Bearer ${creds.copilotToken || creds.providerSpecificData?.copilotToken || creds.accessToken}`,
