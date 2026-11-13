@@ -7,6 +7,7 @@ import { isUnrecoverableRefreshError } from "open-sse/services/tokenRefresh.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 import { isLeaseConnection } from "open-sse/services/minimaxCodeLease.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
@@ -184,6 +185,15 @@ export async function GET(request, { params }) {
 
     // Fetch usage from provider API
     let usage = await getUsageForProvider(connection, proxyOptions, { force });
+
+    // Best-effort: persist a quota snapshot so routing can skip this account
+    // when its remaining % drops to/below the per-account pause threshold
+    // (see src/sse/services/quotaGuard.js). The remaining % is nested inside
+    // usage.quotas, so derive it first. Fail-open — never block the response.
+    const snapshot = deriveQuotaSnapshot(connection.provider, usage);
+    if (snapshot) {
+      updateProviderConnection(connection.id, { lastQuotaSnapshot: snapshot }).catch(() => {});
+    }
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once (OAuth only)
