@@ -165,12 +165,12 @@ export default function CoworkToolCard({
     }
   };
 
-  const handleCreateCombo = async ({ name, models }) => {
+  const handleCreateCombo = async ({ name, models, config }) => {
     try {
       const res = await fetch("/api/combos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, models }),
+        body: JSON.stringify({ name, models, config }),
       });
       if (!res.ok) {
         const err = await res.json();

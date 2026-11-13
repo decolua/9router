@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
+import { buildModelsList } from "@/app/api/v1/models/route";
+import {
+  fetchLeaderboardModels,
+  matchModelsWithLeaderboard,
+  validateIntelligenceConfig,
+} from "@/lib/services/artificialAnalysis";
 import { resetComboRotation } from "open-sse/services/combo.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
@@ -43,7 +49,30 @@ export async function PUT(request, { params }) {
     
     // Capture previous name to invalidate rotation state on rename
     const prev = await getComboById(id);
-    const combo = await updateCombo(id, body);
+    if (!prev) {
+      return NextResponse.json({ error: "Combo not found" }, { status: 404 });
+    }
+
+    let update = body;
+    if (body.config?.type === "intelligence") {
+      const config = validateIntelligenceConfig(body.config);
+      const aaModels = await fetchLeaderboardModels({ forceRefresh: true });
+      const availableModels = (await buildModelsList(["llm"], { configuredOnly: true })).filter((model) => model?.owned_by !== "combo");
+      const matched = matchModelsWithLeaderboard({ ...config, aaModels, availableModels });
+      if (matched.models.length === 0) {
+        return NextResponse.json({ error: "No configured provider models match this intelligence range" }, { status: 400 });
+      }
+      update = {
+        ...body,
+        models: matched.models,
+        config: {
+          ...config,
+          lastRefreshedAt: new Date().toISOString(),
+          matchedDetails: matched.details,
+        },
+      };
+    }
+    const combo = await updateCombo(id, update);
     
     if (!combo) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });

@@ -118,6 +118,11 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+
+  // Dynamic intelligence combos auto-refresh scheduler
+  import("@/lib/services/comboScheduler.js")
+    .then(({ startComboScheduler }) => startComboScheduler())
+    .catch((e) => console.log("[ComboScheduler] scheduler start failed:", e.message));
 }
 
 // Cheap local check: keeps the scheduler module (and its provider graph) unloaded

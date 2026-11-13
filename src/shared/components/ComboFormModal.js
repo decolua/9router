@@ -57,6 +57,13 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
     : "";
   const [name, setName] = useState(initialName);
   const [models, setModels] = useState(combo?.models || []);
+  const initialIntelligenceConfig = combo?.config?.type === "intelligence" ? combo.config : null;
+  const [comboType, setComboType] = useState(initialIntelligenceConfig ? "intelligence" : "manual");
+  const [minScore, setMinScore] = useState(initialIntelligenceConfig?.minScore ?? "");
+  const [maxScore, setMaxScore] = useState(initialIntelligenceConfig?.maxScore ?? "");
+  const [modelLimit, setModelLimit] = useState(initialIntelligenceConfig?.limit ?? "");
+  const [refreshSchedule, setRefreshSchedule] = useState(initialIntelligenceConfig?.refreshSchedule || "daily");
+  const [excludeKeywords, setExcludeKeywords] = useState((initialIntelligenceConfig?.excludeKeywords || []).join(", "));
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -101,8 +108,29 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
 
   const handleSave = async () => {
     if (!validateName(name)) return;
+    if (comboType === "intelligence") {
+      const minBlank = minScore === "" || minScore == null;
+      const maxBlank = maxScore === "" || maxScore == null;
+      const min = Number(minScore);
+      const max = Number(maxScore);
+      const limit = modelLimit === "" ? null : Number(modelLimit);
+      if (minBlank || maxBlank || !Number.isFinite(min) || !Number.isFinite(max) || min > max || (limit != null && (!Number.isInteger(limit) || limit < 1 || limit > 50))) {
+        setNameError("Set a valid score range and a model limit from 1 to 50");
+        return;
+      }
+    }
     setSaving(true);
-    await onSave({ name: forcePrefix + name.trim(), models });
+    const config = comboType === "intelligence"
+      ? {
+          type: "intelligence",
+          minScore: Number(minScore),
+          maxScore: Number(maxScore),
+          limit: modelLimit === "" ? null : Number(modelLimit),
+          excludeKeywords: excludeKeywords.split(",").map((k) => k.trim()).filter(Boolean),
+          refreshSchedule,
+        }
+      : null;
+    await onSave({ name: forcePrefix + name.trim(), models, config });
     setSaving(false);
   };
 
@@ -131,8 +159,51 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
             </p>
           </div>
 
+          <div className="rounded-lg border border-black/10 p-3 dark:border-white/10">
+            <label className="text-sm font-medium mb-1.5 block">Combo Type</label>
+            <select
+              value={comboType}
+              onChange={(e) => setComboType(e.target.value)}
+              className="w-full rounded border border-black/10 bg-white px-2 py-1.5 text-sm text-text-main outline-none focus:border-primary dark:border-white/10 dark:bg-black/20"
+            >
+              <option value="manual">Manual model list</option>
+              <option value="intelligence">Intelligence range — Artificial Analysis</option>
+            </select>
+            {comboType === "intelligence" && (
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Input label="From score" type="number" min="0" step="0.01" value={minScore} onChange={(e) => setMinScore(e.target.value)} placeholder="e.g. 60" />
+                <Input label="To score" type="number" min="0" step="0.01" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} placeholder="e.g. 75" />
+                <Input label="Maximum models" type="number" min="1" max="50" step="1" value={modelLimit} onChange={(e) => setModelLimit(e.target.value)} placeholder="No limit" />
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-text-main">Refresh</label>
+                  <select value={refreshSchedule} onChange={(e) => setRefreshSchedule(e.target.value)}
+                    className="w-full rounded border border-black/10 bg-white px-2 py-2.5 text-sm text-text-main outline-none focus:border-primary dark:border-white/10 dark:bg-black/20">
+                    <option value="manual">Manual only</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="6hours">Every 6 hours</option>
+                    <option value="12hours">Every 12 hours</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <label className="text-sm font-medium text-text-main">Exclude keywords</label>
+                  <input
+                    type="text"
+                    value={excludeKeywords}
+                    onChange={(e) => setExcludeKeywords(e.target.value)}
+                    placeholder="e.g. [1m], agentic, thinking"
+                    className="w-full rounded border border-black/10 bg-white px-2 py-2.5 text-sm text-text-main outline-none focus:border-primary dark:border-white/10 dark:bg-black/20"
+                  />
+                  <p className="text-[11px] text-text-muted">Comma-separated. Provider models whose name contains any of these are skipped (case-insensitive).</p>
+                </div>
+                <p className="sm:col-span-2 text-[11px] text-text-muted">Uses the current Artificial Analysis intelligence index and only keeps models currently available through your configured providers. Saving refreshes the list immediately.</p>
+              </div>
+            )}
+          </div>
+
+          {comboType === "manual" ? (
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Models</label>
             {models.length === 0 ? (
               <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
                 <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
@@ -156,6 +227,12 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
               Add Model
             </button>
           </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-primary/30 bg-primary/[0.03] px-3 py-2.5 text-xs text-text-muted">
+              <span className="font-medium text-text-main">Selected models</span> are calculated from the leaderboard when you save or refresh this combo.
+              {models.length > 0 && <span className="block mt-1 font-mono">Current: {models.join(", ")}</span>}
+            </div>
+          )}
 
           <div className="flex flex-col gap-2 pt-1 sm:flex-row">
             <Button onClick={onClose} variant="ghost" fullWidth size="sm">Cancel</Button>

@@ -328,6 +328,11 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
 export async function buildModelsList(kindFilter, options = {}) {
+  // Intelligence-managed combos must never fall back to the static catalog:
+  // they may only retain models backed by a configured connection. Disabled
+  // connections still count as configured — users toggle connections off
+  // temporarily and don't expect combo membership to silently shrink.
+  const configuredOnly = options.configuredOnly === true;
   // When this header is present, the /v1/models request came from another
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
@@ -335,7 +340,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   let connections = [];
   try {
     connections = await getProviderConnections();
-    connections = connections.filter(c => c.isActive !== false);
+    if (!configuredOnly) connections = connections.filter(c => c.isActive !== false);
   } catch (e) {
     console.log("Could not fetch providers, returning all models");
   }
@@ -419,7 +424,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     models.push(entry);
   }
 
-  if (connections.length === 0) {
+  if (connections.length === 0 && !configuredOnly) {
     // DB unavailable -> return static models, filtered by per-model kind
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       const providerId = ALIAS_TO_PROVIDER_ID[alias] || alias;
