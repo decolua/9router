@@ -473,9 +473,16 @@ export class MuseWebExecutor extends BaseExecutor {
     }
 
     const page = await pooled.context.newPage();
-    await page.goto(NEW_THREAD_URL, { waitUntil: "domcontentloaded", timeout: PAGE_READY_TIMEOUT_MS });
-    await waitForThreadReady(page);
-    return { key, page };
+    try {
+      await page.goto(NEW_THREAD_URL, { waitUntil: "domcontentloaded", timeout: PAGE_READY_TIMEOUT_MS });
+      await waitForThreadReady(page);
+      return { key, page };
+    } catch (error) {
+      // Ownership reaches the caller only after setup succeeds. Failed pages
+      // must not keep the shared pool busy indefinitely.
+      await page.close().catch(() => {});
+      throw error;
+    }
   }
 
   async execute({ model, body, stream, credentials, signal, log }) {
