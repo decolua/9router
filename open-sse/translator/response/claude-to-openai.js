@@ -15,6 +15,30 @@ function createChunk(state, delta, finishReason = null) {
   );
 }
 
+// state.usage is what the stream layer persists (finalizeStream -> onStreamComplete
+// -> saveUsageStats -> canonicalizeUsage). Claude reports input_tokens EXCLUSIVE of
+// cache, so prompt_tokens is folded here once (input + cache_read + cache_creation)
+// and the record is emitted in canonical form: `cached_tokens` is always present,
+// which tells canonicalizeUsage the fold already happened. Without it the Claude
+// branch of canonicalizeUsage folded the cache in a second time, doubling the
+// stored prompt (e.g. 230469 -> 460936) and halving the reported cache ratio.
+// cache_read_input_tokens / input_tokens stay for the finish-chunk builder and
+// the "done" log line.
+function buildStateUsage(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens) {
+  const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
+  const usage = {
+    prompt_tokens: promptTokens,
+    completion_tokens: outputTokens,
+    total_tokens: promptTokens + outputTokens,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    cached_tokens: cacheReadTokens,
+    cache_creation_input_tokens: cacheCreationTokens
+  };
+  if (cacheReadTokens > 0) usage.cache_read_input_tokens = cacheReadTokens;
+  return usage;
+}
+
 // Convert Claude stream chunk to OpenAI format
 export function claudeToOpenAIResponse(chunk, state) {
   if (!chunk) return null;
@@ -35,16 +59,7 @@ export function claudeToOpenAIResponse(chunk, state) {
         const inputTokens = typeof startUsage.input_tokens === "number" ? startUsage.input_tokens : 0;
         const cacheReadTokens = typeof startUsage.cache_read_input_tokens === "number" ? startUsage.cache_read_input_tokens : 0;
         const cacheCreationTokens = typeof startUsage.cache_creation_input_tokens === "number" ? startUsage.cache_creation_input_tokens : 0;
-        const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
-        state.usage = {
-          prompt_tokens: promptTokens,
-          completion_tokens: 0,
-          total_tokens: promptTokens,
-          input_tokens: inputTokens,
-          output_tokens: 0
-        };
-        if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
-        if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
+        state.usage = buildStateUsage(inputTokens, 0, cacheReadTokens, cacheCreationTokens);
       }
       results.push(createChunk(state, { role: ROLE.ASSISTANT }));
       break;
@@ -126,19 +141,7 @@ export function claudeToOpenAIResponse(chunk, state) {
         const cacheReadTokens = typeof chunk.usage.cache_read_input_tokens === "number" ? chunk.usage.cache_read_input_tokens : (prev.cache_read_input_tokens || 0);
         const cacheCreationTokens = typeof chunk.usage.cache_creation_input_tokens === "number" ? chunk.usage.cache_creation_input_tokens : (prev.cache_creation_input_tokens || 0);
 
-        // prompt_tokens = input_tokens + cache_read + cache_creation (all prompt-side tokens)
-        const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
-
-        state.usage = {
-          prompt_tokens: promptTokens,
-          completion_tokens: outputTokens,
-          total_tokens: promptTokens + outputTokens,
-          input_tokens: inputTokens,
-          output_tokens: outputTokens
-        };
-
-        if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
-        if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
+        state.usage = buildStateUsage(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens);
       }
 
       if (chunk.delta?.stop_reason) {
@@ -172,12 +175,15 @@ export function claudeToOpenAIResponse(chunk, state) {
     case "message_stop": {
       if (!state.finishReasonSent) {
         const finishReason = state.finishReason || (state.toolCalls?.size > 0 ? OPENAI_FINISH.TOOL_CALLS : OPENAI_FINISH.STOP);
+        // Same cache-inclusive OpenAI usage as the message_delta path; the old
+        // input+output sum dropped every cached token from the client's view.
         const usageObj = (state.usage && typeof state.usage === 'object') ? {
-          usage: {
-            prompt_tokens: state.usage.input_tokens || 0,
-            completion_tokens: state.usage.output_tokens || 0,
-            total_tokens: (state.usage.input_tokens || 0) + (state.usage.output_tokens || 0)
-          }
+          usage: toOpenAIUsage({
+            input_tokens: state.usage.input_tokens || 0,
+            output_tokens: state.usage.output_tokens || 0,
+            cache_read_input_tokens: state.usage.cache_read_input_tokens,
+            cache_creation_input_tokens: state.usage.cache_creation_input_tokens
+          }, "claude")
         } : {};
         results.push({ ...createChunk(state, {}, finishReason), ...usageObj });
         state.finishReasonSent = true;
