@@ -1,4 +1,5 @@
 import { handleChat } from "@/sse/handlers/chat.js";
+import { parseJsonBody } from "@/shared/utils/parseJsonBody.js";
 import { initTranslators } from "open-sse/translator/index.js";
 
 let initialized = false;
@@ -26,11 +27,20 @@ export async function OPTIONS() {
  */
 export async function POST(request) {
   await ensureInitialized();
-  const body = await request.json();
+  let body;
+  try {
+    body = await parseJsonBody(request);
+  } catch {
+    return Response.json({ error: { message: "Invalid JSON body", type: "invalid_request_error", code: "bad_request" } }, { status: 400 });
+  }
   body._compact = true;
+  const headers = new Headers(request.headers);
+  // The rebuilt body is plain JSON, not the original compressed representation.
+  headers.delete("content-encoding");
+  headers.delete("content-length");
   const newRequest = new Request(request.url, {
     method: "POST",
-    headers: request.headers,
+    headers,
     body: JSON.stringify(body)
   });
   return await handleChat(newRequest);
