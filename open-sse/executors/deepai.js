@@ -152,6 +152,7 @@ function streamResponse(text, model, id, options = {}) {
           choices: [{ index: 0, delta, ...(finishReason ? { finish_reason: finishReason } : {}) }],
           ...(finishReason ? { usage } : {}),
         }));
+      let sentCalls = false;
       if (calls.length) {
         // In OpenAI protocol, when tool_calls are present, the initial content delta
         // is typically null or only preceding non-tool thought text.
