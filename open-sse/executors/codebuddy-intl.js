@@ -1,4 +1,5 @@
 import { DefaultExecutor } from "./default.js";
+import { createHash, randomUUID } from "node:crypto";
 
 /**
  * CodeBuddyIntlExecutor — talks to https://www.codebuddy.ai/v2/chat/completions
@@ -11,6 +12,31 @@ import { DefaultExecutor } from "./default.js";
 export class CodeBuddyIntlExecutor extends DefaultExecutor {
   constructor() {
     super("codebuddy-intl");
+  }
+
+  // The intl (.ai) gateway enforces a per-conversation identity header family:
+  // without X-Conversation-ID it rejects chat requests with HTTP 400 code 11128
+  // "conversation id missing". The CN gateway (copilot.tencent.com) has no such
+  // gate, which is why cbcn works while cbai intermittently fails. The ID must be
+  // stable within a conversation (upstream buckets prompt-prefix caching on it),
+  // so it is derived from the body rather than randomised per request.
+  buildHeaders(credentials, stream, url, model, body) {
+    const headers = super.buildHeaders(credentials, stream, url, model, body);
+    const traceId = randomUUID();
+    const conversationId = createHash("sha256")
+      .update(typeof body === "string" ? body : JSON.stringify(body || ""))
+      .digest("hex")
+      .slice(0, 32);
+    Object.assign(headers, {
+      "X-Conversation-ID": conversationId,
+      "X-Conversation-Request-ID": randomUUID(),
+      "X-Conversation-Message-ID": randomUUID(),
+      "X-Request-ID": traceId,
+      "X-Trace-ID": traceId,
+      "X-Agent-Intent": "craft",
+      "X-Agent-Purpose": "conversation",
+    });
+    return headers;
   }
 
   transformRequest(model, body, stream, credentials) {
