@@ -8,38 +8,22 @@ import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { buildModelGroups, collectModelValues, LIVE_CATALOG_PROVIDERS } from "@/shared/utils/selectableModels";
-
-const PI_CONTEXT_WINDOWS = [200000, 400000, 600000, 1000000];
-const PI_MAX_TOKENS = [16000, 32000, 64000, 128000];
-const PI_DEFAULT_CAPS = { contextWindow: 200000, maxTokens: 64000 };
-const PI_CAP_LIMITS = { contextWindow: 2000000, maxTokens: 200000 };
-const formatTokens = (n) =>
-  n >= 1000000 ? `${+(n / 1000000).toFixed(2)}M` : `${Math.round(n / 1000)}k`;
-
-const sanitizeCap = (v, fallback, max) => {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
-};
-
-const capOptions = (values, current) =>
-  values.includes(current) ? values : [...values, current].sort((a, b) => a - b);
-
-const readPiModels = (cfg) => {
-  const list = cfg?.providers?.["9router"]?.models;
-  if (!Array.isArray(list) || list.length === 0) return null;
-  const caps = {};
-  const ids = list.map((m) => {
-    const id = typeof m === "string" ? m : m.id;
-    if (typeof m !== "string") {
-      caps[id] = {
-        contextWindow: sanitizeCap(m.contextWindow, PI_DEFAULT_CAPS.contextWindow, PI_CAP_LIMITS.contextWindow),
-        maxTokens: sanitizeCap(m.maxTokens, PI_DEFAULT_CAPS.maxTokens, PI_CAP_LIMITS.maxTokens),
-      };
-    }
-    return id;
-  });
-  return { ids, caps };
-};
+import {
+  PI_CONTEXT_WINDOWS,
+  PI_MAX_TOKENS,
+  PI_THINKING_LEVELS,
+  PI_DEFAULT_THINKING_LEVELS,
+  PI_DEFAULT_CAPS,
+  PI_CAP_LIMITS,
+  formatTokens,
+  sanitizeCap,
+  capOptions,
+  piModelCaps,
+  capsFromModelInfo,
+  buildPiModelEntry,
+  readPiModels,
+  piInputHasImage,
+} from "@/shared/utils/piModels";
 
 export default function GenericCliToolCard({
   tool,
@@ -69,6 +53,7 @@ export default function GenericCliToolCard({
   const initialPi = readPiModels(initialStatus?.config);
   const [selectedModels, setSelectedModels] = useState(() => initialPi?.ids || []);
   const [modelCaps, setModelCaps] = useState(() => initialPi?.caps || {});
+  const [modelInfo, setModelInfo] = useState({});
   const [addingAll, setAddingAll] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
@@ -105,6 +90,29 @@ export default function GenericCliToolCard({
       active = false;
     };
   }, [isExpanded, initialStatus, endpointUrl, tool.id]);
+
+  // Model capability metadata from the picker's own endpoint, keyed by the routed
+  // model value this card stores. Adding a model then starts from the catalog's
+  // vision / reasoning / context values instead of hardcoded defaults.
+  useEffect(() => {
+    if (tool.id !== "pi" || !isExpanded) return;
+    let active = true;
+    fetch("/api/models", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active) return;
+        const info = {};
+        for (const model of data?.models || []) {
+          const key = model.routedModel || model.fullModel;
+          if (key) info[key] = { ...(model.caps || {}), thinking_levels: model.thinking_levels };
+        }
+        setModelInfo(info);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [tool.id, isExpanded]);
 
   const checkStatus = async () => {
     setChecking(true);
@@ -172,12 +180,9 @@ export default function GenericCliToolCard({
       };
 
       if (tool.id === "pi") {
-        payload.models = (selectedModels.length > 0 ? selectedModels : ["provider/model-id"]).map((id) => ({
-          id,
-          name: id,
-          ...PI_DEFAULT_CAPS,
-          ...modelCaps[id],
-        }));
+        payload.models = (selectedModels.length > 0 ? selectedModels : ["provider/model-id"]).map((id) =>
+          buildPiModelEntry(id, modelCaps[id])
+        );
       } else {
         payload.model = selectedModel;
       }
@@ -225,7 +230,7 @@ export default function GenericCliToolCard({
     if (tool.id === "pi") {
       if (!selectedModels.includes(model.value)) {
         setSelectedModels((prev) => [...prev, model.value]);
-        setModelCaps((prev) => ({ ...prev, [model.value]: { ...PI_DEFAULT_CAPS, ...prev[model.value] } }));
+        setModelCaps((prev) => ({ ...prev, [model.value]: prev[model.value] || capsFromModelInfo(modelInfo[model.value]) }));
       }
     } else {
       setSelectedModel(model.value);
@@ -294,7 +299,7 @@ export default function GenericCliToolCard({
       setSelectedModels((prev) => Array.from(new Set([...prev, ...allModels])));
       setModelCaps((prev) => {
         const next = { ...prev };
-        allModels.forEach((id) => { next[id] ||= { ...PI_DEFAULT_CAPS }; });
+        allModels.forEach((id) => { next[id] ||= capsFromModelInfo(modelInfo[id]); });
         return next;
       });
     } catch (error) {
@@ -322,6 +327,30 @@ export default function GenericCliToolCard({
         [key]: sanitizeCap(value, PI_DEFAULT_CAPS[key], PI_CAP_LIMITS[key]),
       },
     }));
+  };
+
+  const setModelInput = (modelId, mode) => {
+    setModelCaps((prev) => ({
+      ...prev,
+      [modelId]: { ...piModelCaps(prev[modelId]), input: mode === "text+image" ? ["text", "image"] : ["text"] },
+    }));
+  };
+
+  const setModelReasoning = (modelId, enabled) => {
+    setModelCaps((prev) => ({ ...prev, [modelId]: { ...piModelCaps(prev[modelId]), reasoning: enabled } }));
+  };
+
+  // Keep at least one supported level: a model with every level nulled leaves Pi no
+  // thinking state it can select.
+  const toggleThinkingLevel = (modelId, level) => {
+    setModelCaps((prev) => {
+      const caps = piModelCaps(prev[modelId]);
+      const supported = caps.thinkingLevels ?? PI_DEFAULT_THINKING_LEVELS;
+      const enabled = supported.includes(level);
+      const next = enabled ? supported.filter((l) => l !== level) : [...supported, level];
+      if (next.length === 0) return prev;
+      return { ...prev, [modelId]: { ...caps, thinkingLevels: PI_THINKING_LEVELS.filter((l) => next.includes(l)) } };
+    });
   };
 
   const getInstallCommand = () => {
@@ -361,12 +390,7 @@ export default function GenericCliToolCard({
                     baseUrl: effectiveUrl,
                     apiKey: key,
                     api: "openai-completions",
-                    models: modelsList.map((id) => ({
-                      id,
-                      name: id,
-                      ...PI_DEFAULT_CAPS,
-                      ...modelCaps[id],
-                    })),
+                    models: modelsList.map((id) => buildPiModelEntry(id, modelCaps[id])),
                   },
                 },
               },
@@ -584,7 +608,7 @@ export default function GenericCliToolCard({
                           <span className="text-xs text-text-muted italic">No models selected. Add models to use in Pi.</span>
                         ) : (
                           selectedModels.map((modelId) => {
-                            const caps = { ...PI_DEFAULT_CAPS, ...modelCaps[modelId] };
+                            const caps = piModelCaps(modelCaps[modelId]);
                             return (
                               <div
                                 key={modelId}
@@ -611,6 +635,24 @@ export default function GenericCliToolCard({
                                     <option key={n} value={n}>{formatTokens(n)} out</option>
                                   ))}
                                 </select>
+                                <select
+                                  value={piInputHasImage(caps) ? "text+image" : "text"}
+                                  onChange={(e) => setModelInput(modelId, e.target.value)}
+                                  title="Model input"
+                                  className="rounded border border-border bg-surface px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                >
+                                  <option value="text">Text</option>
+                                  <option value="text+image">Text+Vision</option>
+                                </select>
+                                <select
+                                  value={caps.reasoning ? "on" : "off"}
+                                  onChange={(e) => setModelReasoning(modelId, e.target.value === "on")}
+                                  title="Thinking support"
+                                  className="rounded border border-border bg-surface px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                >
+                                  <option value="off">No thinking</option>
+                                  <option value="on">Thinking</option>
+                                </select>
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveModel(modelId)}
@@ -618,6 +660,27 @@ export default function GenericCliToolCard({
                                 >
                                   <span className="material-symbols-outlined text-[12px]">close</span>
                                 </button>
+                                {caps.reasoning && (
+                                  <span className="flex w-full flex-wrap items-center gap-1 border-t border-border/60 pt-1">
+                                    <span className="text-[10px] text-text-muted">Levels</span>
+                                    {PI_THINKING_LEVELS.map((level) => {
+                                      const enabled = (caps.thinkingLevels ?? PI_DEFAULT_THINKING_LEVELS).includes(level);
+                                      return (
+                                        <button
+                                          key={level}
+                                          type="button"
+                                          onClick={() => toggleThinkingLevel(modelId, level)}
+                                          title={enabled ? `${level}: supported` : `${level}: unsupported`}
+                                          className={`rounded border px-1 py-0.5 text-[10px] ${
+                                            enabled ? "border-primary text-primary" : "border-border text-text-muted hover:text-text-main"
+                                          }`}
+                                        >
+                                          {level}
+                                        </button>
+                                      );
+                                    })}
+                                  </span>
+                                )}
                               </div>
                             );
                           })
