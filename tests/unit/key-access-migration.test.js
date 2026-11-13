@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { SCHEMA_VERSION } from "@/lib/db/schema.js";
 
 let tempDir;
 const originalDataDir = process.env.DATA_DIR;
@@ -63,7 +64,7 @@ describe("apiKeys access columns: upgrade from the previous schema", () => {
 
     // The schema bump took the pre-change safety backup.
     const backups = fs.readdirSync(path.join(tempDir, "db", "backups"));
-    expect(backups.some((d) => d.startsWith("schema-1-to-2"))).toBe(true);
+    expect(backups.some((d) => d.startsWith(`schema-1-to-${SCHEMA_VERSION}`))).toBe(true);
   });
 
   it("persists access through update, new keys default to unrestricted", async () => {
