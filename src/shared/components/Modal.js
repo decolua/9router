@@ -131,9 +131,11 @@ export function ConfirmModal({
       size="sm"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={loading}>
-            {cancelText}
-          </Button>
+          {cancelText ? (
+            <Button variant="ghost" onClick={onClose} disabled={loading}>
+              {cancelText}
+            </Button>
+          ) : null}
           <Button variant={variant} onClick={onConfirm} loading={loading}>
             {confirmText}
           </Button>
