@@ -1,12 +1,21 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
 
+function errorFields(value) {
+  const fields = {};
+  for (const key of ["code", "type"]) {
+    if (typeof value?.[key] === "string" && value[key]) fields[key] = value[key];
+  }
+  return fields;
+}
+
 /**
  * Build OpenAI-compatible error response body
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
+ * @param {object|null} upstreamError - Optional structured upstream code/type
  * @returns {object} Error response object
  */
-export function buildErrorBody(statusCode, message) {
+export function buildErrorBody(statusCode, message, upstreamError = null) {
   const errorInfo = ERROR_TYPES[statusCode] || 
     (statusCode >= 500 
       ? { type: "server_error", code: "internal_server_error" }
@@ -16,7 +25,8 @@ export function buildErrorBody(statusCode, message) {
     error: {
       message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
       type: errorInfo.type,
-      code: errorInfo.code
+      code: errorInfo.code,
+      ...errorFields(upstreamError)
     }
   };
 }
@@ -25,10 +35,12 @@ export function buildErrorBody(statusCode, message) {
  * Create error Response object (for non-streaming)
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
+ * @param {object|null} extraHeaders - Headers safe to forward to the client
+ * @param {object|null} upstreamError - Optional structured upstream code/type
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message, extraHeaders = null) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message)), {
+export function errorResponse(statusCode, message, extraHeaders = null, upstreamError = null) {
+  return new Response(JSON.stringify(buildErrorBody(statusCode, message, upstreamError)), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
@@ -54,7 +66,7 @@ export async function writeStreamError(writer, statusCode, message) {
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
- * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
+ * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number, upstreamError?: object}>}
  */
 export async function parseUpstreamError(response, executor = null) {
   let bodyText = "";
@@ -64,13 +76,23 @@ export async function parseUpstreamError(response, executor = null) {
     bodyText = "";
   }
 
+  let upstreamError = {};
+  try {
+    const json = JSON.parse(bodyText);
+    upstreamError = errorFields(json?.error || json);
+  } catch { /* unstructured upstream response */ }
+  const withUpstreamError = (result, parsed = null) => {
+    const fields = { ...upstreamError, ...errorFields(parsed) };
+    return Object.keys(fields).length ? { ...result, upstreamError: fields } : result;
+  };
+
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
     try {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        return withUpstreamError({ statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs }, parsed);
       }
     } catch { /* fall through to default parsing */ }
   }
@@ -86,7 +108,7 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return withUpstreamError({ statusCode: response.status, message: finalMessage });
 }
 
 /**
@@ -94,15 +116,17 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
+ * @param {object|null} extraHeaders - Headers safe to forward to the client
+ * @param {object|null} upstreamError - Optional structured upstream code/type
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders = null) {
+export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders = null, upstreamError = null) {
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
-    response: errorResponse(statusCode, message, extraHeaders)
+    response: errorResponse(statusCode, message, extraHeaders, upstreamError)
   };
 }
 
