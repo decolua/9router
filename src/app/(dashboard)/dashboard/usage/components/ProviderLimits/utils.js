@@ -102,6 +102,18 @@ export function buildLoadingState(connections) {
   return nextLoadingState;
 }
 
+// Connections an auto-refresh tick should actually fetch. Claude is polled only
+// every Nth tick (its usage endpoint rate-limits); a manual refresh fetches all.
+// The loading state must be built from this same list: a connection marked as
+// loading but not fetched never gets cleared and spins until its next fetch.
+export function selectConnectionsToRefresh(connections, { force = false, tick = 0 } = {}) {
+  if (force) return connections;
+  const claudeEvery = Math.round(CLAUDE_REFRESH_INTERVAL_MS / REFRESH_INTERVAL_MS);
+  return connections.filter(
+    (connection) => connection.provider !== "claude" || tick % claudeEvery === 0,
+  );
+}
+
 export function filterQuotaStateByConnections(state, connections) {
   const visibleIds = new Set(connections.map((connection) => connection.id));
   return Object.fromEntries(
