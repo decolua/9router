@@ -278,23 +278,35 @@ export default function GenericCliToolCard({
       })
     );
 
-    return collectModelValues(
-      buildModelGroups({
-        connections,
-        allConnections,
-        modelAliases: aliasData?.aliases || {},
-        customModels: customData?.models || [],
-        disabledModels: disabledData?.disabled || {},
-        liveModels,
-      })
-    );
+    const groups = buildModelGroups({
+      connections,
+      allConnections,
+      modelAliases: aliasData?.aliases || {},
+      customModels: customData?.models || [],
+      disabledModels: disabledData?.disabled || {},
+      liveModels,
+    });
+
+    // Seeds for every model being added: the picker's own row when it carries
+    // capability fields (live catalogs), otherwise the /api/models entry. Doing it
+    // here keeps "Add All" and "Add Model" from disagreeing about the same model.
+    const caps = {};
+    for (const group of Object.values(groups)) {
+      for (const model of group.models) {
+        if (!model?.value) continue;
+        if (!model.caps && !modelInfo[model.value]) continue;
+        caps[model.value] = capsFromModelInfo({ ...model.caps, ...modelInfo[model.value] });
+      }
+    }
+
+    return { values: collectModelValues(groups), caps };
   };
 
   const handleAddAllActiveModels = async () => {
     setAddingAll(true);
     setMessage(null);
     try {
-      const allModels = await loadActiveModelValues();
+      const { values: allModels, caps } = await loadActiveModelValues();
       if (allModels.length === 0) {
         setMessage({ type: "error", text: "No active models found to add." });
         return;
@@ -302,7 +314,7 @@ export default function GenericCliToolCard({
       setSelectedModels((prev) => Array.from(new Set([...prev, ...allModels])));
       setModelCaps((prev) => {
         const next = { ...prev };
-        allModels.forEach((id) => { next[id] ||= capsFromModelInfo(modelInfo[id]); });
+        allModels.forEach((id) => { next[id] ||= caps[id] || capsFromModelInfo(modelInfo[id]); });
         return next;
       });
     } catch (error) {
