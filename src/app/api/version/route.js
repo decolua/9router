@@ -1,4 +1,6 @@
 import https from "https";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import pkg from "../../../../package.json" with { type: "json" };
 
 const NPM_PACKAGE_NAME = "9router";
@@ -6,6 +8,18 @@ const VERSION_CACHE_TTL_MS = 3600000; // cache npm latest lookup for 1h
 
 // Survive hot reload; one cache per process
 const versionCache = (global.__npmVersionCache ??= { value: null, fetchedAt: 0 });
+
+async function getCurrentVersion() {
+  try {
+    const parent = JSON.parse(await readFile(path.resolve(process.cwd(), "..", "package.json"), "utf8"));
+    if (parent?.name === NPM_PACKAGE_NAME && typeof parent.version === "string" && parent.version) {
+      return parent.version;
+    }
+  } catch {
+    // Source and standalone installs may have no wrapper package.
+  }
+  return pkg.version;
+}
 
 // Fetch latest version from npm registry
 function fetchLatestVersion() {
@@ -53,8 +67,7 @@ async function getLatestVersionCached() {
 }
 
 export async function GET() {
-  const latestVersion = await getLatestVersionCached();
-  const currentVersion = pkg.version;
+  const [latestVersion, currentVersion] = await Promise.all([getLatestVersionCached(), getCurrentVersion()]);
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
 
   return Response.json({ currentVersion, latestVersion, hasUpdate });
