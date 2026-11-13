@@ -19,7 +19,31 @@ function rowToKey(row) {
 export async function getApiKeys() {
   const db = await getAdapter();
   const rows = db.all(`SELECT * FROM apiKeys ORDER BY createdAt ASC`);
-  return rows.map(rowToKey);
+  const usageMap = {};
+  try {
+    const usageRows = db.all(`
+      SELECT apiKey, COUNT(*) as requests, SUM(COALESCE(promptTokens, 0) + COALESCE(completionTokens, 0)) as totalTokens, MAX(timestamp) as lastUsed
+      FROM usageHistory
+      WHERE apiKey IS NOT NULL AND apiKey != ''
+      GROUP BY apiKey
+    `);
+    for (const u of usageRows) {
+      if (u.apiKey) {
+        usageMap[u.apiKey] = {
+          requests: Number(u.requests) || 0,
+          totalTokens: Number(u.totalTokens) || 0,
+          lastUsed: u.lastUsed || null,
+        };
+      }
+    }
+  } catch {
+    // Continue gracefully if usageHistory has no records or query fails
+  }
+  return rows.map((r) => {
+    const keyObj = rowToKey(r);
+    keyObj.usage = usageMap[keyObj.key] || { requests: 0, totalTokens: 0, lastUsed: null };
+    return keyObj;
+  });
 }
 
 export async function getApiKeyById(id) {
