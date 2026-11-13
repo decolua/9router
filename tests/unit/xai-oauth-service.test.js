@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-describe("xai/oauth service", () => {
+// Each test re-imports the service graph after vi.resetModules(); that alone takes 2-4s,
+// so the 5s default timeout fails under full-suite load. fetch is mocked throughout.
+describe("xai/oauth service", { timeout: 20_000 }, () => {
   beforeEach(() => {
     vi.resetModules();
     vi.restoreAllMocks();

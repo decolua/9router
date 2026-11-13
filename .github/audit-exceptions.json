@@ -1,0 +1,13 @@
+{
+  "$comment": "High/critical production advisories the CI audit gate tolerates. Each entry needs a reachability reason and a reviewBy date; an expired entry fails the gate so it gets re-checked. Remove an entry as soon as a patched release exists.",
+  "exceptions": [
+    {
+      "advisory": "GHSA-86w9-cpqp-85rv",
+      "package": "node-forge",
+      "path": "node-forge (direct dependency)",
+      "reason": "No patched release (vulnerable <=1.4.0, latest 1.4.0). The flaw is in RSA PKCS#1 v1.5 signature verification; 9Router only uses node-forge in src/mitm/cert/rootCA.js to generate keys and sign/serialize its own MITM certificates and never verifies an external signature with it.",
+      "remediation": "Upgrade node-forge once a fixed release ships. Replacing it means another certificate issuer (e.g. @peculiar/x509 over WebCrypto): node:crypto can generate keys and parse X509Certificate but cannot create or sign certificates.",
+      "reviewBy": "2027-01-31"
+    }
+  ]
+}
