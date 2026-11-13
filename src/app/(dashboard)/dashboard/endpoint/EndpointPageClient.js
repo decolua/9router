@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, TokenSaverControls } from "@/shared/components";
+import { validateTokenSaverInput } from "@/shared/utils/tokenSaver.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -21,6 +22,7 @@ import SecurityWarning from "./components/SecurityWarning";
 import KeyAccessControls from "./components/KeyAccessControls";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
+  const globalSettings = useSettingsStore((state) => state.settings);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -694,6 +696,20 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handleUpdateKeyTokenSaver = async (id, tokenSaver) => {
+    const res = await fetch(`/api/keys/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tokenSaver }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Failed to save token saver settings");
+    const checked = validateTokenSaverInput(data.key?.tokenSaver);
+    if (!data.key || !checked.ok) throw new Error("Invalid token saver save response");
+    setKeys((prev) => prev.map((key) => key.id === id ? { ...key, tokenSaver: checked.value } : key));
+    return checked.value;
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
@@ -1067,6 +1083,12 @@ export default function APIPageClient({ machineId }) {
                         handleUpdateKeyAccess(key.id, { restricted: true, allow: key.access?.allow || [] });
                       }
                     })}
+                  />
+                  <TokenSaverControls
+                    value={key.tokenSaver}
+                    globalSettings={globalSettings}
+                    onSave={(policy) => handleUpdateKeyTokenSaver(key.id, policy)}
+                    onReloadSettings={() => useSettingsStore.getState().fetchSettings({ force: true })}
                   />
                 </div>
                 <div className="flex items-center gap-2 shrink-0 pt-0.5">

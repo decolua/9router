@@ -497,6 +497,9 @@ export default function TokenSaverClient() {
             Token Saver
           </h2>
         </div>
+        <p className="text-sm text-text-muted mb-2">
+          RTK, Headroom, Caveman, and Ponytail switches set global defaults. API keys can override them under Endpoint. Levels and connection settings apply to all keys, even when a global default is OFF.
+        </p>
         <div className="flex items-center justify-between pt-2 pb-4 border-b border-border gap-4">
           <div className="min-w-0 flex-1">
             <p className="font-medium">
@@ -516,6 +519,7 @@ export default function TokenSaverClient() {
           </div>
           <Toggle
             checked={rtkEnabled}
+            aria-label="RTK enabled by default"
             onChange={() => handleRtkEnabled(!rtkEnabled)}
           />
         </div>
@@ -552,6 +556,7 @@ export default function TokenSaverClient() {
           </div>
           <Toggle
             checked={headroomEnabled}
+            aria-label="Headroom enabled by default"
             onChange={() => handleHeadroomEnabled(!headroomEnabled)}
           />
         </div>
@@ -671,7 +676,6 @@ export default function TokenSaverClient() {
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {cavemanEnabled && (
               <div className="flex flex-col items-end gap-1">
                 <div className="flex items-center gap-1.5">
                   {visibleCavemanLevels.map((lvl) => (
@@ -696,9 +700,9 @@ export default function TokenSaverClient() {
                   }
                 </p>
               </div>
-            )}
             <Toggle
               checked={cavemanEnabled}
+              aria-label="Caveman enabled by default"
               onChange={() => handleCavemanEnabled(!cavemanEnabled)}
             />
           </div>
@@ -722,7 +726,6 @@ export default function TokenSaverClient() {
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {ponytailEnabled && (
               <div className="flex flex-col items-end gap-1">
                 <div className="flex items-center gap-1.5">
                   {PONYTAIL_LEVELS.map((lvl) => (
@@ -747,9 +750,9 @@ export default function TokenSaverClient() {
                   }
                 </p>
               </div>
-            )}
             <Toggle
               checked={ponytailEnabled}
+              aria-label="Ponytail enabled by default"
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
             />
           </div>

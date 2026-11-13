@@ -550,7 +550,22 @@ a third party under a provider named "Self-hosted".
 | 📊 **Usage Analytics**                                                            | Track tokens, cost, trends over time                                                     | Optimize spending                                 |
 | 🌐 **Deploy Anywhere**                                                            | Localhost, VPS, Docker, Cloudflare Workers                                               | Flexible deployment options                       |
 
-Set `X-9Router-Token-Saver: off` to bypass all token savers for one chat request.
+Set `X-9Router-Token-Saver: off` to bypass RTK, Headroom, Caveman, and Ponytail for one chat request.
+
+### Per-API-key token saver controls
+
+Under **Dashboard → Endpoint → API Keys**, enable **Override token saver settings** below a key's access controls to configure RTK, Headroom, Caveman, and Ponytail independently for that key.
+
+- Override OFF follows the current global defaults under **Dashboard → Token Saver**.
+- Override ON shows a master **Token savers ON/OFF** switch and four module switches. Master OFF disables these four modules and disables their controls without erasing selections.
+- First activation copies the current global module choices. Turning the override off and back on restores the saved choices rather than copying globals again.
+- An enabled key module can run even when its global default is OFF. Headroom still requires an available service and sends messages to the globally configured Headroom endpoint.
+- Headroom connection settings and Caveman/Ponytail levels remain shared. Levels can be edited while the global default is OFF.
+- The request header `X-9Router-Token-Saver: off` still disables these four modules; a header cannot enable a module disabled for the key.
+
+Custom system prompt and experimental PXPIPE remain global and are **not** controlled by the key master switch or the current request-header opt-out. These settings apply to application chat endpoints (Chat Completions, Messages, Responses, and Gemini chat), not other modalities. They do not change API-key authentication or model access restrictions.
+
+Existing and new keys inherit globals until configured. Database exports include saved key policies; older backups without them restore inheritance. Do not round-trip new policies through older router versions, which do not preserve or enforce them.
 
 <details>
 <summary><b>📖 Feature Details</b></summary>
