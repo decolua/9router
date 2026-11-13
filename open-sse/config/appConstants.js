@@ -191,7 +191,8 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
   // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
-  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") }
+  // ponytail: boundary guard regex; upgrade if prompts require structured markdown/code-block tokenizer
+  { from: /(?<![\/\\\w.~@:-])opencode(?![\/\\:\-@\w]|(?:\.[a-zA-Z0-9_\-]))/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") }
 ];
 
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
