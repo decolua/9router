@@ -13,7 +13,13 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
-import { getKeyAccessContext, enforceKeyAccessProvider } from "../services/keyAccess.js";
+import {
+  getKeyAccessContext,
+  enforceKeyAccessProvider,
+  pruneComboModelsForKey,
+  getAllowedConnectionIdsForProvider,
+  keyAccessDeniedResponse,
+} from "../services/keyAccess.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -75,17 +81,26 @@ export async function handleSearch(request) {
 
   // Per-key access control: the provider IS the model here, so a
   // restricted key needs the provider id (or the combo) on its list.
-  const keyAccessDenied = await enforceKeyAccessProvider(await getKeyAccessContext(request), providerInput, comboModels);
+  const keyAccess = await getKeyAccessContext(request);
+  const keyAccessDenied = await enforceKeyAccessProvider(keyAccess, providerInput, comboModels);
   if (keyAccessDenied) return keyAccessDenied;
   if (comboModels) {
+    let activeModels = comboModels;
+    if (keyAccess) {
+      const pruned = await pruneComboModelsForKey(keyAccess, comboModels, providerInput);
+      if (!pruned || pruned.length === 0) {
+        return keyAccessDeniedResponse(keyAccess, providerInput);
+      }
+      activeModels = pruned;
+    }
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("SEARCH", `Combo "${providerInput}" with ${comboModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info("SEARCH", `Combo "${providerInput}" with ${activeModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings),
+      models: activeModels,
+      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings, keyAccess),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -93,10 +108,10 @@ export async function handleSearch(request) {
     });
   }
 
-  return handleSingleProviderSearch(body, providerInput, request, apiKey, settings);
+  return handleSingleProviderSearch(body, providerInput, request, apiKey, settings, keyAccess);
 }
 
-async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings, keyAccess = null) {
   const query = body.query;
   const providerId = resolveProviderId(providerInput);
   const resolvedProvider = AI_PROVIDERS[providerId];
@@ -104,6 +119,24 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
   if (!resolvedProvider) {
     log.warn("SEARCH", "Unknown provider", { provider: providerInput });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `Unknown provider: ${providerInput}`);
+  }
+
+  // Credential fallback: some search providers reuse the API key of a related
+  // chat provider (e.g. ollama-search reuses the `ollama` chat key, zai-search
+  // reuses the `glm` chat key). When the search provider has no own connection,
+  // fall back to the linked provider's credentials.
+  const fallbackProviderId = resolvedProvider.credentialFallback;
+
+  const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, providerId);
+  const allowedFallbackConnectionIds = fallbackProviderId
+    ? await getAllowedConnectionIdsForProvider(keyAccess, fallbackProviderId)
+    : null;
+
+  if (allowedConnectionIds && allowedConnectionIds.size === 0) {
+    if (!fallbackProviderId || (allowedFallbackConnectionIds && allowedFallbackConnectionIds.size === 0)) {
+      log.warn("AUTH", `key-access: provider "${providerId}" is not allowed for this key`);
+      return errorResponse(HTTP_STATUS.FORBIDDEN, `This API key is not allowed to use provider "${providerId}"`);
+    }
   }
 
   const providerConfig = resolvedProvider.searchConfig;
@@ -154,12 +187,6 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
   let lastError = null;
   let lastStatus = null;
 
-  // Credential fallback: some search providers reuse the API key of a related
-  // chat provider (e.g. ollama-search reuses the `ollama` chat key, zai-search
-  // reuses the `glm` chat key). When the search provider has no own connection,
-  // fall back to the linked provider's credentials.
-  const fallbackProviderId = resolvedProvider.credentialFallback;
-
   // Lock scope for this handler. Without it markAccountUnavailable would write
   // an account-wide `__all` lock, which on the credentialFallback path takes
   // the shared chat key (e.g. glm) offline for chat as well. Must be passed to
@@ -170,12 +197,14 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     // Provider that actually owns the connection in use — differs from
     // providerId once we fall back, and error locks must be attributed to it.
     let credentialProviderId = providerId;
-    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey);
+    let credentials = (allowedConnectionIds && allowedConnectionIds.size === 0)
+      ? null
+      : await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey, { allowedConnectionIds });
 
     // Fall back to the related chat provider's credentials when this search
     // provider has none of its own (one key, chat + search).
-    if (!credentials && fallbackProviderId) {
-      credentials = await getProviderCredentials(fallbackProviderId, excludeConnectionIds, searchLockKey);
+    if (!credentials && fallbackProviderId && !(allowedFallbackConnectionIds && allowedFallbackConnectionIds.size === 0)) {
+      credentials = await getProviderCredentials(fallbackProviderId, excludeConnectionIds, searchLockKey, { allowedConnectionIds: allowedFallbackConnectionIds });
       if (credentials) {
         credentialProviderId = fallbackProviderId;
         log.info("AUTH", `\x1b[32m${providerId} reusing ${fallbackProviderId} credentials\x1b[0m`);

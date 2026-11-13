@@ -76,19 +76,22 @@ export async function getKeyAccessContext(request) {
     keyId: record.id,
     keyName: record.name || record.id,
     allow: record.access.allow || [],
+    allowedProviders: record.access.allowedProviders || [],
+    allowedConnections: record.access.allowedConnections || [],
     _sets: null,
   };
 }
 
 // Resolve the allow list once per request: combo names, resolved model ids,
-// and resolved provider ids (for provider-as-model kinds).
+// and resolved provider ids (for provider-as-model kinds), plus allowed providers & connections.
 async function getAllowSets(ctx) {
   if (ctx._sets) return ctx._sets;
   const comboNames = new Set((await getCombos()).map((c) => lower(c.name)));
   const combos = new Set();
   const models = new Set();
   const providers = new Set();
-  for (const entry of ctx.allow) {
+
+  for (const entry of ctx.allow || []) {
     const key = lower(entry);
     if (comboNames.has(key)) {
       combos.add(key);
@@ -98,16 +101,82 @@ async function getAllowSets(ctx) {
     if (info?.provider && info.model) models.add(canonicalModel(info.provider, info.model));
     if (!entry.includes("/")) providers.add(lower(resolveProviderId(entry)));
   }
-  ctx._sets = { combos, models, providers };
+
+  const allowedProviders = new Set(
+    (ctx.allowedProviders || []).map((p) => lower(resolveProviderId(p)))
+  );
+
+  // Group allowed connections by resolved provider
+  const allowedConnectionsByProvider = new Map();
+  if (Array.isArray(ctx.allowedConnections) && ctx.allowedConnections.length > 0) {
+    try {
+      const { getProviderConnectionsByIds } = await import("@/lib/db/repos/connectionsRepo.js");
+      const connRows = await getProviderConnectionsByIds(ctx.allowedConnections);
+      for (const row of connRows) {
+        if (!row?.provider) continue;
+        const p = lower(resolveProviderId(row.provider));
+        if (!allowedConnectionsByProvider.has(p)) {
+          allowedConnectionsByProvider.set(p, new Set());
+        }
+        allowedConnectionsByProvider.get(p).add(row.id);
+      }
+    } catch (e) {
+      log.warn("AUTH", `Failed to load connection details for key access: ${e?.message || e}`);
+    }
+  }
+
+  ctx._sets = {
+    combos,
+    models,
+    providers,
+    allowedProviders,
+    allowedConnectionsByProvider,
+  };
   return ctx._sets;
 }
 
-async function isModelStringAllowed(ctx, requested) {
+export async function isModelStringAllowed(ctx, requested) {
+  if (!ctx) return true;
   const sets = await getAllowSets(ctx);
   const info = await getModelInfo(requested);
-  // provider null ⇔ an existing combo with no members (routes nowhere).
-  if (!info?.provider) return sets.combos.has(lower(requested));
-  return sets.models.has(canonicalModel(info.provider, info.model));
+
+  // provider null <=> combo name or unresolvable
+  if (!info?.provider) {
+    if (sets.combos.has(lower(requested))) return true;
+    const comboModels = await getComboModels(requested);
+    if (comboModels && comboModels.length > 0) {
+      for (const m of comboModels) {
+        if (await isModelStringAllowed(ctx, m)) return true;
+      }
+    }
+    return false;
+  }
+
+  const resolvedProvider = lower(resolveProviderId(info.provider));
+
+  // 1. Check provider restrictions
+  if (sets.allowedProviders.size > 0 && !sets.allowedProviders.has(resolvedProvider)) {
+    return false;
+  }
+
+  // 2. Check connection restrictions: if connections are restricted for this provider, must have >=1
+  if (sets.allowedConnectionsByProvider.has(resolvedProvider)) {
+    const allowedConns = sets.allowedConnectionsByProvider.get(resolvedProvider);
+    if (!allowedConns || allowedConns.size === 0) return false;
+  }
+
+  // 3. Model restrictions: if specific models/combos were listed in allow
+  if (sets.models.size > 0 || sets.combos.size > 0) {
+    return sets.models.has(canonicalModel(info.provider, info.model));
+  }
+
+  // If allow is empty, but allowedProviders or allowedConnections were set, all models under allowed provider are permitted
+  if (sets.allowedProviders.size > 0 || ctx.allowedConnections?.length > 0) {
+    return true;
+  }
+
+  // Fails closed if restricted but nothing allowed
+  return false;
 }
 
 export function keyAccessDeniedResponse(ctx, requested) {
@@ -125,9 +194,22 @@ export async function enforceKeyAccess(ctx, requested) {
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
   const comboModels = await getComboModels(requested);
-  const allowed = comboModels
-    ? sets.combos.has(lower(requested))
-    : await isModelStringAllowed(ctx, requested);
+  let allowed = false;
+  if (comboModels) {
+    if (sets.combos.has(lower(requested))) {
+      allowed = true;
+    } else {
+      // Dynamic combo check: allowed if any member model is permitted
+      for (const m of comboModels) {
+        if (await isModelStringAllowed(ctx, m)) {
+          allowed = true;
+          break;
+        }
+      }
+    }
+  } else {
+    allowed = await isModelStringAllowed(ctx, requested);
+  }
   return allowed ? null : keyAccessDeniedResponse(ctx, requested);
 }
 
@@ -142,7 +224,26 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
-  return sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
+  const resolvedProvider = lower(resolveProviderId(provider));
+
+  if (sets.allowedProviders.size > 0 && !sets.allowedProviders.has(resolvedProvider)) {
+    return keyAccessDeniedResponse(ctx, label);
+  }
+
+  if (sets.allowedConnectionsByProvider.has(resolvedProvider)) {
+    const allowedConns = sets.allowedConnectionsByProvider.get(resolvedProvider);
+    if (!allowedConns || allowedConns.size === 0) return keyAccessDeniedResponse(ctx, label);
+  }
+
+  if (sets.models.size > 0 || sets.combos.size > 0) {
+    return sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
+  }
+
+  if (sets.allowedProviders.size > 0 || ctx.allowedConnections?.length > 0) {
+    return null;
+  }
+
+  return keyAccessDeniedResponse(ctx, label);
 }
 
 /**
@@ -153,10 +254,102 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
   if (!ctx) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
-  const allowed = comboModels
-    ? sets.combos.has(lower(requested))
-    : sets.providers.has(lower(resolveProviderId(requested)));
-  return allowed ? null : keyAccessDeniedResponse(ctx, requested);
+  if (comboModels) {
+    if (sets.combos.has(lower(requested))) return null;
+    for (const m of comboModels) {
+      if (await isModelStringAllowed(ctx, m)) return null;
+    }
+    return keyAccessDeniedResponse(ctx, requested);
+  }
+
+  const resolved = lower(resolveProviderId(requested));
+  if (sets.allowedProviders.size > 0 && !sets.allowedProviders.has(resolved)) {
+    return keyAccessDeniedResponse(ctx, requested);
+  }
+
+  if (sets.providers.size > 0) {
+    return sets.providers.has(resolved) ? null : keyAccessDeniedResponse(ctx, requested);
+  }
+
+  if (sets.allowedProviders.size > 0) {
+    return null;
+  }
+
+  return keyAccessDeniedResponse(ctx, requested);
+}
+
+/**
+ * Prunes a combo's model list, keeping only models that the key has access to (Rule #3 Opsi A).
+ * If comboName is explicitly in the key's allowed combos list, its members are granted through the combo
+ * (subject to any allowedProviders / allowedConnections restrictions).
+ * @param {object|null} ctx
+ * @param {string[]} comboModels
+ * @param {string|null} comboName
+ * @returns {Promise<string[]>}
+ */
+export async function pruneComboModelsForKey(ctx, comboModels, comboName = null) {
+  if (!ctx || !Array.isArray(comboModels)) return comboModels;
+  const sets = await getAllowSets(ctx);
+  const isAllowedCombo = comboName && sets.combos.has(lower(comboName));
+
+  const out = [];
+  for (const m of comboModels) {
+    if (isAllowedCombo) {
+      // Member is reached through an explicitly allowed combo.
+      // Combo grants its members, but provider/connection restrictions still apply!
+      const info = await getModelInfo(m);
+      if (info?.provider) {
+        const resolvedProvider = lower(resolveProviderId(info.provider));
+        if (sets.allowedProviders.size > 0 && !sets.allowedProviders.has(resolvedProvider)) {
+          log.info("AUTH", `key-access: key "${ctx.keyName}" pruned combo member "${m}" (provider "${resolvedProvider}" not allowed)`);
+          continue;
+        }
+        if (sets.allowedConnectionsByProvider.has(resolvedProvider)) {
+          const allowedConns = sets.allowedConnectionsByProvider.get(resolvedProvider);
+          if (!allowedConns || allowedConns.size === 0) {
+            log.info("AUTH", `key-access: key "${ctx.keyName}" pruned combo member "${m}" (no allowed connections)`);
+            continue;
+          }
+        }
+      }
+      out.push(m);
+    } else {
+      if (await isModelStringAllowed(ctx, m)) {
+        out.push(m);
+      } else {
+        log.info("AUTH", `key-access: key "${ctx.keyName}" pruned combo member "${m}" (no access)`);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Resolves allowed connection IDs for a specific provider.
+ * Returns:
+ * - null: all active accounts of this provider are permitted (unrestricted).
+ * - Set<string>: only connection IDs in this set are permitted.
+ * - empty Set: this provider is forbidden for this key.
+ */
+export async function getAllowedConnectionIdsForProvider(ctx, provider) {
+  if (!ctx) return null;
+  const sets = await getAllowSets(ctx);
+  const resolvedProvider = lower(resolveProviderId(provider));
+
+  // Check provider allowlist
+  if (sets.allowedProviders.size > 0 && !sets.allowedProviders.has(resolvedProvider)) {
+    return new Set(); // 0 allowed
+  }
+
+  // Check connection allowlist:
+  // If specific connections for this provider were listed in allowedConnections
+  if (sets.allowedConnectionsByProvider.has(resolvedProvider)) {
+    return sets.allowedConnectionsByProvider.get(resolvedProvider);
+  }
+
+  // Hierarchical (Rule #2 Opsi A): If provider is allowed and NO specific accounts were selected
+  // for this provider, then all active accounts of this provider are allowed!
+  return null;
 }
 
 /**
@@ -184,16 +377,28 @@ export async function filterModelsListForKey(ctx, list) {
   for (const entry of list) {
     if (!entry?.id) continue;
     if (entry.owned_by === KEY_ACCESS_COMBO_OWNER) {
-      if (sets.combos.has(lower(entry.id))) out.push(entry);
+      if (sets.combos.has(lower(entry.id))) {
+        out.push(entry);
+        continue;
+      }
+      const comboModels = await getComboModels(entry.id);
+      if (comboModels && comboModels.length > 0) {
+        let hasAllowed = false;
+        for (const m of comboModels) {
+          if (await isModelStringAllowed(ctx, m)) { hasAllowed = true; break; }
+        }
+        if (hasAllowed) out.push(entry);
+      }
       continue;
     }
     const info = await getModelInfo(entry.id);
     if (!info?.provider) continue;
     if (KEY_ACCESS_PROVIDER_AS_MODEL_KINDS.includes(entry.kind)) {
-      if (sets.providers.has(lower(info.provider))) out.push(entry);
+      if (sets.allowedProviders.size > 0 && !sets.allowedProviders.has(lower(resolveProviderId(info.provider)))) continue;
+      if (sets.providers.has(lower(info.provider)) || (sets.allowedProviders.size > 0 && sets.models.size === 0)) out.push(entry);
       continue;
     }
-    if (sets.models.has(canonicalModel(info.provider, info.model))) out.push(entry);
+    if (await isModelStringAllowed(ctx, entry.id)) out.push(entry);
   }
   return out;
 }
