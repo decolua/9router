@@ -1,0 +1,92 @@
+name: Release freshness guard
+
+on:
+  schedule:
+    # Check daily for source versions that have not reached Docker Hub.
+    - cron: "17 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-freshness-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check source, tag, and published image
+    # The check targets decolua/9router's tags and Docker Hub image; on forks it would
+    # compare the fork's version against upstream releases and fail daily.
+    if: github.repository == 'decolua/9router'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify current version is tagged and published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          async function get(url, headers = {}) {
+            const response = await fetch(url, { headers });
+            if (response.status === 404) return null;
+            if (!response.ok) {
+              throw new Error(`GET ${url} returned ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+          }
+
+          async function main() {
+            const root = JSON.parse(fs.readFileSync("package.json", "utf8")).version;
+            const cli = JSON.parse(fs.readFileSync("cli/package.json", "utf8")).version;
+
+            if (!root || root !== cli) {
+              throw new Error(`Version mismatch: package.json=${root}, cli/package.json=${cli}`);
+            }
+
+            const tag = `v${root}`;
+            const repository = "decolua/9router";
+            const headers = {
+              Accept: "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            };
+            if (process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GH_TOKEN}`;
+
+            const tagRef = await get(`https://api.github.com/repos/${repository}/git/ref/tags/${tag}`, headers);
+            const imageTag = await get(`https://hub.docker.com/v2/repositories/decolua/9router/tags/${root}`);
+
+            const problems = [];
+            if (!tagRef) {
+              problems.push(`Git tag ${tag} does not exist`);
+            }
+            if (!imageTag) {
+              problems.push(`Docker Hub image decolua/9router:${root} is not published`);
+            }
+
+            const summary = [
+              "### Release freshness check",
+              `- Source version: \`${root}\``,
+              `- Matching git tag: ${tagRef ? "present" : "MISSING"}`,
+              `- Docker Hub image: ${imageTag ? "present" : "MISSING"}`,
+              problems.length
+                ? `- **Action required:** ${problems.join("; ")}. If this version is intended for release, push \`${tag}\` and monitor the Docker publish workflow.`
+                : "- Source version is tagged and published.",
+            ].join("\n");
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+
+            if (problems.length) {
+              throw new Error(problems.join("; "));
+            }
+            console.log(`Release ${root} is tagged and published.`);
+          }
+
+          main().catch(error => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
