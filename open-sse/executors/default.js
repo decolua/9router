@@ -109,6 +109,30 @@ export class DefaultExecutor extends BaseExecutor {
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
       }
+      // An openai-compatible node with apiType "responses" speaks the Responses API,
+      // where effort is nested (reasoning:{effort,summary}). applyThinking() emits the
+      // Chat shape (top-level reasoning_effort) for OpenAI-ish models on every wire, so
+      // reconcile it here like codex / opencode-go / opencode-zen do. Strict upstreams
+      // reject the leftover field with 400 "Unsupported parameter: 'reasoning_effort'.
+      // In the Responses API, this parameter has moved to 'reasoning.effort'".
+      if (this.provider?.startsWith?.("openai-compatible-")
+        && resolveOpenAICompatibleApiType(this.provider, credentials) === "responses") {
+        if (transformed.reasoning_effort !== undefined) {
+          const current = transformed.reasoning;
+          transformed = {
+            ...transformed,
+            reasoning: {
+              ...(current && typeof current === "object" && !Array.isArray(current) ? current : {}),
+              effort: transformed.reasoning_effort,
+            },
+          };
+          delete transformed.reasoning_effort;
+        }
+        if (transformed.reasoning && typeof transformed.reasoning === "object" && !Array.isArray(transformed.reasoning)
+          && !transformed.reasoning.summary) {
+          transformed = { ...transformed, reasoning: { ...transformed.reasoning, summary: "auto" } };
+        }
+      }
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
