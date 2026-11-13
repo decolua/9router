@@ -114,8 +114,8 @@ async function fetchClineFreeTierModels() {
 
 /**
  * Fetch Cline live model catalog from Cline's /models endpoint.
- * Unlike resolveClinepassModels, this returns ALL models (including
- * free-tier models like z-ai/glm-5.3-flash) without the cline-pass/ prefix filter.
+ * Unlike resolveClinepassModels, this excludes subscription IDs while including
+ * free-tier models like z-ai/glm-5.3-flash and the recommended free feed.
  *
  * @param {object} credentials - Connection credentials ({ accessToken, apiKey })
  * @returns {Promise<{ models: { id: string, name: string }[] } | null>}
@@ -125,7 +125,7 @@ export async function resolveClineModels(credentials) {
   if (!rawList) return null;
 
   const models = rawList
-    .filter((m) => typeof m?.id === "string" && m.id.trim() !== "")
+    .filter((m) => typeof m?.id === "string" && m.id.trim() !== "" && !m.id.startsWith("cline-pass/"))
     .map((m) => ({
       id: m.id,
       name: m.name || m.id,
