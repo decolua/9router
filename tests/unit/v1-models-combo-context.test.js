@@ -55,6 +55,18 @@ describe("/v1/models combo limits", () => {
     });
   });
 
+  it("strips a thinking-level suffix from a combo seat", async () => {
+    const combo = { name: "thinking-combo", models: ["ocg/mimo-v2.5(max)"] };
+    const models = await modelsWithCombo("opencode-go", "mimo-v2.5", [combo]);
+    const published = models.find((model) => model.id === combo.name);
+
+    expect(published).toMatchObject({
+      context_length: 180000,
+      max_completion_tokens: 16000,
+      capabilities: { contextWindow: 180000, maxOutput: 16000 },
+    });
+  });
+
   it("carries provider-scoped limits through a nested combo", async () => {
     const models = await modelsWithCombo("opencode-go", "mimo-v2.5", [
       { name: "inner-combo", models: ["ocg/mimo-v2.5"] },

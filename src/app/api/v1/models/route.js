@@ -58,7 +58,11 @@ function comboSeatCapabilities(seat) {
   const slash = seat.indexOf("/");
   if (slash <= 0) return null;
   const alias = seat.slice(0, slash);
-  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, seat.slice(slash + 1));
+  // "model(level)" is a 9Router thinking override, not part of the model id.
+  // Strip it before the capability lookup or an effort seat misses the
+  // provider-scoped catalog and inherits the 1M pattern default.
+  const model = seat.slice(slash + 1).replace(/\([^()]+\)\s*$/, "").trim();
+  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, model);
 }
 
 // Per-provider live model resolvers. Each receives a connection record and
