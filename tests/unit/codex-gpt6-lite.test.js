@@ -176,6 +176,47 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(body.input.some(item => item.type === "additional_tools")).toBe(false);
   });
 
+  const searchHistory = [
+    { type: "message", role: "user", content: [{ type: "input_text", text: "find the docs" }] },
+    { type: "web_search_call", id: "ws_history", status: "completed", action: { type: "search", query: "docs" } },
+    { type: "message", role: "assistant", content: [{ type: "output_text", text: "Found them." }] },
+  ];
+
+  it.each(["gpt-6-sol", "gpt-6.1-sol"])("declares hosted search for web_search_call history on %s", async (model) => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({ ok: true, status: 200, headers: new Map() });
+    // Codex compaction requests carry the full history but no tool declarations.
+    await new CodexExecutor().execute({
+      model, body: { model, input: structuredClone(searchHistory), instructions: "Summarize", tools: [] },
+      stream: true, credentials,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(body.tools).toEqual([{ type: "web_search" }]);
+    expect(body.instructions).toBe("Summarize");
+    expect(body.input.filter(item => item.type === "web_search_call")).toHaveLength(1);
+    expect(body.input.some(item => item.type === "additional_tools")).toBe(false);
+  });
+
+  it("moves a native Lite prefix out when history has web_search_call", async () => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({ ok: true, status: 200, headers: new Map() });
+    const tool = { type: "function", name: "run", parameters: { type: "object", properties: {} } };
+    const instruction = { type: "message", role: "developer", content: [{ type: "input_text", text: "Native instructions" }] };
+    await new CodexExecutor().execute({
+      model: "gpt-6.1-sol", body: { model: "gpt-6.1-sol", input: [
+        { type: "additional_tools", role: "developer", tools: [tool] },
+        instruction,
+        ...structuredClone(searchHistory),
+      ], instructions: "", tools: null }, stream: true, credentials,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(body.tools).toEqual([{ type: "web_search" }, tool]);
+    expect(body.input).toContainEqual(instruction);
+    expect(body.input.some(item => item.type === "additional_tools")).toBe(false);
+  });
+
   it("converts an ordinary Responses request to the Lite shape", () => {
     const executor = new CodexExecutor();
     const tool = { type: "function", name: "run", parameters: { type: "object", properties: {} } };
