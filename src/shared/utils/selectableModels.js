@@ -37,7 +37,30 @@ export const NO_AUTH_PROVIDER_IDS = Object.keys(AI_PROVIDERS)
 // Static registry stays as fallback when live fetch fails or is empty.
 // zed added in #4244: its backend customResolver already returns live models
 // but the frontend omitted it, hiding Zed entirely from the Combo picker.
-export const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed"];
+// Providers with per-account live catalogs via /api/providers/[id]/models.
+// Single source of truth: ModelSelectModal and the CLI-tool cards import this, so a
+// provider supported by that route cannot be missing from just one picker.
+export const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "claude", "commandcode"];
+
+/**
+ * Capabilities carried by a live catalog row, when the provider reports any.
+ *
+ * Live rows use their own field names (isVL / isReasoning / contextLength) and some
+ * providers return only {id,name}; undefined lets callers fall back to /api/models.
+ */
+export const liveModelCaps = (model) => {
+  if (!model) return undefined;
+  const { isVL, isReasoning, contextLength, maxTokens } = model;
+  if (isVL === undefined && isReasoning === undefined && contextLength === undefined && maxTokens === undefined) {
+    return undefined;
+  }
+  return {
+    vision: isVL === true,
+    reasoning: isReasoning === true,
+    contextWindow: contextLength,
+    maxOutput: maxTokens,
+  };
+};
 
 export const ALL_PROVIDERS = { ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS };
 
@@ -79,10 +102,6 @@ export function buildModelGroups({
   // with no connection row at all stay, e.g. keyless local endpoints.
   const deactivatedProviderIds = getDeactivatedProviderIds(effectiveConnections);
   const live = liveModels || {};
-  const cursorModels = asArray(live.cursor);
-  const clineModels = asArray(live.cline);
-  const clinepassModels = asArray(live.clinepass);
-  const zedModels = asArray(live.zed);
 
   const groups = {};
 
@@ -193,12 +212,15 @@ export function buildModelGroups({
           if (supports) combined = [{ id: providerId, name: providerInfo.name, value: alias }];
         }
       } else {
-        // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models
+        // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models.
+        // A passthrough provider can still have a live per-account catalog (commandcode), which
+        // replaces the static list the same way it does for the non-passthrough branch below.
+        const liveProviderModels = asArray(live[providerId]);
         const registeredLlms = customRegisteredModels.filter((m) => !getModelKind(m) || getModelKind(m) === "llm");
         const seen = new Set([...aliasModels, ...registeredLlms].map((m) => m.value));
-        const hardcoded = getModelsByProviderId(providerId)
+        const hardcoded = (liveProviderModels.length > 0 ? liveProviderModels : getModelsByProviderId(providerId))
           .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
-          .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
+          .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m), caps: liveModelCaps(m) }))
           .filter((m) => !seen.has(m.value));
         combined = [...registeredLlms, ...aliasModels.filter((m) => !registeredLlms.some((registered) => registered.value === m.value)), ...hardcoded];
       }
@@ -265,7 +287,7 @@ export function buildModelGroups({
         hasModels: mergedModels.length > 0,
       };
     } else {
-      const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : providerId === "zed" ? zedModels : [];
+      const liveModels = asArray(live[providerId]);
       const hardcodedModels = liveModels.length > 0
         ? liveModels
         : getModelsByProviderId(providerId);
@@ -292,7 +314,7 @@ export function buildModelGroups({
         .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
       const merged = [
-        ...applyQoderModelNames(hardcodedModels, customModelsSafe, alias).map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
+        ...applyQoderModelNames(hardcodedModels, customModelsSafe, alias).map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m), caps: liveModelCaps(m) })),
         ...customAliasModels,
         ...customRegisteredModels,
       ];
