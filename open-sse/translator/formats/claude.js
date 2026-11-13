@@ -7,7 +7,7 @@ import { resolveSessionId } from "../../utils/sessionManager.js";
 import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
-import { isDeepSeekModel } from "../../providers/models/helpers.js";
+import { isClaudeModel, isDeepSeekModel } from "../../providers/models/helpers.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 
 const CACHE_CONTROL_5M = { type: "ephemeral" };
@@ -276,8 +276,12 @@ export function normalizeClaudePassthrough(body, model = "") {
     body.messages = messages;
   }
 
-  // 5. Drop thinking blocks whose signature is not Claude's (combo mixes models,
-  // so foreign signatures leak into history and Anthropic rejects them).
+  // 5. Keep a thinking block only when Anthropic will accept it: a Claude-shaped
+  // signature AND a Claude target model. Native passthrough also covers
+  // anthropic-compatible nodes serving other models (combo fallback); they must not
+  // receive Claude's prior reasoning. Combos also leak foreign signatures into the
+  // history, which Anthropic rejects.
+  const keepsSignedThinking = isClaudeModel(model);
   const thinkingEnabled = body.thinking?.type === "enabled";
   const droppedServerToolUseIds = new Set();
   if (Array.isArray(body.messages)) {
@@ -288,7 +292,7 @@ export function normalizeClaudePassthrough(body, model = "") {
       const kept = [];
       for (const block of msg.content) {
         if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
-          if (isValidClaudeSignature(block.signature)) {
+          if (keepsSignedThinking && isValidClaudeSignature(block.signature)) {
             hasKeptThinking = true;
             kept.push(block);
           }
