@@ -22,6 +22,19 @@ describe("stripUnsupportedParams", () => {
     expect(body.messages[0].content).toBe("hello world");
   });
 
+  it("keeps every Cloudflare message valid after flattening content parts", () => {
+    const body = { messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      { role: "assistant", tool_calls: [{ id: "call_1" }] },
+      { content: [{ type: "text", text: "orphan" }] },
+    ] };
+    stripUnsupportedParams("cloudflare-ai", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", body);
+    expect(body.messages).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "", tool_calls: [{ id: "call_1" }] },
+    ]);
+  });
+
   it("still drops unsupported GitHub model params", () => {
     const body = { temperature: 0.7, top_p: 1 };
 
