@@ -553,6 +553,33 @@ describe("handleImageGenerationCore", () => {
     expect(fetchCall[1].body.get("steps")).toBe("4");
   });
 
+  it("omits width/height for Cloudflare FLUX.1 Schnell (closed schema)", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ result: { image: "base64schnell" }, success: true }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "A red apple", size: "1024x1024", steps: 4 },
+      modelInfo: { provider: "cloudflare-ai", model: "@cf/black-forest-labs/flux-1-schnell" },
+      credentials: {
+        apiKey: "cf-token",
+        providerSpecificData: { accountId: "cf-account" },
+      },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+
+    const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(requestBody.prompt).toBe("A red apple");
+    expect(requestBody.steps).toBe(4);
+    expect(requestBody).not.toHaveProperty("width");
+    expect(requestBody).not.toHaveProperty("height");
+  });
+
   it("resolves Cloudflare img2img and inpainting URL inputs before sending", async () => {
     global.fetch
       .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "Content-Type": "image/png" } }))

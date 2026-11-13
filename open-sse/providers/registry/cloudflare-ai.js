@@ -46,7 +46,7 @@ export default {
     { id: "@cf/black-forest-labs/flux-2-dev", name: "FLUX.2 Dev", params: ["size"], kind: "image" },
     { id: "@cf/leonardo/lucid-origin", name: "Lucid Origin", params: ["size"], kind: "image" },
     { id: "@cf/leonardo/phoenix-1.0", name: "Phoenix 1.0", params: ["size"], kind: "image" },
-    { id: "@cf/black-forest-labs/flux-1-schnell", name: "FLUX.1 Schnell", params: ["size"], kind: "image" },
+    { id: "@cf/black-forest-labs/flux-1-schnell", name: "FLUX.1 Schnell", params: [], kind: "image" },
     { id: "@cf/bytedance/stable-diffusion-xl-lightning", name: "SDXL Lightning", params: ["size"], kind: "image" },
     { id: "@cf/lykon/dreamshaper-8-lcm", name: "DreamShaper 8 LCM", params: ["size"], kind: "image" },
     { id: "@cf/runwayml/stable-diffusion-v1-5-img2img", name: "Stable Diffusion v1.5 Img2Img", params: ["size"], capabilities: ["edit"], kind: "image" },

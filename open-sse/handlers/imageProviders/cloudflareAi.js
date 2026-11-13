@@ -9,6 +9,11 @@ const MULTIPART_MODELS = new Set([
   "@cf/black-forest-labs/flux-2-klein-9b",
 ]);
 
+// Cloudflare's schema for these is closed (prompt + steps only) and rejects width/height
+const NO_DIMENSION_MODELS = new Set([
+  "@cf/black-forest-labs/flux-1-schnell",
+]);
+
 const OPTIONAL_FIELDS = [
   "negative_prompt",
   "guidance",
@@ -67,8 +72,11 @@ function addOptionalFields(target, body, append) {
   }
 }
 
-async function buildJsonBody(body) {
-  const req = { prompt: body.prompt, ...getDimensions(body) };
+async function buildJsonBody(model, body) {
+  const req = {
+    prompt: body.prompt,
+    ...(NO_DIMENSION_MODELS.has(model) ? {} : getDimensions(body)),
+  };
 
   addOptionalFields(req, body, (target, key, value) => {
     target[key] = value;
@@ -158,7 +166,7 @@ export default {
   buildBody: async (model, body) => (
     MULTIPART_MODELS.has(model)
       ? buildMultipartBody(body)
-      : await buildJsonBody(body)
+      : await buildJsonBody(model, body)
   ),
 
   async parseResponse(response) {

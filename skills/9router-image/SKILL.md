@@ -82,5 +82,6 @@ Common fields above work everywhere. These add/override:
 | `fal-ai` | `image` (img2img) | `n` → `num_images`; `size` → ratio; async |
 | `stability-ai` | `style` (preset), `output_format` | `size` → `aspect_ratio` |
 | `black-forest-labs` (FLUX) | `image` (ref) | `size` → exact `width`/`height`; async |
+| `cloudflare-ai` | `steps`, `seed`, `guidance`, `negative_prompt` (model-dependent) | `size` → `width`/`height`; FLUX.2 uses multipart; FLUX.1 Schnell ignores `size` |
 | `runwayml` | `image` (ref) | `size` → ratio; async; video models exist |
 | `sdwebui`, `comfyui` | — | Localhost noAuth (`:7860` / `:8188`) |
