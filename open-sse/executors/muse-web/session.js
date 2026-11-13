@@ -91,7 +91,7 @@ export function toMuseCookies(header) {
   return parseCookiePairs(header).map(({ name, value }) => ({
     name,
     value,
-    domain: ".muse.ai",
+    domain: name.startsWith("__Host-") ? "muse.ai" : ".muse.ai",
     path: "/",
     secure: true,
     httpOnly: false,
