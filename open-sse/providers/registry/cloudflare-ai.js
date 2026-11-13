@@ -52,8 +52,15 @@ export default {
     { id: "@cf/runwayml/stable-diffusion-v1-5-img2img", name: "Stable Diffusion v1.5 Img2Img", params: ["size"], capabilities: ["edit"], kind: "image" },
     { id: "@cf/runwayml/stable-diffusion-v1-5-inpainting", name: "Stable Diffusion v1.5 Inpainting", params: ["size"], capabilities: ["edit","mask"], kind: "image" },
     { id: "@cf/stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", params: ["size"], kind: "image" },
+    { id: "@cf/deepgram/nova-3", name: "Deepgram Nova 3 (Workers AI)", params: ["language", "diarize"], kind: "stt" },
   ],
-  serviceKinds: ["llm","image","systemone"],
+  serviceKinds: ["llm","image","systemone","stt"],
+  sttConfig: {
+    baseUrl: "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/run",
+    authType: "apikey",
+    authHeader: "bearer",
+    format: "cloudflare-workers-ai",
+  },
   systemoneConfig: {
     baseUrl: "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/run/{model}",
     authType: "apikey",
