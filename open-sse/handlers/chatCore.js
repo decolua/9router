@@ -8,6 +8,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
+import { CUSTOM_JSON_API_TYPE } from "../config/customJson.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { upstreamResponseHeaders } from "../utils/upstreamHeaders.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
@@ -144,6 +145,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
+  // JSON clients may omit stream (e.g. translation extensions). Business
+  // endpoints must opt in to downstream SSE instead of sending data: to a
+  // client that expects a single JSON object. Preserve native streaming formats.
+  if (credentials?.providerSpecificData?.apiType === CUSTOM_JSON_API_TYPE && !clientRequestedStreaming) {
+    stream = false;
+  }
 
   // Image generation models require non-streaming (Google v1internal:generateContent)
   const modelType = getModelType(alias, model);

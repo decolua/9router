@@ -1,3 +1,4 @@
+import { probeCustomJsonEndpoint } from "open-sse/services/customJson.js";
 import { NextResponse } from "next/server";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
@@ -57,7 +58,8 @@ export async function POST(request) {
     const body = await request.json();
     const { baseUrl, apiKey, type, modelId } = body;
 
-    if (!baseUrl || !apiKey) {
+    const customNoAuth = body.apiType === "custom-json" && body.customJson?.authType === "none";
+    if (!baseUrl || (!apiKey && !customNoAuth)) {
       return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });
     }
 
@@ -73,6 +75,10 @@ export async function POST(request) {
       } catch {
         return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
       }
+    }
+
+    if (body.apiType === "custom-json") {
+      return NextResponse.json(await probeCustomJsonEndpoint({ baseUrl, customJson: body.customJson }, apiKey, modelId || "custom"));
     }
 
     // Custom Embedding Validation - test POST /embeddings directly

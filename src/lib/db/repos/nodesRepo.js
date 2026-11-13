@@ -62,6 +62,7 @@ export async function createProviderNode(data) {
     prefix: data.prefix,
     apiType: data.apiType,
     baseUrl: data.baseUrl,
+    ...(data.customJson ? { customJson: data.customJson } : {}),
     createdAt: now,
     updatedAt: now,
   };

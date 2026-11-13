@@ -43,6 +43,8 @@ export class BaseExecutor {
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
   }
 
+  buildMethod() { return "POST"; }
+
   buildHeaders(credentials, stream = true) {
     const headers = {
       "Content-Type": "application/json",
@@ -148,7 +150,7 @@ export class BaseExecutor {
           ? { ...(proxyOptions || {}), forceFreshSocket: true }
           : proxyOptions;
         const response = await proxyAwareFetch(url, {
-          method: "POST",
+          method: this.buildMethod(credentials),
           headers,
           body: bodyStr,
           signal: mergedSignal,
