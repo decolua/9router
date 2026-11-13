@@ -276,6 +276,17 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;
+        // Carry Responses reasoning summaries as reasoning_content so a Claude client
+        // gets thinking blocks from openAICompletionToClaudeMessage below. Same policy as
+        // the non-streaming path for Chat clients: only when there is no text content.
+        const reasoningText = (jsonResponse.output || [])
+          .filter((item) => item?.type === RESPONSES_ITEM.REASONING)
+          .flatMap((item) => item.summary || [])
+          .map((part) => part?.text || "")
+          .join("");
+        if (reasoningText && (sourceFormat === FORMATS.CLAUDE || !message.content)) {
+          message.reasoning_content = reasoningText;
+        }
         const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
         const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
         finalResp = {

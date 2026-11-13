@@ -101,3 +101,36 @@ describe("Claude JSON clients behind forced-stream upstreams", () => {
     expect(json.stop_reason).toBe("end_turn");
   });
 });
+
+describe("Responses reasoning behind a forced-stream upstream (#3495)", () => {
+  const reasoningItem = { type: "reasoning", summary: [{ type: "summary_text", text: "Check the " }, { type: "summary_text", text: "lookup table." }] };
+  const textItem = { type: "message", role: "assistant", content: [{ type: "output_text", text: "Code A." }] };
+
+  it("returns reasoning summaries to a Claude client as a thinking block before the text", async () => {
+    const raw = responsesSSE([reasoningItem, textItem]);
+    const json = await (await handleForcedSSEToJson(context(raw, FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES))).response.json();
+    expect(json.type).toBe("message");
+    expect(json.content).toEqual([
+      { type: "thinking", thinking: "Check the lookup table." },
+      { type: "text", text: "Code A." }
+    ]);
+    expect(json.stop_reason).toBe("end_turn");
+  });
+
+  it("keeps thinking alongside tool_use for a Claude client", async () => {
+    const json = await (await handleForcedSSEToJson(context(responsesSSE([reasoningItem, toolItem]), FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES))).response.json();
+    expect(json.content.map(block => block.type)).toEqual(["thinking", "tool_use"]);
+    expect(json.stop_reason).toBe("tool_use");
+  });
+
+  it("follows the non-streaming Chat policy: no reasoning_content next to text", async () => {
+    const json = await (await handleForcedSSEToJson(context(responsesSSE([reasoningItem, textItem]), FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES))).response.json();
+    expect(json.choices[0].message.content).toBe("Code A.");
+    expect(json.choices[0].message).not.toHaveProperty("reasoning_content");
+  });
+
+  it("preserves reasoning_content for a Chat client when it is the only output", async () => {
+    const json = await (await handleForcedSSEToJson(context(responsesSSE([reasoningItem]), FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES))).response.json();
+    expect(json.choices[0].message.reasoning_content).toBe("Check the lookup table.");
+  });
+});
