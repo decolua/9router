@@ -1,21 +1,11 @@
 import { describe, it, expect } from "vitest";
-
-// Mirror the redaction logic from src/app/api/usage/request-details/route.js
-// so we can test it in isolation.
-function redactDetails(details) {
-  return (details || []).map((d) => {
-    const redacted = { ...d };
-    for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
-      if (redacted[key] !== undefined) {
-        redacted[key] = { redacted: true };
-      }
-    }
-    return redacted;
-  });
-}
+import {
+  prepareRequestDetailsResponse,
+  shouldShowRequestPayloads,
+} from "../../src/lib/requestDetailsVisibility.js";
 
 describe("request-details redaction", () => {
-  it("removes conversation payloads but keeps metadata", () => {
+  it("removes conversation payloads but keeps metadata by default", () => {
     const details = [{
       id: "abc",
       provider: "opencode",
@@ -28,7 +18,7 @@ describe("request-details redaction", () => {
       providerResponse: { choices: [{ message: { content: "secret answer" } }] },
       response: { content: "secret answer" },
     }];
-    const out = redactDetails(details)[0];
+    const out = prepareRequestDetailsResponse({ details }, {}).details[0];
     expect(out.id).toBe("abc");
     expect(out.provider).toBe("opencode");
     expect(out.model).toBe("deepseek-v4-flash-free");
@@ -40,15 +30,44 @@ describe("request-details redaction", () => {
   });
 
   it("handles empty details", () => {
-    expect(redactDetails([])).toEqual([]);
-    expect(redactDetails(null)).toEqual([]);
+    expect(prepareRequestDetailsResponse({ details: [] }, {}).details).toEqual([]);
+    expect(prepareRequestDetailsResponse({ details: null }, {}).details).toEqual([]);
   });
 
   it("keeps non-sensitive fields untouched", () => {
     const details = [{ id: "x", status: "error", latency: { total: 100 } }];
-    const out = redactDetails(details)[0];
+    const out = prepareRequestDetailsResponse({ details }, {}).details[0];
     expect(out.id).toBe("x");
     expect(out.status).toBe("error");
     expect(out.latency).toEqual({ total: 100 });
+  });
+
+  it("returns payloads only when SHOW_REQUEST_PAYLOADS is true", () => {
+    const result = {
+      details: [{
+        id: "abc",
+        request: { messages: [{ role: "user", content: "secret prompt" }] },
+        response: { content: "secret answer" },
+      }],
+      pagination: { page: 1 },
+    };
+
+    expect(prepareRequestDetailsResponse(result, { SHOW_REQUEST_PAYLOADS: "false" }))
+      .not.toBe(result);
+    expect(prepareRequestDetailsResponse(result, { SHOW_REQUEST_PAYLOADS: "true" }))
+      .toBe(result);
+    expect(prepareRequestDetailsResponse(result, { SHOW_REQUEST_PAYLOADS: "TRUE" }))
+      .toBe(result);
+  });
+
+  it("keeps payload display independent from ENABLE_REQUEST_LOGS", () => {
+    expect(shouldShowRequestPayloads({
+      ENABLE_REQUEST_LOGS: "false",
+      SHOW_REQUEST_PAYLOADS: "true",
+    })).toBe(true);
+    expect(shouldShowRequestPayloads({
+      ENABLE_REQUEST_LOGS: "true",
+      SHOW_REQUEST_PAYLOADS: "false",
+    })).toBe(false);
   });
 });
