@@ -35,25 +35,21 @@ export function isStaleSocketError(error) {
   return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
 }
 
-// Always fetch through the package's own undici instance so fetch and the
-// Agents below come from the same copy — dispatcher options are only guaranteed
-// to match within one undici version. Skipped under Vitest (process.env.VITEST,
-// set unconditionally by the runner): tests mock global.fetch directly (often
-// before importing a module that transitively imports this file, which would
-// otherwise clobber the mock via the self-patch below) and never pass a real
-// `dispatcher`, so calling through whatever globalThis.fetch currently is — the
-// mock — is both correct and what every existing test expects. Comparing
-// globalThis.fetch against a captured reference instead (nativeFetch, or this
-// module's own patchedFetch) is NOT reliable here: this module's own
-// self-patch runs in the same module evaluation as any capture, so in
-// production globalThis.fetch IS always this module's patch, not whichever
-// reference got captured first — that ambiguity is exactly what caused this
-// check to regress twice before landing on the environment flag instead.
-let undiciFetch = null;
+// The true native fetch, stashed on globalThis under a private symbol the
+// FIRST time this module ever evaluates in this process, then read back on
+// every later import. A plain `const nativeFetch = globalThis.fetch` capture
+// is NOT safe here: under Vitest, vi.resetModules() clears the module
+// registry but does not undo this module's own globalThis.fetch patch below,
+// so a second import's capture would grab the FIRST import's patchedFetch
+// instead of the real fetch — and rawFetch would then call back into
+// proxyAwareFetch(url, options, null), silently dropping proxyOptions
+// (strictProxy, connection proxy...). The symbol survives resetModules()
+// because it lives on globalThis, not in the module's own closure, so every
+// import after the first reads the same one true native fetch.
+const NATIVE_FETCH_KEY = Symbol.for("9router.proxyFetch.nativeFetch");
+if (!(NATIVE_FETCH_KEY in globalThis)) globalThis[NATIVE_FETCH_KEY] = globalThis.fetch;
 async function rawFetch(url, options) {
-  if (process.env.VITEST) return globalThis.fetch(url, options);
-  undiciFetch ??= (await import("undici")).fetch;
-  return undiciFetch(url, options);
+  return globalThis[NATIVE_FETCH_KEY](url, options);
 }
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
