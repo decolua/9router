@@ -8,6 +8,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 
 const { stripContinuityFields } = await import("../../open-sse/handlers/chatCore.js");
 const { openaiResponsesToOpenAIRequest } = await import("../../open-sse/translator/request/openai-responses.js");
+const { addRejectedFields, getRejectedFields } = await import("../../open-sse/utils/adaptiveStripper.js");
 
 // Multi-turn Codex-style Responses input: reasoning item carrying a
 // store=false encrypted_content continuity blob between tool turns.
@@ -76,5 +77,39 @@ describe("stripContinuityFields (outbound boundary)", () => {
     expect(assistant.tool_calls[0].function.name).toBe("shell");
     const roles = translated.messages.map((m) => m.role);
     expect(roles).toEqual(["system", "user", "assistant", "tool", "user"]);
+  });
+  it("strips adaptive rejected fields via provider/model blocklist", () => {
+    addRejectedFields("groq", "openai/gpt-oss-120b", ["reasoning_content", "encrypted_content"]);
+    expect(getRejectedFields("groq", "openai/gpt-oss-120b").has("reasoning_content")).toBe(true);
+    const body = {
+      model: "openai/gpt-oss-120b",
+      messages: [
+        { role: "system", content: "hi" },
+        { role: "assistant", content: "thinking", reasoning_content: "stripped", encrypted_content: "B".repeat(100) },
+        { role: "user", content: "keep" }
+      ]
+    };
+    const result = stripContinuityFields(body, "groq", "openai/gpt-oss-120b");
+    const assistant = result.messages[1];
+    expect(result).not.toBe(body);
+    expect(assistant).not.toHaveProperty("reasoning_content");
+    expect(assistant).not.toHaveProperty("encrypted_content");
+    expect(assistant.content).toBe("thinking");
+    expect(body.messages[1].reasoning_content).toBe("stripped");
+  });
+
+  it("skips adaptive strip when cache empty", () => {
+    const body = {
+      messages: [
+        { role: "assistant", content: "keep", reasoning_content: "survives" }
+      ]
+    };
+    stripContinuityFields(body, "groq", "no-cache-model");
+    expect(body.messages[0].reasoning_content).toBe("survives");
+  });
+
+  it("null/undefined guard with provider args", () => {
+    expect(stripContinuityFields(null, "groq", "m")).toBe(null);
+    expect(stripContinuityFields({ input: [] }, "groq", "m")).toEqual({ input: [] });
   });
 });
