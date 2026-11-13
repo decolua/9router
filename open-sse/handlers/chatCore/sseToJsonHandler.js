@@ -26,7 +26,7 @@ function textFromResponsesMessageItem(item) {
  * Codex / Responses API may emit many alternating reasoning + message items.
  * Early message blocks often have empty output_text; the user-visible answer is usually in the last non-empty message.
  */
-function pickAssistantMessageForChatCompletion(output) {
+export function pickAssistantMessageForChatCompletion(output) {
   if (!Array.isArray(output)) return { msgItem: null, textContent: null };
   const messages = output.filter((item) => item?.type === "message");
   if (messages.length === 0) return { msgItem: null, textContent: null };
