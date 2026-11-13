@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections } from "@/lib/localDb";
-import { backfillCodexEmails } from "@/lib/oauth/providers";
+import { backfillClaudeProfiles, backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { isLeaseConnection } from "open-sse/services/minimaxCodeLease.js";
 
@@ -78,6 +78,8 @@ function sortConnections(connections, sort) {
 export async function GET(request) {
   try {
     await backfillCodexEmails();
+    // Network-bound (one profile call per connection) — never block the listing on it.
+    backfillClaudeProfiles();
 
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider") || "all";
