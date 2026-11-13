@@ -91,6 +91,7 @@ export default function ProviderDetailPage() {
   const [confirmState, setConfirmState] = useState(null);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
   const [oneByOneRunning, setOneByOneRunning] = useState(false);
+  const [selectedTestModel, setSelectedTestModel] = useState("");
   const [oneByOneStopping, setOneByOneStopping] = useState(false);
   const [oneByOneCurrentConnectionId, setOneByOneCurrentConnectionId] = useState(null);
   const [oneByOneResults, setOneByOneResults] = useState({});
@@ -763,7 +764,11 @@ export default function ProviderDetailPage() {
         }));
 
         try {
-          const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
+          const res = await fetch(`/api/providers/${connection.id}/test`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: selectedTestModel || undefined }),
+          });
           const data = await res.json();
           const valid = !!data.valid;
 
@@ -1576,6 +1581,22 @@ export default function ProviderDetailPage() {
                     >
                       Delete Selected ({selectedConnectionIds.length})
                     </Button>
+                  )}
+                  {models.length > 0 && (
+                    <select
+                      value={selectedTestModel}
+                      onChange={(e) => setSelectedTestModel(e.target.value)}
+                      disabled={oneByOneRunning}
+                      className="h-8 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
+                      title="Select model to test connection"
+                    >
+                      <option value="">Default model</option>
+                      {models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name || m.id}
+                        </option>
+                      ))}
+                    </select>
                   )}
                   <Button
                     size="sm"

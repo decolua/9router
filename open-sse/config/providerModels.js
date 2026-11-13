@@ -17,7 +17,9 @@ export function getProviderModels(aliasOrId) {
 
 export function getDefaultModel(aliasOrId) {
   const models = PROVIDER_MODELS[aliasOrId];
-  return models?.[0]?.id || null;
+  if (!models || models.length === 0) return null;
+  const preferred = models.find(m => m.default || m.isDefault);
+  return preferred?.id || models[0]?.id || null;
 }
 
 // Providers whose registry uses dots in version numbers (e.g. "claude-sonnet-4.5").
