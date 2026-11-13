@@ -731,7 +731,8 @@
   "nvidia": {
     "baseUrl": "https://integrate.api.nvidia.com/v1/chat/completions",
     "validateUrl": "https://integrate.api.nvidia.com/v1/models",
-    "format": "openai"
+    "format": "openai",
+    "timeoutMs": 90000
   },
   "ollama-local": {
     "baseUrl": "http://localhost:11434/api/chat",
@@ -1287,6 +1288,112 @@
   },
   "synthetic": {
     "baseUrl": "https://api.synthetic.new/openai/v1/chat/completions",
+    "format": "openai"
+  },
+  "opendesign-go": {
+    "baseUrl": "https://amr-link.open-design.ai/v1/chat/completions",
+    "validateUrl": "https://amr-link.open-design.ai/v1/models",
+    "auth": {
+      "combined": true,
+      "header": "Authorization",
+      "scheme": "bearer"
+    },
+    "timeoutMs": 180000,
+    "retry": {
+      "502": {
+        "attempts": 1,
+        "delayMs": 2000
+      }
+    },
+    "usage": {
+      "url": "https://amr-api.open-design.ai/api/v1/workspaces"
+    },
+    "format": "openai",
+    "transports": [
+      {
+        "format": "openai",
+        "baseUrl": "https://amr-link.open-design.ai/v1/chat/completions",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      },
+      {
+        "format": "claude",
+        "baseUrl": "https://amr-link.open-design.ai/v1/messages",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer",
+          "anthropicVersion": true
+        }
+      },
+      {
+        "format": "openai-responses",
+        "baseUrl": "https://amr-link.open-design.ai/v1/responses",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      }
+    ]
+  },
+  "deeprelay": {
+    "baseUrl": "https://api.deeprelay.ai/v1/chat/completions",
+    "validateUrl": "https://api.deeprelay.ai/v1/models",
+    "usage": {
+      "url": "https://api.deeprelay.ai/v1/billing/balance"
+    },
+    "auth": {
+      "combined": true,
+      "header": "Authorization",
+      "scheme": "bearer"
+    },
+    "format": "openai",
+    "transports": [
+      {
+        "format": "openai",
+        "baseUrl": "https://api.deeprelay.ai/v1/chat/completions",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      },
+      {
+        "format": "claude",
+        "baseUrl": "https://api.deeprelay.ai/v1/messages",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer",
+          "anthropicVersion": true
+        }
+      },
+      {
+        "format": "openai-responses",
+        "baseUrl": "https://api.deeprelay.ai/v1/responses",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      }
+    ]
+  },
+  "sensenova": {
+    "baseUrl": "https://token.sensenova.cn/v1/chat/completions",
+    "validateUrl": "https://token.sensenova.cn/v1/models",
+    "quirks": {
+      "reasoningAliasFields": true
+    },
+    "format": "openai"
+  },
+  "runcrate": {
+    "baseUrl": "https://api.runcrate.ai/v1/chat/completions",
+    "validateUrl": "https://www.runcrate.ai/api/v1/billing/balance",
     "format": "openai"
   }
 }
