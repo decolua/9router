@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
-import { buildModelGroups, collectModelValues, NO_AUTH_PROVIDER_IDS } from "@/shared/utils/selectableModels.js";
+import { buildModelGroups, collectModelValues, NO_AUTH_PROVIDER_IDS, LIVE_CATALOG_PROVIDERS, liveModelCaps } from "@/shared/utils/selectableModels.js";
 
 // Regression: "+ Add All Active Models" on /dashboard/cli-tools/pi used to walk the
 // static provider registry over connection rows only, so it dropped every model the
@@ -144,5 +144,96 @@ describe("Add All Active Models uses the shared resolver", () => {
   it("is not registered as a source-only no-op: the button resolves at click time", () => {
     expect(cardSrc).toMatch(/const handleAddAllActiveModels = async \(\)/);
     expect(cardSrc).toContain("/api/models/disabled");
+  });
+});
+
+// Regression: the CLI-tool pickers only asked for live catalogs of cursor/cline/
+// clinepass/zed, while /api/providers/[id]/models also serves claude and
+// commandcode. Every commandcode model was therefore unreachable from the cards
+// and from "+ Add All Active Models", even though the provider page listed it:
+// /api/models is built from the static registry plus custom models, and a live
+// per-account catalog is neither.
+describe("live per-account catalogs", () => {
+  const commandcode = [
+    {
+      id: "deepseek/deepseek-v4.1-flash-fast",
+      name: "DeepSeek V4.1 Flash Fast (latest)",
+      contextLength: 1000000,
+      isVL: true,
+      isReasoning: true,
+    },
+  ];
+
+  it("asks for commandcode and claude as well", () => {
+    expect(LIVE_CATALOG_PROVIDERS).toEqual(
+      expect.arrayContaining(["cursor", "cline", "clinepass", "zed", "claude", "commandcode"])
+    );
+  });
+
+  it("surfaces a commandcode model under its alias", () => {
+    const groups = buildModelGroups({
+      connections: [{ id: "conn-1", provider: "commandcode", isActive: true }],
+      allConnections: [{ id: "conn-1", provider: "commandcode", isActive: true }],
+      modelAliases: {},
+      customModels: [],
+      disabledModels: {},
+      liveModels: { commandcode },
+    });
+
+    const values = collectModelValues(groups);
+    expect(values).toContain("cmc/deepseek/deepseek-v4.1-flash-fast");
+
+    const row = groups.commandcode.models.find((m) => m.id === "deepseek/deepseek-v4.1-flash-fast");
+    expect(row.caps).toEqual({ vision: true, reasoning: true, contextWindow: 1000000, maxOutput: undefined });
+  });
+
+  it("keeps providers whose catalog rows carry no capability fields", () => {
+    const values = collectModelValues(
+      buildModelGroups({
+        connections: [{ id: "conn-2", provider: "zed", isActive: true }],
+        allConnections: [{ id: "conn-2", provider: "zed", isActive: true }],
+        modelAliases: {},
+        customModels: [],
+        disabledModels: {},
+        liveModels: { zed: [{ id: "zed-model", name: "Zed Model" }] },
+      })
+    );
+
+    expect(values).toContain("zd/zed-model");
+    expect(liveModelCaps({ id: "zed-model", name: "Zed Model" })).toBeUndefined();
+  });
+});
+
+describe("live rows carry the provider's capability data through to caps", () => {
+  it("passes thinking_levels on, so a card can map real levels", () => {
+    const groups = buildModelGroups({
+      connections: [{ id: "c1", provider: "commandcode", isActive: true }],
+      allConnections: [{ id: "c1", provider: "commandcode", isActive: true }],
+      liveModels: {
+        commandcode: [
+          {
+            id: "deepseek/deepseek-v4.1-flash-fast",
+            name: "DeepSeek V4.1 Flash Fast",
+            contextLength: 1000000,
+            isVL: true,
+            isReasoning: true,
+            thinking_levels: ["none", "low", "high", "max"],
+          },
+        ],
+      },
+    });
+
+    const row = groups.commandcode.models.find((m) => m.value === "cmc/deepseek/deepseek-v4.1-flash-fast");
+    expect(row.caps.thinking_levels).toEqual(["none", "low", "high", "max"]);
+  });
+
+  it("reports caps for a row that only carries levels", () => {
+    expect(liveModelCaps({ id: "m", thinking_levels: ["low", "high"] })).toEqual({
+      vision: false,
+      reasoning: false,
+      contextWindow: undefined,
+      maxOutput: undefined,
+      thinking_levels: ["low", "high"],
+    });
   });
 });
