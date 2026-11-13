@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
@@ -75,8 +75,29 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [suggestedModels, setSuggestedModels] = useState([]);
   const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
+
+  // Auto-fetch suggested models from upstream /models on mount
+  useEffect(() => {
+    const activeConnection = connections.find((conn) => conn.isActive !== false);
+    if (!activeConnection) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/providers/${activeConnection.id}/models`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const ids = (data.models || [])
+          .map((m) => m.id || m.name || m.model)
+          .filter((id) => typeof id === "string" && id.trim() !== "");
+        setSuggestedModels([...new Set(ids)]);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [connections]);
 
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
@@ -122,7 +143,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     }
   };
 
-  const handleImport = async () => {
+  const handleFetchSuggestions = async () => {
     if (importing) return;
     const activeConnection = connections.find((conn) => conn.isActive !== false);
     if (!activeConnection) return;
@@ -132,30 +153,25 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to import models");
+        alert(data.error || "Failed to fetch models");
         return;
       }
       const models = data.models || [];
-      if (models.length === 0) {
-        alert("No models returned from /models.");
-        return;
-      }
-      let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name || model.model;
-        if (!modelId) continue;
-        if (allModels.some((entry) => entry.id === modelId)) continue;
-        await onAddCustomModel(modelId);
-        importedCount += 1;
-      }
-      if (importedCount === 0) {
-        alert("No new models were added.");
-      }
+      const ids = models
+        .map((m) => m.id || m.name || m.model)
+        .filter((id) => typeof id === "string" && id.trim() !== "");
+      setSuggestedModels([...new Set(ids)]);
     } catch (error) {
-      console.log("Error importing models:", error);
+      console.log("Error fetching models:", error);
     } finally {
       setImporting(false);
     }
+  };
+
+  const handleAddSuggested = async (modelId) => {
+    if (allModels.some((m) => m.id === modelId)) return;
+    await onAddCustomModel(modelId);
+    setSuggestedModels((prev) => prev.filter((id) => id !== modelId));
   };
 
   const canImport = connections.some((conn) => conn.isActive !== false);
@@ -163,7 +179,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
+        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or discover them from the /models endpoint.
       </p>
 
       <div className="flex items-end gap-2 flex-wrap">
@@ -182,14 +198,14 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
-        <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
-          {importing ? "Importing..." : "Import from /models"}
+        <Button size="sm" variant="secondary" icon="search" onClick={handleFetchSuggestions} disabled={!canImport || importing}>
+          {importing ? "Fetching..." : "Fetch /models"}
         </Button>
       </div>
 
       {!canImport && (
         <p className="text-xs text-text-muted">
-          Add a connection to enable importing models.
+          Add a connection to discover models from /models.
         </p>
       )}
 
@@ -210,6 +226,31 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
           ))}
         </div>
       )}
+
+      {/* Suggested models from /models endpoint — show only models not yet added */}
+      {suggestedModels.length > 0 && (() => {
+        const addedIds = new Set(allModels.map((m) => m.id));
+        const notAdded = suggestedModels.filter((id) => !addedIds.has(id));
+        if (notAdded.length === 0) return null;
+        return (
+          <div className="w-full mt-2">
+            <p className="text-xs text-text-muted mb-2">Suggested models from /models ({notAdded.length}):</p>
+            <div className="flex flex-wrap gap-2">
+              {notAdded.map((id) => (
+                <button
+                  key={id}
+                  onClick={() => handleAddSuggested(id)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                  title={id}
+                >
+                  <span className="material-symbols-outlined text-[13px]">add</span>
+                  {id}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
