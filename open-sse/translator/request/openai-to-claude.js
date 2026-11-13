@@ -173,7 +173,8 @@ Respond ONLY with the JSON object, no other text.`);
       result.tools.push({
         name: toolName,
         description: toolData.description || "",
-        input_schema: toolData.parameters || toolData.input_schema || { type: "object", properties: {}, required: [] }
+        input_schema: toolData.parameters || toolData.input_schema || { type: "object", properties: {}, required: [] },
+        ...(typeof toolData.strict === "boolean" ? { strict: toolData.strict } : {})
       });
     }
 
