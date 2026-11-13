@@ -142,7 +142,8 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   if (body.messages && Array.isArray(body.messages)) {
     for (let i = 0; i < body.messages.length; i++) {
       const msg = body.messages[i];
-      const role = msg.role;
+      // "developer" is the OpenAI o-series/AI SDK name for a system instruction.
+      const role = msg.role === ROLE.DEVELOPER ? ROLE.SYSTEM : msg.role;
       const content = msg.content;
 
       if (role === ROLE.SYSTEM && body.messages.length > 1) {
