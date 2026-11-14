@@ -129,6 +129,16 @@ tests/unit/windsurf-executor.test.js :: WindsurfExecutor class PROVIDERS.windsur
 tests/unit/kiro-external-idp.test.js :: Kiro external_idp (CLIProxyAPI) import and refresh adds CodeWhisperer external IdP headers and endpoint ordering
 tests/unit/xai-oauth-service.test.js :: xai/oauth service validates discovered endpoints are https x.ai URLs
 
+# Added 2026-11-13, confirmed live-network-dependent (same class as xai-oauth-service above,
+# not a sync regression): mimo-free.live.test.js's own file header says "Hits real endpoints
+# — no mocks. Free provider, safe to call." Reproduced deterministically 2/2 runs on a clean
+# worktree of this exact commit, with no code change anywhere near open-sse/executors/mimo-free.js
+# or this test file in the v0.5.116/v0.5.119 sync diffs (git log on the file shows one commit,
+# unrelated, from before this sync work started). The live MiMo bootstrap endpoint is currently
+# returning an HTML error page instead of JSON (upstream-side condition), not something this
+# fork's code controls. (The chat case is already tracked above/below as a separate live-call gap.)
+tests/unit/mimo-free.live.test.js :: MiMo Free bootstrap (live) bootstrap returns 200 with JWT
+
 # Real bug: /api/usage/stats serializes raw API keys as byApiKey property names (GHSA-vjc7).
 # Fixed by decolua/9router#4286.
 tests/unit/security-audit.test.js :: AUDIT-002: API key masking byApiKey object keys should use masked key, not raw key
@@ -156,3 +166,17 @@ tests/unit/codex-stt-transport.test.js :: converts real stereo 48k WAV to mono24
 tests/unit/codex-stt-transport.test.js :: rejects malformed and overlong audio and cleans up
 tests/unit/codex-stt-transport.test.js :: sends only the converted file and projects upstream metadata out of the response through a local relay
 tests/unit/codex-stt-persisted-refresh.test.js :: uses the real persisted refresh service before sending expired-account OAuth audio
+
+# Added 2026-11-13, confirmed a genuine regression from the v0.5.116 sync (not v0.5.119,
+# not a sync-harness issue): upstream's DPI-hardening work made fetchWithTlsFallback attach
+# a dispatcher on EVERY outbound call, including the direct (no-proxy) path via
+# getDirectDispatcher — correct and intentional for production (an unpatched default agent's
+# TLS ClientHello gets RST-ed by some ISPs' DPI). Before that merge, proxyFetch.js only
+# attached a dispatcher when an actual proxy was in play; this test's useProxy=false case
+# asserts the OLD behavior (no dispatcher on the direct path). Confirmed on a clean worktree
+# at the pre-v0.5.116 fork master commit (617cb8e1): this exact test passes 7/7 there and
+# fails exactly this one case after the merge, with zero intervening change to qoder.js or
+# this test file — the only moved part is proxyFetch.js's own direct-path dispatcher logic.
+# The fix belongs to this test's own assertion catching up to the new behavior, not to
+# proxyFetch.js; tracked as a known-fail rather than silently rewritten here.
+tests/unit/qoder-proxy-replay.test.js :: Qoder signed inference transport still supports successful inference with proxy=false

@@ -149,6 +149,8 @@ import p146 from "./chatgpt-web.js";
 import p147 from "./veoaifree-web.js";
 import p151 from "./uc-web.js";
 import p158 from "./nace.js";
+import p159 from "./sensenova-intl.js";
+import p160 from "./synthetic.js";
 export default [
   p0,
   p1,
@@ -298,4 +300,6 @@ export default [
   p156,
   p157,
   p158,
+  p159,
+  p160,
 ];

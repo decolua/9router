@@ -9,6 +9,14 @@ import {
   isFreshSocketReplayEnabled,
 } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { ensureClaudeCliVersion, applyClaudeCliVersion } from "./claudeCliVersion.js";
+
+const CLAUDE_UA_PROBE = /claude-cli\/\d/;
+function hasClaudeCliHeader(headers) {
+  if (!headers) return false;
+  const values = headers instanceof Headers ? [...headers.values()] : Array.isArray(headers) ? headers.map((h) => h[1]) : Object.values(headers);
+  return values.some((v) => typeof v === "string" && CLAUDE_UA_PROBE.test(v));
+}
 
 const proxyDispatchers = new Map();
 const directDispatchers = new Map();
@@ -27,20 +35,34 @@ export function isStaleSocketError(error) {
   return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
 }
 
-// Captured at module load, before any test can stub it — this is the real
-// runtime's fetch, which in Node is already undici-backed, so calling through
-// it changes nothing for production traffic.
-const nativeFetch = globalThis.fetch;
-
-// Always fetch through the package's own undici instance: undici 8 rejects
-// dispatchers created by a different undici copy (UND_ERR_INVALID_ARG on the
-// bundled-in-Node global fetch), so originalFetch/globalThis.fetch is not an
-// option once we build our own Agents — UNLESS a test has replaced
-// globalThis.fetch after load (vi.stubGlobal("fetch", ...)), in which case the
-// mock must receive the call instead of a real network request going out.
+// rawFetch must reach either (a) undici's own fetch — so a test's
+// vi.mock("undici") can intercept it and inspect the dispatcher argument, the
+// only way to observe that part of this module's behavior — or (b) a test's
+// direct global.fetch stub, when one is active. Telling those apart can't be
+// a one-time capture at module-load: this module patches globalThis.fetch to
+// patchedFetch below, and under Vitest that patch outlives vi.resetModules()
+// (resetModules clears the module registry, not globalThis side effects a
+// previous import made) — so whichever reference gets captured first when a
+// test's own global.fetch stub happens to run before this module's very first
+// evaluation in the worker becomes a permanently wrong "native fetch" for
+// every later test in that worker (confirmed: the exact failure this
+// produced — only ever the FIRST test in a worker, because its stub becomes
+// the wrongly-cached stash). IS_PATCHED_FETCH tags every patchedFetch instance
+// with whatever it was layered on top of, chaining through prior patches
+// instead of re-wrapping them — unwrapping through that chain finds today's
+// real underlying target reliably. Telling that target apart from an
+// untouched native fetch needs a signal checked fresh on every call, with no
+// capture to go stale: Node's native fetch lazy-requires its own bundled
+// undici internally (see its own source), so checking for that in its
+// toString() works and can never be fooled by a vi.fn() mock, which stringifies
+// to "() => {}" / "function () {}", not Node's real implementation body.
+const IS_PATCHED_FETCH = Symbol.for("9router.proxyFetch.underlyingFetch");
+const isNativeFetch = (fn) => typeof fn === "function" && fn.toString().includes("internal/deps/undici");
 let undiciFetch = null;
 async function rawFetch(url, options) {
-  if (globalThis.fetch !== nativeFetch) return globalThis.fetch(url, options);
+  const current = globalThis.fetch;
+  const real = current?.[IS_PATCHED_FETCH] ?? current;
+  if (!isNativeFetch(real)) return real(url, options);
   undiciFetch ??= (await import("undici")).fetch;
   return undiciFetch(url, options);
 }
@@ -171,6 +193,25 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+/** scheme://host:port only — never credentials. */
+function safeProxyHost(proxyUrl) {
+  try {
+    const parsed = new URL(String(proxyUrl));
+    return `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+  } catch {
+    return "unparseable-proxy-url";
+  }
+}
+
+/** Destination host only, never the full URL (which may carry a query/path). */
+function safeTargetHost(url) {
+  try {
+    return new URL(typeof url === "string" ? url : url.toString()).host;
+  } catch {
+    return "unparseable-url";
+  }
+}
+
 /**
  * Resolve real IP using Google DNS (bypass system DNS)
  */
@@ -276,8 +317,7 @@ const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
 // autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
 // families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
 // one broken-family network by breaking the other (see claude-code#20240).
-// requestTls must stay TLS-options-only (undici 8 rejects connect-level options there
-// with UND_ERR_INVALID_ARG).
+// requestTls must stay TLS-options-only (connect-level options belong in `connect`).
 const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 };
 function buildConnectOptions(insecure) {
   return { ...EYEBALLS_CONNECT, ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) };
@@ -458,6 +498,13 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 }
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  // Keep the spoofed Claude Code version current (new models require a minimum CLI version).
+  // Refresh in the background: the request uses the version already known, so an
+  // unreachable npm registry can never add latency to the chat path.
+  if (hasClaudeCliHeader(options?.headers)) {
+    void ensureClaudeCliVersion(rawFetch);
+    options = { ...options, headers: applyClaudeCliVersion(options.headers) };
+  }
   const targetUrl = typeof url === "string" ? url : url.toString();
 
   // Vercel relay: forward request via relay headers
@@ -494,6 +541,26 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
   const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options?.forceFreshSocket === true;
+
+  // Protocol adapters that own their transport (wreq-js TLS impersonation)
+  // cannot use an undici dispatcher: they must drive the proxy themselves.
+  // Only adapters that declare `proxyCapable` opt in — any other adapter
+  // ignores the proxy URL and would leave over the direct interface, so they
+  // keep the undici path below.
+  if (proxyUrl && options?.directFetch?.proxyCapable === true) {
+    try {
+      const res = await options.directFetch(url, { ...options, proxyUrl }, proxyUrl);
+      // Reported only after the adapter that holds the tunnel returned.
+      const via = res?.headers?.get?.("x-9r-proxy-via");
+      dbg("PROXY", `PROXY ROUTING VERIFIED | ${safeTargetHost(targetUrl)} | transport=adapter | proxy=${via || safeProxyHost(proxyUrl)} | status=${res?.status}`);
+      return res;
+    } catch (err) {
+      if (proxyOptions?.strictProxy === true) {
+        throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${err.message}`);
+      }
+      throw err;
+    }
+  }
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {
@@ -555,6 +622,12 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
 async function patchedFetch(url, options = {}) {
   return proxyAwareFetch(url, options, null);
 }
+
+// Tag this patch with the real fetch it wraps — chaining through any prior
+// patch already on globalThis.fetch (see IS_PATCHED_FETCH above) rather than
+// re-wrapping it, so a double-patch (e.g. two modules re-importing this file)
+// still bottoms out at the one true underlying fetch.
+patchedFetch[IS_PATCHED_FETCH] = globalThis.fetch?.[IS_PATCHED_FETCH] ?? globalThis.fetch;
 
 // Idempotency guard — only patch once to avoid wrapping multiple times
 if (globalThis.fetch !== patchedFetch) {

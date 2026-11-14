@@ -29,7 +29,7 @@ This fork is useful when you want:
 
 ## Current Base
 
-This fork is currently synced with upstream `decolua/9router` **v0.5.112**.
+This fork is currently synced with upstream `decolua/9router` **v0.5.119**.
 
 Current fork release:
 
