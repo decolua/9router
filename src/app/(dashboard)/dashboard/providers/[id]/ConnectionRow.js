@@ -36,7 +36,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     }
     return autoPing.provider === "codex"
       ? "Auto-starts the next 5h Codex window after reset or on schedule. Click to configure."
-      : "Auto-starts a new window on quota reset or fixed schedule. Click to configure.";
+      : autoPing.provider === "antigravity"
+        ? "Auto-starts the next 5h Antigravity window after reset or on schedule. Click to configure."
+        : "Auto-starts a new window on quota reset or fixed schedule. Click to configure.";
   })();
 
   let maskedProxyUrl = "";
