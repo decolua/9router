@@ -265,13 +265,46 @@ export const QODER_STATIC_MODEL_CONFIGS = Object.freeze({
 });
 
 /**
- * Static `model_config` for a canonical Qoder key, or null when there is no
- * block for it (so genuinely unknown keys still fail loudly). Returns a fresh
- * copy — callers may mutate `key` while aligning the alias path.
- */
+* Static `model_config` for a canonical Qoder key, or null when there is no
+* block for it (so genuinely unknown keys still fail loudly). Returns a fresh
+* copy — callers may mutate `key` while aligning the alias path.
+*/
 export function getQoderStaticModelConfig(key) {
-  const cfg = QODER_STATIC_MODEL_CONFIGS[key];
-  return cfg ? { ...cfg, key } : null;
+ const cfg = QODER_STATIC_MODEL_CONFIGS[key];
+ return cfg ? { ...cfg, key } : null;
+}
+
+/**
+* Accepts a Qoder model as either a canonical slot key (`qmodel_latest`) or a
+* display name ("Qwen4-Max-Preview", "qwen4 max preview" — case-insensitive,
+* spaces/underscores tolerated) and returns the canonical key.
+*
+* Wire keys are recycled slot aliases, not model names: qmodel_latest was
+* Qwen3.7-Max and now carries Qwen4-Max-Preview. Letting clients pass the
+* display name means they never have to know the slot. Returns the input
+* unchanged when it is already a known key or not a known display name — the
+* executor's model_config resolution decides whether it is routable.
+*/
+const QODER_DISPLAY_NAME_TO_KEY = (() => {
+ const map = new Map();
+ for (const [key, cfg] of Object.entries(QODER_STATIC_MODEL_CONFIGS)) {
+   if (cfg.display_name) map.set(normalizeQoderModelName(cfg.display_name), key);
+ }
+ return map;
+})();
+
+function normalizeQoderModelName(name) {
+ return String(name || "")
+   .trim()
+   .toLowerCase()
+   .replace(/[\s_]+/g, "-");
+}
+
+export function resolveQoderModelKey(modelStr) {
+ const raw = String(modelStr || "").replace(/^qoder\//, "");
+ if (!raw) return raw;
+ if (Object.prototype.hasOwnProperty.call(QODER_MODEL_MAP, raw)) return QODER_MODEL_MAP[raw];
+ return QODER_DISPLAY_NAME_TO_KEY.get(normalizeQoderModelName(raw)) || raw;
 }
 
 /**

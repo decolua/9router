@@ -33,6 +33,7 @@ import {
   QODER_CHAT_SIG_PATH,
   QODER_CONTEXT_TIER_ENV,
   getQoderStaticModelConfig,
+  resolveQoderModelKey,
   qoderChatModelConfig,
   qoderInferenceBase,
   qoderQuotaUsageUrl,
@@ -285,7 +286,10 @@ async function resolveQoderModelConfig({ qoderKey, credentials, log, proxyOption
 }
 
 async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl", modelConfig: preResolvedConfig = null }) {
-  const qoderKey = String(model || "").replace(/^qoder\//, "");
+  // Accepts both the canonical slot key (qmodel_latest) and the display name
+  // ("Qwen4-Max-Preview") — slot keys are recycled aliases, so the display
+  // name is the stable way for a client to ask for a specific model.
+  const qoderKey = resolveQoderModelKey(model);
 
   // The catalog entry carries the wire config the request must echo (window,
   // reasoning flag, tier list). It is resolved here unless the caller already
@@ -1066,7 +1070,7 @@ export class QoderExecutor extends BaseExecutor {
     // 16.3s). Free-tier rows stay on COSY (gRPC refuses them with 116), and any
     // gRPC failure falls through to the COSY path below, so a request that works
     // today cannot start failing.
-    const qoderKey = String(model || "").replace(/^qoder\//, "");
+    const qoderKey = resolveQoderModelKey(model);
     let modelConfig = null;
     try {
       modelConfig = await resolveQoderModelConfig({ qoderKey, credentials, log, proxyOptions, signal, region: this.region });
