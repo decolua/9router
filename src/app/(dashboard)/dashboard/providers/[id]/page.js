@@ -1302,8 +1302,8 @@ export default function ProviderDetailPage() {
           </button>
         )}
 
-        {/* Import Cline /models catalog button — only show for cline and clinepass providers */}
-        {(providerId === "cline" || providerId === "clinepass") && connections.some((conn) => conn.isActive !== false) && (
+        {/* Import /models catalog button — only show for cline, clinepass and synthetic */}
+        {(providerId === "cline" || providerId === "clinepass" || providerId === "synthetic") && connections.some((conn) => conn.isActive !== false) && (
           <button
             onClick={handleImportClineModels}
             disabled={importingClineModels}
