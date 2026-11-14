@@ -1,6 +1,6 @@
 // RTK port: compress tool_result content in LLM request bodies
 // Applied in chatCore on the source-format body, before translateRequest.
-import { RAW_CAP, MIN_COMPRESS_SIZE, HEADROOM_TOOL_OUTPUT_MAX_DEPTH } from "./constants.js";
+import { RAW_CAP, MIN_COMPRESS_SIZE, JSON_GUARD_MAX_BYTES, HEADROOM_TOOL_OUTPUT_MAX_DEPTH } from "./constants.js";
 import { OPENAI_BLOCK, RESPONSES_ITEM } from "../translator/schema/index.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
@@ -136,9 +136,23 @@ function compressGeminiFormat(contents) {
     if (depth > HEADROOM_TOOL_OUTPUT_MAX_DEPTH) return;
     const value = object?.[key];
     if (typeof value === "string") {
+      if (value.length < MIN_COMPRESS_SIZE || value.length > RAW_CAP) {
+        stats.bytesBefore += value.length;
+        stats.bytesAfter += value.length;
+        return;
+      }
       const trimmed = value.trim();
       if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-        try { JSON.parse(trimmed); return; } catch { /* plain text */ }
+        if (
+          trimmed.length > JSON_GUARD_MAX_BYTES &&
+          ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+            (trimmed.startsWith("[") && trimmed.endsWith("]")))
+        ) {
+          return;
+        }
+        if (trimmed.length <= JSON_GUARD_MAX_BYTES) {
+          try { JSON.parse(trimmed); return; } catch { /* plain text */ }
+        }
       }
       object[key] = compressText(value, stats, "gemini-tool-result");
     } else if (Array.isArray(value)) {

@@ -1,5 +1,5 @@
 // Tests for Gemini / Antigravity / Gemini-CLI / Vertex format RTK support
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { compressMessages } from "../../open-sse/rtk/index.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
@@ -219,6 +219,35 @@ describe("Gemini & Antigravity format RTK support", () => {
     expect(stats.hits.length).toBe(0);
     expect(() => JSON.parse(body.contents[0].parts[0].functionResponse.response.content)).not.toThrow();
     expect(body.contents[0].parts[0].functionResponse.response.content).toBe(jsonString);
+  });
+
+  it("skips JSON.parse allocation on large (>64KiB) JSON-shaped strings while preserving content", () => {
+    const largeJson = JSON.stringify(
+      { items: Array.from({ length: 2500 }, () => "duplicate-large-json-entry-padding") },
+      null,
+      2
+    );
+    expect(largeJson.length).toBeGreaterThan(65536);
+
+    const body = {
+      contents: [
+        {
+          role: "user",
+          parts: [{ functionResponse: { id: "c_big_json", name: "FetchData", response: { content: largeJson } } }],
+        },
+      ],
+    };
+
+    const parseSpy = vi.spyOn(JSON, "parse");
+    try {
+      const stats = compressMessages(body, true);
+      expect(parseSpy).not.toHaveBeenCalled();
+      expect(stats).not.toBeNull();
+      expect(stats.hits.length).toBe(0);
+      expect(body.contents[0].parts[0].functionResponse.response.content).toBe(largeJson);
+    } finally {
+      parseSpy.mockRestore();
+    }
   });
 
   it("returns null when RTK is disabled", () => {

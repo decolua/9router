@@ -1,6 +1,7 @@
 // RTK port constants (mirror Rust defaults)
 export const RAW_CAP = 10 * 1024 * 1024;      // 10 MiB
 export const MIN_COMPRESS_SIZE = 500;          // bytes; skip tiny blobs
+export const JSON_GUARD_MAX_BYTES = 64 * 1024; // 64 KiB cap for JSON.parse check
 export const HEADROOM_TOOL_OUTPUT_MAX_DEPTH = 8; // bound native tool-output traversal
 export const DETECT_WINDOW = 1024;             // autodetect peeks first N chars
 export const GIT_DIFF_HUNK_MAX_LINES = 100;    // per-hunk line cap
