@@ -89,6 +89,16 @@ export const QUOTA_AUTOPING_CONFIG = {
       pingInstructions: "Reply with OK.",
       pingReasoningEffort: "none",
     },
+    antigravity: {
+      settingsKey: "antigravityAutoPing",
+      quotaKey: "gemini_session",
+      minPingIntervalMs: 600000,
+      skipWhenBlockingQuotaExhausted: true,
+      // gemini-3.8-flash-low is the lightweight model for auto-pinging Antigravity 5h reset window.
+      pingModel: "gemini-3.8-flash-low",
+      pingText: "hi",
+      pingMaxTokens: 1,
+    },
   },
 };
 
