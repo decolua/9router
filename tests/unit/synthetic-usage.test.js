@@ -48,6 +48,23 @@ describe("getUsageForProvider(synthetic)", () => {
     });
   });
 
+  it("prefers the weekly credit pool over the retired subscription counter", async () => {
+    for (const key of ["weeklyTokenLimit", "planWeeklyLimit"]) {
+      vi.mocked(proxyAwareFetch).mockResolvedValue(
+        jsonResponse({
+          subscription: { limit: 500, requests: 0, renewsAt: "2026-12-01T00:00:00.000Z" },
+          [key]: { percentRemaining: 34.47, nextRegenAt: "2026-11-14T01:15:00.000Z" },
+        }),
+      );
+      const out = await getUsageForProvider({ provider: "synthetic", apiKey: "k" });
+      expect(out.quotas.Requests).toBeUndefined();
+      expect(out.quotas.Weekly).toMatchObject({
+        used: 65.53, total: 100, remaining: 34.47, percentage: 66, colorPercentage: 34,
+        resetAt: "2026-11-14T01:15:00.000Z",
+      });
+    }
+  });
+
   it("reports auth failure", async () => {
     vi.mocked(proxyAwareFetch).mockResolvedValue(jsonResponse({}, 401));
     const out = await getUsageForProvider({ provider: "synthetic", apiKey: "bad" });

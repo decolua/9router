@@ -41,6 +41,32 @@ export async function getSyntheticUsage(apiKey = null, proxyOptions = null) {
     }
 
     const data = await response.json().catch(() => ({}));
+    // Weekly credit pool (what synthetic.new/billing shows). `subscription` is the retired counter.
+    const weekly = [data?.planWeeklyLimit, data?.weeklyTokenLimit].find(
+      (w) => w && Number.isFinite(Number(w.percentRemaining)),
+    );
+    if (weekly) {
+      const left = Math.min(100, Math.max(0, Number(weekly.percentRemaining)));
+      const used = Math.round((100 - left) * 100) / 100;
+      return {
+        plan: "Synthetic",
+        quotas: {
+          Weekly: {
+            name: "Weekly credits",
+            used,
+            total: 100,
+            percentage: Math.round(used),
+            colorPercentage: Math.round(left),
+            percentageIsUsed: true,
+            remaining: Math.round(left * 100) / 100,
+            unlimited: false,
+            // Next 2% regen tick, not a full reset.
+            resetAt: parseResetTime(weekly.nextRegenAt),
+          },
+        },
+      };
+    }
+
     const sub = data?.subscription;
     if (!sub || typeof sub !== "object") {
       return { plan: "Synthetic", message: "Synthetic returned no subscription quota." };
