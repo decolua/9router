@@ -26,7 +26,8 @@ export function buildSystemoneUrl(override, cfg) {
 /**
  * Core System One (Jev) handler — native decision payload pass-through.
  * URL/headers come from the registry's systemoneConfig; body and JSON response
- * are forwarded untouched (decision models have no chat translation layer).
+ * are forwarded untouched (decision models have no chat translation layer), except that
+ * Cloudflare's { result } envelope is unwrapped.
  *
  * @returns {Promise<{ success: boolean, response: Response, usage?: object, status?: number, error?: string }>}
  */
@@ -111,6 +112,12 @@ export async function handleSystemoneCore({
     responseBody = await providerResponse.json();
   } catch {
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+  }
+
+  // Cloudflare's REST API wraps the answer as { result: {...}, success, errors, messages }.
+  // Callers speak System One, so hand them the inner result like any other provider's.
+  if (responseBody?.result?.answers && !responseBody.answers) {
+    responseBody = responseBody.result;
   }
 
   if (onRequestSuccess) await onRequestSuccess();
