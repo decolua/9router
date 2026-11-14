@@ -28,6 +28,12 @@ export default {
       kind: "stt"
     },
     {
+      id: "scribe_v3",
+      name: "Scribe v3",
+      params: ["language", "response_format", "timestamps_granularity", "tag_audio_events", "diarize", "num_speakers"],
+      kind: "stt"
+    },
+    {
       id: "scribe_v2",
       name: "Scribe v2",
       params: ["language", "response_format", "timestamps_granularity", "tag_audio_events", "diarize", "num_speakers"],
@@ -40,13 +46,10 @@ export default {
     authHeader: "xi-api-key",
     format: "elevenlabs",
     models: [
+      // Default only — the selectable list lives in config/ttsModels.js.
       {
-        id: "eleven_multilingual_v2",
-        name: "Eleven Multilingual v2"
-      },
-      {
-        id: "eleven_turbo_v2_5",
-        name: "Eleven Turbo v2.5"
+        id: "eleven_v4",
+        name: "Eleven v4"
       }
     ]
   },
