@@ -21,21 +21,47 @@ export async function fetchElevenLabsVoices(apiKey) {
   return voices;
 }
 
+// OpenAI-style response_format → ElevenLabs output_format. PCM/WAV at 24 kHz match
+// OpenAI's `pcm` and stay available below the Pro tier (44.1 kHz is Pro-only).
+const OUTPUT_FORMATS = {
+  mp3: { param: "mp3_44100_128", format: "mp3" },
+  opus: { param: "opus_48000_128", format: "opus" },
+  wav: { param: "wav_24000", format: "wav" },
+  pcm: { param: "pcm_24000", format: "pcm" },
+};
+
+// ElevenLabs-native request fields a client may pass through on /v1/audio/speech.
+// Anything omitted keeps the voice's own stored settings (nothing is forced here).
+const PASSTHROUGH_FIELDS = [
+  "voice_settings",
+  "seed",
+  "apply_text_normalization",
+  "previous_text",
+  "next_text",
+  "pronunciation_dictionary_locators",
+];
+
 export default {
-  async synthesize(text, model, credentials) {
+  async synthesize(text, model, credentials, responseFormat, { language, options } = {}) {
     if (!credentials?.apiKey) throw new Error("ElevenLabs API key required");
     let modelId = "eleven_flash_v2_5";
     let voiceId = model;
     if (model && model.includes("/")) [modelId, voiceId] = model.split("/");
 
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    // response_format "json" is the router's base64 envelope, not a codec → mp3.
+    const out = OUTPUT_FORMATS[responseFormat] || OUTPUT_FORMATS.mp3;
+
+    const body = { text, model_id: modelId };
+    if (language) body.language_code = language;
+    for (const key of PASSTHROUGH_FIELDS) {
+      if (options?.[key] !== undefined) body[key] = options[key];
+    }
+
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${out.param}`;
+    const res = await fetch(url, {
       method: "POST",
       headers: { "xi-api-key": credentials.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        model_id: modelId,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -43,6 +69,6 @@ export default {
     }
     const buf = await res.arrayBuffer();
     if (buf.byteLength < 1024) throw new Error("ElevenLabs TTS returned empty audio");
-    return { base64: Buffer.from(buf).toString("base64"), format: "mp3" };
+    return { base64: Buffer.from(buf).toString("base64"), format: out.format };
   },
 };
