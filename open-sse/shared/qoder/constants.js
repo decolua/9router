@@ -169,6 +169,7 @@ export const QODER_MODEL_MAP = {
   qmodel: "qmodel",
   qfmodel: "qfmodel",
   qmodel_latest: "qmodel_latest",
+  qmodel_preview: "qmodel_preview",
   qmodel_38max: "qmodel_38max",
   dmodel: "dmodel",
   dfmodel: "dfmodel",
@@ -235,6 +236,32 @@ export const QODER_STATIC_MODEL_CONFIGS = Object.freeze({
     is_reasoning: true,
     max_input_tokens: 180000,
   }),
+  // Everything else the registry advertises. A per-account /model/list omits
+  // models the account is entitled to (production hit this with qmodel_latest:
+  // a 400 "model_config not yet known" in 205ms, never reaching upstream). The
+  // chat endpoint does not validate model_config.key against the catalog, so a
+  // static block makes the model routable. A live catalog entry always wins.
+  ultimate: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "ultimate", display_name: "Ultimate", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  auto: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "auto", display_name: "Auto", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  performance: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "performance", display_name: "Performance", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  efficient: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "efficient", display_name: "Efficient", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  lite: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "lite", display_name: "Lite", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  qmodel_38max: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qmodel_38max", display_name: "Qwen3.8-Max", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  // Qoder recycles slot keys: the live catalog (ide-text v1.0.357, 2026-11-11)
+  // publishes qmodel_latest as "Qwen4-Max-Preview" (enable:false but usable)
+  // and qmodel_preview as "Qwen3.8-Max-Preview" (2.4T params). A live catalog
+  // entry always wins over these display names.
+  qmodel_latest: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qmodel_latest", display_name: "Qwen4-Max-Preview", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  qmodel_preview: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qmodel_preview", display_name: "Qwen3.8-Max-Preview", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  qmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qmodel", display_name: "Qwen3.7-Plus", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  qfmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qfmodel", display_name: "Qwen3.8-Flash", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  kmodel_latest: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "kmodel_latest", display_name: "Kimi-K3.1-Pro", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  kmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "kmodel", display_name: "Kimi-K2.8-Preview", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  gmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "gmodel", display_name: "GLM-5.3", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  gfmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "gfmodel", display_name: "GLM-5.3-Flash", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  dmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "dmodel", display_name: "DeepSeek-V4-Pro", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  dfmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "dfmodel", display_name: "DeepSeek-Flash", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  mmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "mmodel", display_name: "MiniMax-M3.1-Flash", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
 });
 
 /**

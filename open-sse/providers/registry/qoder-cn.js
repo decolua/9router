@@ -32,7 +32,10 @@ export default {
     { id: "efficient", name: "Efficient" },
     { id: "lite", name: "Lite" },
     { id: "qmodel_38max", name: "Qwen3.8-Max" },
-    { id: "qmodel_latest", name: "Qwen3.7-Max" },
+    // Same slot-recycling as the intl registry — live catalog publishes
+    // qmodel_latest as "Qwen4-Max-Preview" (ide-text v1.0.357, 2026-11-11).
+    { id: "qmodel_latest", name: "Qwen4-Max-Preview" },
+    { id: "qmodel_preview", name: "Qwen3.8-Max-Preview" },
     { id: "qmodel", name: "Qwen3.7-Plus" },
     { id: "qfmodel", name: "Qwen3.8-Flash" },
     { id: "kmodel_latest", name: "Kimi-K3" },
