@@ -1,7 +1,7 @@
 import { loadState, saveState, generateShortId } from "../shared/state.js";
 import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
 import { clearPid } from "./pid.js";
-import { waitForHealth, probeUrlAlive } from "./healthCheck.js";
+import { probeUrlAlive } from "./healthCheck.js";
 import { WORKER_URL } from "./config.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
@@ -66,9 +66,10 @@ export async function enableTunnel(localPort = 20128) {
     const onUrlUpdate = async (url) => {
       if (token.cancelled) return;
       console.log(`[Tunnel] url updated: ${url}`);
-      await registerTunnelUrl(shortId, url);
       saveState({ shortId, tunnelUrl: url });
       await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
+      // The optional short-link worker must not take down a live quick tunnel.
+      registerTunnelUrl(shortId, url).catch((error) => console.warn(`[Tunnel] short-link update failed: ${error.message}`));
     };
 
     // Register exit handler BEFORE spawn so it fires even on early exit
@@ -82,20 +83,29 @@ export async function enableTunnel(localPort = 20128) {
     throwIfCancelled(token);
 
     const publicUrl = `https://r${shortId}.abc-tunnel.us`;
-    await registerTunnelUrl(shortId, tunnelUrl);
+    try {
+      await registerTunnelUrl(shortId, tunnelUrl);
+    } catch (error) {
+      console.warn(`[Tunnel] short-link registration failed: ${error.message}`);
+    }
     saveState({ shortId, tunnelUrl });
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
     console.log(`[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`);
 
-    // Verify publicUrl first (worker route is reliable; direct *.trycloudflare.com DNS may lag)
-    await waitForHealth(publicUrl, token);
-    console.log("[Tunnel] public URL healthy");
-    // Direct tunnel probe is best-effort: DNS for *.trycloudflare.com can be slow/blocked
-    if (!(await probeUrlAlive(tunnelUrl))) {
-      console.warn("[Tunnel] direct URL not reachable yet, continuing via publicUrl");
-    } else {
-      console.log("[Tunnel] direct URL healthy");
+    // A new TryCloudflare hostname may briefly return 530 while the edge
+    // propagates. The cloudflared child is connected and retries itself, so
+    // persist the route and report success; later traffic/watchdog verifies it.
+    const [directHealthy, shortHealthy] = await Promise.all([
+      probeUrlAlive(tunnelUrl),
+      probeUrlAlive(publicUrl),
+    ]);
+    if (!directHealthy && !shortHealthy) {
+      console.warn("[Tunnel] endpoints not reachable yet; keeping connected cloudflared for edge propagation");
     }
+    if (directHealthy) console.log("[Tunnel] direct URL healthy");
+    else console.warn("[Tunnel] direct URL not reachable yet, continuing while it propagates");
+    if (shortHealthy) console.log("[Tunnel] short URL healthy");
+    else console.warn("[Tunnel] short URL not reachable yet, continuing while it propagates");
 
     console.log("[Tunnel] enable success");
     return { success: true, tunnelUrl, shortId, publicUrl };
