@@ -200,6 +200,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
     if (provider === "codex") {
+      if (Array.isArray(translatedBody.input)) {
+        translatedBody.input = translatedBody.input.map((item) => {
+          if (item?.type !== "additional_tools" || !("content" in item)) return item;
+          const { content, ...normalizedItem } = item;
+          return normalizedItem;
+        });
+      }
       const suffixThinking = {};
       applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
       if (suffixThinking.reasoning_effort) {
