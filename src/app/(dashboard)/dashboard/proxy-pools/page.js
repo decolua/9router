@@ -707,6 +707,7 @@ export default function ProxyPoolsPage() {
           <label className="flex items-center gap-2 text-xs text-text-muted">
             Status
             <select
+              id="proxy-pool-status-filter"
               value={statusFilter}
               disabled={bulkBusy || healthChecking}
               onChange={(event) => { setStatusFilter(event.target.value); clearSelection(); }}
