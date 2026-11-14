@@ -43,6 +43,7 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
 // Cooldown durations (ms)
 const COOLDOWN = {
+  day: 24 * 60 * 60 * 1000,
   long: 2 * 60 * 1000,
   short: 5 * 1000,
 };
@@ -62,6 +63,12 @@ export const ERROR_RULES = [
   // Intl gateway blocks affect the account/IP, so let the connection back off.
   { provider: "codebuddy-intl", text: "request illegal", backoff: true },
   { provider: "codebuddy-intl", text: "conversation id missing", backoff: true },
+  // Antigravity (Google Cloud Code) terms violation and validation errors are account-level locks.
+  // Set 24h cooldown to prevent the 2-minute retry loop against a suspended or unvalidated account.
+  { provider: "antigravity", text: "tos_violation", cooldownMs: COOLDOWN.day },
+  { provider: "antigravity", text: "validation_required", cooldownMs: COOLDOWN.day },
+  { provider: "ag", text: "tos_violation", cooldownMs: COOLDOWN.day },
+  { provider: "ag", text: "validation_required", cooldownMs: COOLDOWN.day },
   // NVIDIA NIM returns 400 with "degraded" when specific model cluster is unhealthy.
   // Lock only the degraded model (modelScoped: true) without locking the API key.
   { provider: "nvidia", text: "degraded", cooldownMs: 15 * 60 * 1000, modelScoped: true },
