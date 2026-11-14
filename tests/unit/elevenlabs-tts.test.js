@@ -100,6 +100,32 @@ describe("ElevenLabs TTS", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("bad voice");
   });
+
+  it("reads the OpenAI-style voice field when the model carries no voice", async () => {
+    const { url } = await synth({ model: "eleven_v4", options: { voice: "voiceABC" } });
+    expect(url.pathname).toBe("/v1/text-to-speech/voiceABC");
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body).model_id).toBe("eleven_v4");
+  });
+
+  it("prefers the voice inside the model string over the voice field", async () => {
+    const { url } = await synth({ model: "eleven_v4/inModel", options: { voice: "voiceABC" } });
+    expect(url.pathname).toBe("/v1/text-to-speech/inModel");
+  });
+
+  it("keeps a bare voice id working as before", async () => {
+    const { url, sent } = await synth({ model: "voice123", options: { voice: "alloy" } });
+    expect(url.pathname).toBe("/v1/text-to-speech/voice123");
+    expect(sent.model_id).toBe("eleven_flash_v2_5");
+  });
+
+  it("reports request faults (bad voice) as 400 and passes other statuses through", async () => {
+    global.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ detail: { message: "voice not found" } }), { status: 404 }));
+    const bad = await handleTtsCore({ provider: "elevenlabs", model: "eleven_v4/x", input: "Hi", credentials: { apiKey: "k" } });
+    expect(bad.status).toBe(400);
+    global.fetch.mockResolvedValueOnce(new Response("{}", { status: 401 }));
+    const auth = await handleTtsCore({ provider: "elevenlabs", model: "eleven_v4/x", input: "Hi", credentials: { apiKey: "k" } });
+    expect(auth.status).toBe(401);
+  });
 });
 
 describe("ElevenLabs live model list", () => {

@@ -67,6 +67,12 @@ export default {
     let modelId = "eleven_flash_v2_5";
     let voiceId = model;
     if (model && model.includes("/")) [modelId, voiceId] = model.split("/");
+    // OpenAI-style clients send the voice as its own field: "elevenlabs/eleven_v4" + voice.
+    // A voice inside the model string still wins; a bare non-model id stays the voice id.
+    else if (/^eleven_/.test(model || "") && typeof options?.voice === "string" && options.voice) {
+      modelId = model;
+      voiceId = options.voice;
+    }
 
     // response_format "json" is the router's base64 envelope, not a codec → mp3.
     const out = OUTPUT_FORMATS[responseFormat] || OUTPUT_FORMATS.mp3;
@@ -85,7 +91,10 @@ export default {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err?.detail?.message || `ElevenLabs TTS failed: ${res.status}`);
+      // 400/404/422 name a bad voice, model or body: the request is at fault, not the key,
+      // so report 400 and keep the account out of cooldown. Other statuses pass through.
+      const status = [400, 404, 422].includes(res.status) ? 400 : res.status;
+      throw Object.assign(new Error(err?.detail?.message || `ElevenLabs TTS failed: ${res.status}`), { status });
     }
     const buf = await res.arrayBuffer();
     if (buf.byteLength < 1024) throw new Error("ElevenLabs TTS returned empty audio");
