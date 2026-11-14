@@ -123,7 +123,7 @@ async function runHeavyStartup() {
 // Cheap local check: keeps the scheduler module (and its provider graph) unloaded
 // when nothing opted in. An enabled schedule counts on its own.
 function hasQuotaAutoPingEnabled(settings) {
-  return [settings?.claudeAutoPing, settings?.codexAutoPing].some((config) => (
+  return [settings?.claudeAutoPing, settings?.codexAutoPing, settings?.antigravityAutoPing].some((config) => (
     Object.values(config?.connections || {}).some(Boolean)
     || Object.values(config?.schedules || {}).some((schedule) => schedule?.enabled === true)
   ));
