@@ -21,6 +21,26 @@ export async function fetchElevenLabsVoices(apiKey) {
   return voices;
 }
 
+const MODELS_TTL = 24 * 60 * 60 * 1000;
+const _modelsCache = new Map(); // by API key
+
+// Live TTS model list for this account (GET /v1/models needs a key). New ElevenLabs
+// models appear here without a 9Router release; callers fall back to the static list.
+export async function fetchElevenLabsModels(apiKey) {
+  if (!apiKey) throw new Error("ElevenLabs API key required");
+  const now = Date.now();
+  const cached = _modelsCache.get(apiKey);
+  if (cached && now - cached.time < MODELS_TTL) return cached.models;
+
+  const res = await fetch("https://api.elevenlabs.io/v1/models", { headers: { "xi-api-key": apiKey } });
+  if (!res.ok) throw new Error(`ElevenLabs models fetch failed: ${res.status}`);
+  const models = (await res.json())
+    .filter((m) => m.can_do_text_to_speech && !m.requires_alpha_access)
+    .map((m) => ({ id: m.model_id, name: m.name || m.model_id, type: "tts" }));
+  _modelsCache.set(apiKey, { models, time: now });
+  return models;
+}
+
 // OpenAI-style response_format → ElevenLabs output_format. PCM/WAV at 24 kHz match
 // OpenAI's `pcm` and stay available below the Pro tier (44.1 kHz is Pro-only).
 const OUTPUT_FORMATS = {

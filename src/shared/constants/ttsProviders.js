@@ -35,6 +35,7 @@ export const TTS_PROVIDER_CONFIG = {
     voiceSource: "api-language", // grouped by language from backend
     modelKey: "elevenlabs-tts-models",
     apiEndpoint: "/api/media-providers/tts/elevenlabs/voices",
+    modelsEndpoint: "/api/media-providers/tts/elevenlabs/models", // live model list
   },
   "edge-tts": {
     hasLanguageDropdown: false,

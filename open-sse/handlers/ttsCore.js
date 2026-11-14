@@ -9,6 +9,7 @@ export {
   fetchEdgeTtsVoices,
   fetchLocalDeviceVoices,
   fetchElevenLabsVoices,
+  fetchElevenLabsModels,
 } from "./ttsProviders/index.js";
 
 // ── Response Formatter (DRY) ───────────────────────────────────

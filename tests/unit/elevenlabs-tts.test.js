@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { handleTtsCore } from "../../open-sse/handlers/ttsCore.js";
+import { handleTtsCore, fetchElevenLabsModels } from "../../open-sse/handlers/ttsCore.js";
 import { buildTtsProviderModels } from "../../open-sse/config/ttsModels.js";
 import { PROVIDER_MODELS } from "../../open-sse/config/providerModels.js";
 
@@ -99,5 +99,37 @@ describe("ElevenLabs TTS", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain("bad voice");
+  });
+});
+
+describe("ElevenLabs live model list", () => {
+  const apiModels = [
+    { model_id: "eleven_v4", name: "Eleven v4", can_do_text_to_speech: true },
+    { model_id: "eleven_multilingual_sts_v2", name: "STS", can_do_text_to_speech: false },
+    { model_id: "eleven_alpha", name: "Alpha", can_do_text_to_speech: true, requires_alpha_access: true },
+    { model_id: "eleven_flash_v2_5", can_do_text_to_speech: true },
+  ];
+
+  beforeEach(() => { global.fetch = vi.fn(); });
+  afterEach(() => { global.fetch = originalFetch; });
+
+  it("keeps usable TTS models, authenticates, and caches per key", async () => {
+    global.fetch.mockResolvedValue(new Response(JSON.stringify(apiModels), { status: 200 }));
+    const models = await fetchElevenLabsModels("live-key-1");
+    expect(models).toEqual([
+      { id: "eleven_v4", name: "Eleven v4", type: "tts" },
+      { id: "eleven_flash_v2_5", name: "eleven_flash_v2_5", type: "tts" },
+    ]);
+    expect(global.fetch.mock.calls[0][0]).toBe("https://api.elevenlabs.io/v1/models");
+    expect(global.fetch.mock.calls[0][1].headers["xi-api-key"]).toBe("live-key-1");
+
+    await fetchElevenLabsModels("live-key-1");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires a key and throws on upstream errors", async () => {
+    await expect(fetchElevenLabsModels("")).rejects.toThrow("API key required");
+    global.fetch.mockResolvedValueOnce(new Response("{}", { status: 401 }));
+    await expect(fetchElevenLabsModels("bad-key")).rejects.toThrow("401");
   });
 });
