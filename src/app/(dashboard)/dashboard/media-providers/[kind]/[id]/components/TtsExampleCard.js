@@ -75,6 +75,18 @@ export function TtsExampleCard({ providerId }) {
     return "";
   });
 
+  // Live model list (providers with config.modelsEndpoint); null → static list below
+  const [liveModels, setLiveModels] = useState(null);
+  useEffect(() => {
+    if (!config.modelsEndpoint) return;
+    let cancelled = false;
+    fetch(config.modelsEndpoint)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d?.source === "live" && d.models?.length) setLiveModels(d.models); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [providerId, config.modelsEndpoint]);
+
   // Form state
   const [input, setInput]               = useState("Hello, this is a text to speech test.");
   const [style, setStyle]               = useState(""); // style/voice instructions (e.g. MiMo voicedesign)
@@ -384,7 +396,8 @@ export function TtsExampleCard({ providerId }) {
               >
                 {(() => {
                   const ttsModels = getModelsByProviderId(providerId).filter(m => getModelKind(m) === "tts");
-                  return (ttsModels.length ? ttsModels : getModelsByProviderId(config.modelKey) || []).map((m) => (
+                  const list = (config.modelsEndpoint && liveModels) || (ttsModels.length ? ttsModels : getModelsByProviderId(config.modelKey) || []);
+                  return list.map((m) => (
                     <option key={m.id} value={m.id}>{m.name || m.id}</option>
                   ));
                 })()}
