@@ -1,3 +1,21 @@
+# Unreleased
+
+## Features
+- **Gemini 4 Hydrogen**: add `gemini-4-hydrogen` to the Gemini API provider, and add it to Antigravity as `gemini-4-hydrogen-xhigh|high|medium|low` plus a bare `gemini-4-hydrogen` that resolves to `-high` (Hydrogen's default level). These ids come from Antigravity's live `fetchAvailableModels` catalog. Hydrogen is the first Gemini model with an **XHIGH** thinking tier (`ThinkingLevel.XHIGH`):
+  - `reasoning_effort`/`thinking` of `xhigh`, `max` or `ultra`, a `(xhigh)` suffix, or a budget above 28672 now reaches the wire as `thinkingLevel: "xhigh"`. Before, it was silently clamped to `high`.
+  - On Antigravity those requests also route to the `-xhigh` tier model. Families without an `-xhigh` row (Carbon, Argon, 3.x Flash) keep resolving to `-high`.
+  - `minimal`/`none` still floor at `low`; the model rejects `minimal` and cannot turn thinking off.
+- **Gemini 4 Hydrogen** capabilities, pricing and quota:
+  - Declares PDF input. Before this, the modality stripper silently dropped PDFs for it, because neither provider has a synced-catalog entry for it.
+  - Applies Google's 32K `maxOutputTokens` floor: thinking and answer share the cap, so a smaller client limit could be spent entirely on thinking. It is raised even when the client sends no thinking intent, and an unset limit is left alone.
+  - Bills at $1.50/$7.50 with $0.075 cached reads.
+  - Antigravity quota list and quota-aware routing include the tiers. Hydrogen draws on the shared "Gemini Models" pool with 3.8 Flash, not a separate bucket like Argon.
+  - The Antigravity MITM tool lists the four tiers as mappable IDE slots.
+  - Gemini 4 sampling-param stripping and functionResponse ordering already cover it.
+
+## Fixes
+- **Thinking**: map an `ultra` effort to `high` for Gemini level-based models instead of letting it fall through to the lowest tier.
+
 # v0.5.119 (2026-11-11)
 
 ## Features

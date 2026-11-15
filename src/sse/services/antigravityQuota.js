@@ -91,6 +91,10 @@ export function getAntigravityModelQuota(quotas, model) {
   if (cleanModel === "gemini-4-argon" && quotas["gemini-4-argon-high"]) {
     candidates.push(quotas["gemini-4-argon-high"]);
   }
+  // Hydrogen shares the main "Gemini Models" pool; its bare id routes to the -high tier.
+  if (cleanModel === "gemini-4-hydrogen" && quotas["gemini-4-hydrogen-high"]) {
+    candidates.push(quotas["gemini-4-hydrogen-high"]);
+  }
   if (cleanModel === "claude-sonnet-5-5" && quotas["claude-sonnet-5-5-high"]) {
     candidates.push(quotas["claude-sonnet-5-5-high"]);
   }

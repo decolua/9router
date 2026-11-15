@@ -64,6 +64,7 @@ export const DEFAULT_CAPABILITIES = {
   // limits (tokens)
   contextWindow: 200000,
   maxOutput: 64000,
+  minOutputTokens: null,     // Gemini wire only: raise a smaller maxOutputTokens to this vendor-recommended floor
 };
 
 // User-added model metadata can carry dashboard service kinds instead of the
@@ -521,6 +522,10 @@ export const PATTERN_CAPABILITIES = [
 
   // ── Gemini (all 2.0+ multimodal + google_search grounding, 1M ctx) ─
   { pattern: "*gemini*image*",  caps: { vision: true, imageOutput: true, contextWindow: 1048576 } },
+  // Gemini 4 Hydrogen: the Gemini 4 rules below plus an XHIGH tier (see thinkingLevels.js), PDF
+  // input, and Google's 32K max_output_tokens floor. Thinking and answer share that cap, so a
+  // smaller client limit can be spent entirely on thinking and return an empty reply.
+  { pattern: "*gemini-4-hydrogen*", caps: { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536, minOutputTokens: 32768 } },
   // Gemini 4 (Argon): no "minimal" tier (400) and no thinkingBudget — LOW/MEDIUM/HIGH only, cannot disable.
   { pattern: "*gemini-4*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-3.8*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },

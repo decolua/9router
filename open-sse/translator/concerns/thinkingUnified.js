@@ -180,8 +180,13 @@ function normalizeOpenAILevel(level, supportedLevels) {
   return "xhigh";
 }
 
-function toGeminiThinkingLevel(cfg) {
+// Efforts above "high" reach the wire as XHIGH only for models that declare it
+// (Gemini 4 Hydrogen); every other Gemini model tops out at HIGH.
+const GEMINI_ABOVE_HIGH = new Set(["xhigh", "max", "ultra"]);
+
+function toGeminiThinkingLevel(cfg, supportedLevels) {
   const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
+  if (GEMINI_ABOVE_HIGH.has(raw)) return supportedLevels?.includes("xhigh") ? "xhigh" : "high";
   return effortToThinkingLevel(raw);
 }
 
@@ -199,6 +204,7 @@ const GEMINI_LEVEL_OUTPUT_FLOOR = {
   low: 8192,
   medium: 16384,
   high: 65535,
+  xhigh: 65535,
 };
 
 function geminiBudgetOutputFloor(budget) {
@@ -235,15 +241,36 @@ function setGeminiThinking(body, tc) {
   gc.thinkingConfig = tc;
 }
 
+// A model's documented minimum output budget (caps.minOutputTokens), never above its cap.
+function geminiMinOutput(caps) {
+  const min = Number(caps?.minOutputTokens);
+  if (!Number.isFinite(min) || min <= 0) return 0;
+  return Number.isFinite(caps?.maxOutput) ? Math.min(min, caps.maxOutput) : min;
+}
+
 function ensureGeminiOutputFloor(body, floor, caps) {
   const cap = Number.isFinite(caps?.maxOutput) ? caps.maxOutput : floor;
-  const target = Math.min(floor, cap);
+  const target = Math.max(Math.min(floor, cap), geminiMinOutput(caps));
   const gc = getGeminiGenerationConfig(body);
   const current = Number(gc.maxOutputTokens);
   if (!Number.isFinite(current) || current < target) {
     gc.maxOutputTokens = target;
   }
 }
+
+// No thinking intent: the model still thinks at its default level, so a client
+// limit below the documented minimum is raised. An unset limit is left alone
+// (server default applies) and no generationConfig is created.
+function raiseGeminiMinOutput(body, caps) {
+  const min = geminiMinOutput(caps);
+  if (!min) return;
+  const gc = body.request?.generationConfig || body.generationConfig;
+  if (!gc || typeof gc !== "object") return;
+  const current = Number(gc.maxOutputTokens);
+  if (Number.isFinite(current) && current < min) gc.maxOutputTokens = min;
+}
+
+const GEMINI_THINKING_FORMATS = new Set(["gemini-level", "gemini-budget"]);
 
 // Strip every known thinking field from a body (used before re-applying / when unsupported).
 function stripAll(body) {
@@ -317,7 +344,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "",
       break;
     }
     case "gemini-level": {
-      let level = none ? "minimal" : toGeminiThinkingLevel(eff);
+      let level = none ? "minimal" : toGeminiThinkingLevel(eff, supportedLevels);
       // Models without a "minimal" tier (Gemini 4) reject it with 400 — clamp to the lowest supported level.
       const lowest = supportedLevels?.find((l) => l !== "none");
       if (supportedLevels?.length && lowest && !supportedLevels.includes(level)) level = lowest;
@@ -462,7 +489,12 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
     stripAll(body);
     return body;
   }
-  if (!cfg) return body;
+  if (!cfg) {
+    if (caps.minOutputTokens && GEMINI_THINKING_FORMATS.has(resolveFormat(targetFormat, cleanModel, provider))) {
+      raiseGeminiMinOutput(body, caps);
+    }
+    return body;
+  }
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   const supportedLevels = getThinkingLevels(provider, cleanModel);

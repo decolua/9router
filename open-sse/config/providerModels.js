@@ -92,6 +92,12 @@ export function getModelMeta(aliasOrId, modelId) {
   return findModel(PROVIDER_MODELS[aliasOrId], modelId, aliasOrId) || null;
 }
 
+// Tiered-variant suffixes to try for a requested level, best first. Only some
+// families ship a tier above "high" (gemini-4-hydrogen-xhigh), so xhigh/max fall
+// back to "-high"; nothing ships "-minimal", so it floors at "-low".
+const TIER_FALLBACKS = { xhigh: ["xhigh", "high"], max: ["xhigh", "high"], minimal: ["low"] };
+const tierCandidates = (level) => TIER_FALLBACKS[level] || [level];
+
 export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
   // Split off thinking suffix "(level)" so lookup hits the base id; re-append it to
   // the result so downstream applyThinking still sees the suffix (body.model is stripped separately).
@@ -101,24 +107,30 @@ export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
   const models = PROVIDER_MODELS[aliasOrId];
 
   // Resolve requested thinking level from suffix or client request body
-  const rawSuffix = suffix ? suffix.slice(1, -1).trim().toLowerCase() : "";
-  let tier = rawSuffix === "xhigh" || rawSuffix === "max" ? "high" : rawSuffix === "minimal" ? "low" : rawSuffix;
-  if (!tier && clientBody && typeof clientBody === "object") {
+  let level = suffix ? suffix.slice(1, -1).trim().toLowerCase() : "";
+  if (!level && clientBody && typeof clientBody === "object") {
     const rawEffort = clientBody.reasoning_effort || clientBody.output_config?.effort || (typeof clientBody.reasoning === "object" ? clientBody.reasoning?.effort : null);
     if (typeof rawEffort === "string" && rawEffort) {
-      const v = rawEffort.toLowerCase().trim();
-      tier = v === "xhigh" || v === "max" ? "high" : v === "minimal" ? "low" : v;
+      level = rawEffort.toLowerCase().trim();
     } else if (clientBody.thinking && typeof clientBody.thinking === "object") {
       const b = Number(clientBody.thinking.budget_tokens);
       if (Number.isFinite(b) && b > 0) {
-        tier = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
+        level = b > 28672 ? "xhigh" : b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
       }
     }
   }
 
-  // Look for tiered variant first if a tier was requested (e.g. gemini-3.8-flash-high)
-  const tieredId = tier ? `${baseId}-${tier}` : null;
-  const found = (tieredId && findModel(models, tieredId, aliasOrId)) || findModel(models, baseId, aliasOrId);
+  // Look for tiered variant first if a tier was requested (e.g. gemini-3.8-flash-high).
+  // With no tiered match the level still rides as the preset suffix, clamped to the
+  // last (always-available) fallback as before.
+  const candidates = level ? tierCandidates(level) : [];
+  let tier = candidates[candidates.length - 1] || "";
+  let found = null;
+  for (const candidate of candidates) {
+    found = findModel(models, `${baseId}-${candidate}`, aliasOrId);
+    if (found) { tier = candidate; break; }
+  }
+  found = found || findModel(models, baseId, aliasOrId);
   const resolvedId = found?.upstreamModelId || found?.id;
   if (resolvedId) {
     const presetMatch = resolvedId.match(/\([^()]+\)\s*$/);
