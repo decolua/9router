@@ -1,7 +1,7 @@
 # Unreleased
 
 ## Fixes
-- **Nous**: add the attribution tags to API-key requests that go through the built-in `nous` provider, not only through `openai-compatible-*` connections — the built-in provider talks to the same inference endpoint but was skipped, so every such request was rejected with 400 `missing tags` (#4745)
+- **Nous**: add the attribution tags to API-key requests that go through the built-in `nous` provider, not only through `openai-compatible-*` connections — the built-in provider talks to the same inference endpoint but was skipped, so every such request was rejected with 400 `missing tags` (related: #4745)
 
 # v0.5.119 (2026-11-11)
 
