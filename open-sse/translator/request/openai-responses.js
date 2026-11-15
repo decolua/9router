@@ -16,6 +16,32 @@ import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 
 const MAX_TOOL_NAME_LEN = 128;
 
+// function_call_output.output may be a content array (input_text / input_image).
+// The Chat Completions tool role is text-only, and JSON-stringifying the array
+// would send image base64 to the model as text tokens (a single screenshot can
+// exceed a 1M-token context). Split text from images so images can be re-sent
+// as real image parts.
+function splitToolOutput(output) {
+  if (typeof output === "string") return { text: output, images: [] };
+  if (!Array.isArray(output)) return { text: JSON.stringify(output), images: [] };
+
+  const texts = [];
+  const images = [];
+  for (const part of output) {
+    if (part?.type === RESPONSES_ITEM.INPUT_TEXT || part?.type === RESPONSES_ITEM.OUTPUT_TEXT) {
+      if (typeof part.text === "string") texts.push(part.text);
+    } else if (part?.type === RESPONSES_ITEM.INPUT_IMAGE && (part.image_url || part.file_id)) {
+      images.push({
+        type: OPENAI_BLOCK.IMAGE_URL,
+        image_url: { url: part.image_url || part.file_id, detail: part.detail || "auto" }
+      });
+    } else if (part != null) {
+      texts.push(typeof part === "string" ? part : JSON.stringify(part));
+    }
+  }
+  return { text: texts.join("\n"), images };
+}
+
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
  */
@@ -54,6 +80,16 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     return "";
   };
 
+  // Images a tool returned wait here until the run of tool messages ends:
+  // Chat Completions requires every tool message to directly follow its
+  // assistant tool_calls, so a user turn cannot sit between them.
+  let pendingToolImages = [];
+  const flushToolImages = () => {
+    if (pendingToolImages.length === 0) return;
+    result.messages.push({ role: ROLE.USER, content: pendingToolImages });
+    pendingToolImages = [];
+  };
+
   const attachPendingReasoning = (msg) => {
     if (pendingReasoning) msg.reasoning_content = pendingReasoning;
     if (pendingReasoningEncrypted) msg.encrypted_content = pendingReasoningEncrypted;
@@ -79,6 +115,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         }
         pendingToolResults = [];
       }
+      flushToolImages();
 
       // Convert content: input_text → text, output_text → text, input_image → image_url
       const content = Array.isArray(item.content)
@@ -104,6 +141,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     else if (itemType === RESPONSES_ITEM.FUNCTION_CALL || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
       // Start or append to assistant message with tool_calls
       if (!currentAssistantMsg) {
+        flushToolImages();
         currentAssistantMsg = {
           role: ROLE.ASSISTANT,
           content: null,
@@ -140,11 +178,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         pendingToolResults = [];
       }
       // Add tool result immediately
+      const { text, images } = splitToolOutput(item.output);
       result.messages.push({
         role: ROLE.TOOL,
         tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
+        content: text || (images.length > 0 ? "[image attached in next message]" : "")
       });
+      if (images.length > 0) {
+        pendingToolImages.push({ type: OPENAI_BLOCK.TEXT, text: `[Image from tool result ${item.call_id}]` }, ...images);
+      }
     }
     else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
       if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
@@ -172,6 +214,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       result.messages.push(tr);
     }
   }
+  flushToolImages();
 
   // Convert tools format.
   // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
