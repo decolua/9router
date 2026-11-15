@@ -349,6 +349,9 @@ export const PATTERN_PRICING = [
   { pattern: "gemini-*-flash-lite", pricing: { input: 0.15, output: 1.25, cached: 0.015, reasoning: 1.875, cache_creation: 0.15 } },
   { pattern: "gemini-*-flash",  pricing: { input: 0.30,  output: 2.50,  cached: 0.03,  reasoning: 3.75,   cache_creation: 0.30  } },
   { pattern: "gemini-*-pro",    pricing: { input: 2.00,  output: 12.00, cached: 0.25,  reasoning: 18.00,  cache_creation: 2.00  } },
+  // Gemini 4 Hydrogen: flat $1.50 / $7.50 across the 1M window. Implicit caching only (95% off
+  // input → $0.075); there are no explicit cache writes, so cache_creation bills as plain input.
+  { pattern: "gemini-4-hydrogen*", pricing: { input: 1.50, output: 7.50, cached: 0.075, reasoning: 7.50, cache_creation: 1.50 } },
   { pattern: "gemini-4-*",      pricing: { input: 2.00,  output: 10.00, cached: 0.10,  reasoning: 10.00,  cache_creation: 0.1875 } },
   { pattern: "gemini-3-*",      pricing: { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  } },
   { pattern: "gemini-2.5-*",    pricing: { input: 0.30,  output: 2.50,  cached: 0.03,  reasoning: 3.75,   cache_creation: 0.30  } },

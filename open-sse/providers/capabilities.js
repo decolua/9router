@@ -521,7 +521,11 @@ export const PATTERN_CAPABILITIES = [
 
   // ── Gemini (all 2.0+ multimodal + google_search grounding, 1M ctx) ─
   { pattern: "*gemini*image*",  caps: { vision: true, imageOutput: true, contextWindow: 1048576 } },
-  // Gemini 4 (Argon): no "minimal" tier (400) and no thinkingBudget — LOW/MEDIUM/HIGH only, cannot disable.
+  // Gemini 4 Hydrogen: text/image/video/audio/PDF in, 1M unified window, 64K per request
+  // (models/gemini-4-hydrogen: inputTokenLimit 1048576, outputTokenLimit 65536). Levels in thinkingLevels.js.
+  // longDecode: a max_tokens above 64K runs CONTINUATION hops up to 1M (utils/geminiLongDecode.js).
+  { pattern: "*gemini-4-hydrogen*", caps: { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536, longDecode: true } },
+  // Gemini 4 (Carbon/Argon): no "minimal" tier (400) and no thinkingBudget — LOW/MEDIUM/HIGH only, cannot disable.
   { pattern: "*gemini-4*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-3.8*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-3.7*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
@@ -882,7 +886,7 @@ export function getCapabilitiesForModel(provider, model) {
   return refine(null, provider, model);
 }
 
-// Gemini 4 (Argon) drops sampling params and requires functionResponse-last merged user turns.
+// Gemini 4 (Hydrogen/Carbon/Argon) drops sampling params and requires functionResponse-last merged user turns.
 export function isGemini4Model(model) {
   return /(?:^|\/)gemini-4(?:$|[-.])/i.test(String(model || ""));
 }

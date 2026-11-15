@@ -1,4 +1,18 @@
 # Unreleased
+<<<<<<< HEAD
+=======
+
+## Features
+- **Gemini 4 Hydrogen**: add `gemini-4-hydrogen` to the Gemini API provider, and to Antigravity as `gemini-4-hydrogen-xhigh|high|medium|low` plus a bare `gemini-4-hydrogen` that resolves to `-high` (Hydrogen's default level). Hydrogen serves a native `xhigh` thinking level: `xhigh`/`max`/`ultra` intents (or an `(xhigh)` suffix) reach the wire as `thinkingLevel: "xhigh"` instead of collapsing to `high`, and on Antigravity a client `reasoning_effort: "xhigh"`/`"max"` routes to the `-xhigh` tier. Only tier-preset entries whose upstream id carries `(xhigh)` can be promoted, so standalone ids such as `ws/gpt-5.4-xhigh` are never swapped in by a client setting. `none`/`minimal` still floor at `low` (Hydrogen 400s on MINIMAL). Declares 1M context, 64K per-request output and PDF/audio/video input; bills at $1.50/$7.50 with $0.075 cached reads; adds the tiers to the Antigravity quota list, the Antigravity IDE (MITM) slots and the CLI model menus.
+- **Gemini 4 Hydrogen**: long decode — a `max_tokens` above 64K now runs Google's `CONTINUATION` hops inside the gateway (Gemini API: top-level `continuationToken`; Antigravity: `request.continuationToken`), streaming and non-streaming, so the client sees one continuous turn with usage summed across hops. A failed later hop ends the turn as `MAX_TOKENS`. Antigravity keeps Hydrogen's requested output budget instead of capping it at 64,000; other models stay capped.
+
+## Fixes
+- **Thinking**: map an `ultra` effort to `high` on Gemini level-based models without an `xhigh` tier, instead of letting it fall through to the lowest level.
+
+# v0.5.120-beta.10 (2026-11-13)
+
+# v0.5.120-beta.9 (2026-11-13)
+>>>>>>> 075a7c6 (feat(gemini): add Gemini 4 Hydrogen to the Gemini API and Antigravity)
 
 ## Fixes
 - **Usage**: prompt-retention captures no longer break on large Anthropic `/v1/messages` requests. Retained payloads use a dedicated cap (`OBSERVABILITY_RETENTION_MAX_JSON_SIZE`, default 10MB) instead of the 5KB disk-observability limit, so Original/Client/Translated views stay renderable for real Claude Code bodies, and a client disconnect mid-stream now finalizes the capture instead of leaving the response placeholder empty forever.
