@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
     videoInput: { enabled: false, roundRobin: false, models: [] },
   },
   requireLogin: true,
+  showUpdateNotifications: true,
   requireApiKey: true,
   tunnelDashboardAccess: true,
   authMode: "password",

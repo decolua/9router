@@ -9,6 +9,7 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { LOCALE_FLAGS } from "@/shared/constants/locales";
+import useSettingsStore from "@/store/settingsStore";
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -27,6 +28,8 @@ export default function ProfilePage() {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
+  const [notificationSaving, setNotificationSaving] = useState(false);
+  const [notificationError, setNotificationError] = useState("");
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
@@ -646,6 +649,24 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error("Failed to update enableObservability:", err);
+    }
+  };
+
+  const updateNotificationPreference = async (enabled) => {
+    setNotificationSaving(true);
+    setNotificationError("");
+    try {
+      // Finish the sidebar's initial read before saving so its older response
+      // cannot overwrite the preference in the shared settings cache.
+      await useSettingsStore.getState().fetchSettings();
+      const updated = await useSettingsStore.getState().patchSettings({ showUpdateNotifications: enabled });
+      if (updated) {
+        setSettings(prev => ({ ...prev, showUpdateNotifications: enabled }));
+      } else {
+        setNotificationError("Failed to save update notification preference. Please try again.");
+      }
+    } finally {
+      setNotificationSaving(false);
     }
   };
 
@@ -1619,6 +1640,18 @@ export default function ProfilePage() {
               disabled={loading}
             />
           </div>
+        </Card>
+
+        <Card>
+          <Toggle
+            checked={settings.showUpdateNotifications !== false}
+            onChange={updateNotificationPreference}
+            disabled={loading || notificationSaving}
+            label="Show update notifications"
+            description="Check for new versions and show upgrade prompts in the sidebar"
+            className="flex-row-reverse justify-between"
+          />
+          {notificationError && <p role="alert" className="text-xs sm:text-sm text-red-500 mt-2">{notificationError}</p>}
         </Card>
 
         {/* Account actions */}
