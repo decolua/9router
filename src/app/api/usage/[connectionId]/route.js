@@ -1,7 +1,8 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getProviderConnectionById, getSettings, updateProviderConnection } from "@/lib/localDb";
+import { fetchCustomQuota } from "@/lib/customQuota";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { isUnrecoverableRefreshError } from "open-sse/services/tokenRefresh.js";
 import { getExecutor } from "open-sse/executors/index.js";
@@ -142,6 +143,15 @@ export async function GET(request, { params }) {
     connection = await getProviderConnectionById(connectionId);
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
+    }
+
+    // User-authored quota source (custom / openai-compatible providers). Takes
+    // precedence over the built-in lookup, which has no data for these providers.
+    const settings = await getSettings();
+    const customQuota = settings?.customQuotaSources?.[connectionId];
+    if (customQuota && customQuota.enabled !== false) {
+      const usage = await fetchCustomQuota(customQuota, connection);
+      return Response.json(usage);
     }
 
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/kiro/...)
