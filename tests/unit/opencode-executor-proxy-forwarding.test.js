@@ -1,20 +1,23 @@
 // The executor must forward the proxy URL it is handed by proxyAwareFetch.
 // Isolated from the transport tests: mocking opencodeTlsClient.js here would
 // otherwise replace the real module under test in sibling suites.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+const { tlsFetchMock } = vi.hoisted(() => ({ tlsFetchMock: vi.fn() }));
+
+vi.mock("../../open-sse/services/opencodeTlsClient.js", () => ({
+  opencodeTlsFetch: tlsFetchMock,
+  OpencodeTlsUnavailableError: class extends Error {},
+}));
+
+vi.mock("../../open-sse/utils/opencodeCliRunner.js", () => ({
+  findOpencodeBinary: () => null,
+  formatOpencodeCliPrompt: () => "",
+  executeOpencodeCli: vi.fn(),
+}));
 
 describe("opencode executor forwards the resolved proxy", () => {
   it("passes the proxy URL through to opencodeTlsFetch", async () => {
-    const { tlsFetchMock } = vi.hoisted(() => ({ tlsFetchMock: vi.fn() }));
-    vi.mock("../../open-sse/services/opencodeTlsClient.js", () => ({
-      opencodeTlsFetch: tlsFetchMock,
-      OpencodeTlsUnavailableError: class extends Error {},
-    }));
-    vi.mock("../../open-sse/utils/opencodeCliRunner.js", () => ({
-      findOpencodeBinary: () => null,
-      formatOpencodeCliPrompt: () => "",
-      executeOpencodeCli: vi.fn(),
-    }));
     tlsFetchMock.mockResolvedValue(new Response("ok", { status: 200 }));
 
     const { OpenCodeExecutor } = await import("../../open-sse/executors/opencode.js");
@@ -35,6 +38,5 @@ describe("opencode executor forwards the resolved proxy", () => {
 
     expect(tlsFetchMock).toHaveBeenCalled();
     expect(tlsFetchMock.mock.calls[0][2].proxyUrl).toBe("socks5://127.0.0.1:9050");
-    vi.doUnmock("../../open-sse/services/opencodeTlsClient.js");
   });
 });
