@@ -116,7 +116,11 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   applyNousAttribution(model, body, stream, credentials) {
-    if (!this.provider?.startsWith?.("openai-compatible-") || !credentials?.apiKey
+    // The built-in "nous" registry provider is not an "openai-compatible-*"
+    // connection, but it talks to the same inference endpoint and is subject to
+    // the same attribution requirement.
+    const isNousProvider = this.provider === "nous" || this.provider?.startsWith?.("openai-compatible-");
+    if (!isNousProvider || !credentials?.apiKey
       || !body || typeof body !== "object" || Array.isArray(body)
       || (body.tags != null && !Array.isArray(body.tags))) return body;
 
