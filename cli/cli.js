@@ -69,6 +69,7 @@ const {
   readPidRecord,
   removePidRecordIfOwner,
   stopRecordedInstance,
+  isProtectedPid,
   isPortInUse,
   waitForPortFree,
   waitForPidsExit,
@@ -307,7 +308,7 @@ function killAllAppProcesses() {
               || cmd.includes("next-server");
             if (isAppProcess) {
               const match = line.match(/^"(\d+)"/);
-              if (match && match[1] && match[1] !== process.pid.toString()) {
+              if (match && match[1] && !isProtectedPid(match[1])) {
                 pids.push(match[1]);
               }
             }
@@ -334,7 +335,7 @@ function killAllAppProcesses() {
             if (isAppProcess) {
               const parts = line.trim().split(/\s+/);
               const pid = parts[1];
-              if (pid && !isNaN(pid) && pid !== process.pid.toString()) {
+              if (pid && !isNaN(pid) && !isProtectedPid(pid)) {
                 pids.push(pid);
               }
             }

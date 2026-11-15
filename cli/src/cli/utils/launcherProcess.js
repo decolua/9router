@@ -24,6 +24,29 @@ function toPid(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
+// ps and WMI report pids as strings. Invalid tokens are not candidates.
+function pidToken(value) {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+  }
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) return null;
+  const asNumber = Number(value);
+  return Number.isSafeInteger(asNumber) ? String(asNumber) : null;
+}
+
+/**
+ * True for this process or its parent. A tray handoff child is itself
+ * `node …/cli.js`, so sparing only process.pid SIGKILLs the launcher that
+ * just spawned it. SIGKILL cannot be caught.
+ * @param {string|number} pid
+ * @param {{ selfPid?: number|string, parentPid?: number|string }} [options]
+ */
+function isProtectedPid(pid, { selfPid = process.pid, parentPid = process.ppid } = {}) {
+  const candidate = pidToken(pid);
+  if (!candidate) return false;
+  return candidate === pidToken(selfPid) || candidate === pidToken(parentPid);
+}
+
 /**
  * @param {string} file
  * @param {{ cliPid: number, serverPid: number|null, port: number, exe: string }} record
@@ -122,15 +145,20 @@ function defaultKillPid(pid) {
 /**
  * Stops the processes named in a launcher record. Returns the PIDs it killed.
  * Server first so the port is released even if the CLI kill fails.
+ * Skips this process and its parent so a tray handoff child cannot SIGKILL
+ * the launcher that just spawned it.
  */
 function stopRecordedInstance(record, {
   selfPid = process.pid,
+  parentPid = process.ppid,
   isAlive = isPidAlive,
   matchesExe = processMatchesExe,
   killPid = defaultKillPid,
 } = {}) {
   if (!record) return [];
-  const candidates = [record.serverPid, record.cliPid].filter((pid) => toPid(pid) && pid !== selfPid);
+  const candidates = [record.serverPid, record.cliPid].filter(
+    (pid) => toPid(pid) && !isProtectedPid(pid, { selfPid, parentPid })
+  );
   const killed = [];
   for (const pid of candidates) {
     if (!isAlive(pid) || !matchesExe(pid, record.exe)) continue;
@@ -178,6 +206,7 @@ module.exports = {
   readPidRecord,
   removePidRecordIfOwner,
   isPidAlive,
+  isProtectedPid,
   processMatchesExe,
   stopRecordedInstance,
   isPortInUse,
