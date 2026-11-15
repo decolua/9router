@@ -12,7 +12,7 @@ import { CLAUDE_TOOL_SUFFIX } from "../../open-sse/config/appConstants.js";
 
 it("advertises a Claude Code version accepted by Fable 5.1", () => {
   const body = applyCloaking({ messages: [] }, "sk-ant-oat-test", "session-id");
-  expect(body.system[0].text).toMatch(/^x-anthropic-billing-header: cc_version=2.1.280\./);
+  expect(body.system[0].text).toMatch(/^x-anthropic-billing-header: cc_version=2.1.322\./);
 });
 
 describe("cloakClaudeTools", () => {
@@ -35,6 +35,46 @@ describe("cloakClaudeTools", () => {
     });
     // Without this, Claude rejects: "Tool 'todo_write' not found in provided tools".
     expect(body.tool_choice).toEqual({ type: "tool", name: `todo_write${CLAUDE_TOOL_SUFFIX}` });
+  });
+
+  describe("tool_reference blocks", () => {
+    const withReferences = (content) => ({
+      tools: [
+        { name: "ToolSearch", input_schema: { type: "object", properties: {} } },
+        { name: "Monitor", defer_loading: true, input_schema: { type: "object", properties: {} } }
+      ],
+      messages: [
+        { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "ToolSearch", input: {} }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content }] }
+      ]
+    });
+    const cloakedResult = (input) => cloakClaudeTools(input).body.messages[1].content[0];
+
+    it("renames references to match the suffixed tool declaration", () => {
+      const input = withReferences([{ type: "tool_reference", tool_name: "Monitor" }]);
+      const { body } = cloakClaudeTools(input);
+      const [reference] = body.messages[1].content[0].content;
+      // Without this, Claude rejects: "Tool reference 'Monitor' not found in available tools".
+      expect(reference).toEqual({ type: "tool_reference", tool_name: `Monitor${CLAUDE_TOOL_SUFFIX}` });
+      expect(body.tools.some(t => t.name === reference.tool_name)).toBe(true);
+    });
+
+    it("leaves references to names it did not rename unchanged", () => {
+      const reference = { type: "tool_reference", tool_name: "Bash" };
+      expect(cloakedResult(withReferences([reference])).content).toEqual([reference]);
+    });
+
+    it("keeps sibling content and string tool_result content intact", () => {
+      const text = { type: "text", text: "Monitor" };
+      expect(cloakedResult(withReferences([text])).content).toEqual([text]);
+      expect(cloakedResult(withReferences("Monitor")).content).toBe("Monitor");
+    });
+
+    it("does not mutate the client's request", () => {
+      const input = withReferences([{ type: "tool_reference", tool_name: "Monitor" }]);
+      cloakClaudeTools(input);
+      expect(input.messages[1].content[0].content[0].tool_name).toBe("Monitor");
+    });
   });
 
   it("suffixes only the chosen tool when several are present", () => {

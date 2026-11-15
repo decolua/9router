@@ -11,7 +11,7 @@ import {
   USAGE_SUPPORTED_PROVIDERS,
 } from "../../src/shared/constants/providers.js";
 
-const USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
+const USAGE_URL = "https://opencode.ai/inference/go/v1/usage";
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {

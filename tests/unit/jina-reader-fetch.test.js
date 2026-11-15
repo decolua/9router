@@ -39,6 +39,7 @@ describe("Jina Reader fetch", () => {
     expect(init.method).toBe("POST");
     expect(init.headers).toEqual({
       "content-type": "application/json",
+      "x-respond-with": "markdown",
       authorization: "Bearer jina-test-key",
     });
     expect(JSON.parse(init.body)).toEqual({ url: "https://example.com/article" });
