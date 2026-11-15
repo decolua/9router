@@ -33,6 +33,25 @@ const ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS = [
   /empty\s+response/i,
 ];
 
+// Antigravity refuses some requests — e.g. a system prompt carrying fingerprinted third-party
+// agent text (see ANTIGRAVITY_PROMPT_REWRITES) — with a bare gRPC RESOURCE_EXHAUSTED: this generic
+// message and no details. Real quota errors carry reset info ("Individual quota reached ... Resets
+// in 1h56m", quotaResetTimeStamp, retryDelay). The bare form repeats for the same body every time,
+// so it is request-scoped: retrying, refreshing quota, or locking the account cannot help.
+const ANTIGRAVITY_BARE_EXHAUSTED_MESSAGE = /^Resource has been exhausted \(e\.g\. check quota\)\.?$/;
+export const ANTIGRAVITY_PROMPT_REJECTED_MESSAGE = "Antigravity rejected this request (upstream 429 RESOURCE_EXHAUSTED with no quota details, so this is not your quota). "
+  + "Antigravity refuses system prompts that carry certain third-party agent text; 9router rewrites the known strings "
+  + "(ANTIGRAVITY_PROMPT_REWRITES), so this prompt contains text it does not cover yet.";
+
+export function isAntigravityPromptRejection(status, bodyText) {
+  if (status !== HTTP_STATUS.RATE_LIMITED || !bodyText) return false;
+  let err;
+  try { err = JSON.parse(bodyText)?.error; } catch { return false; }
+  if (err?.status !== "RESOURCE_EXHAUSTED") return false;
+  if (!ANTIGRAVITY_BARE_EXHAUSTED_MESSAGE.test(String(err.message || "").trim())) return false;
+  return !(Array.isArray(err.details) && err.details.length > 0);
+}
+
 const ANTIGRAVITY_TRANSIENT_STATUSES = new Set([
   HTTP_STATUS.SERVER_ERROR,
   HTTP_STATUS.BAD_GATEWAY,
@@ -129,6 +148,10 @@ export class AntigravityExecutor extends BaseExecutor {
 
   // Parse Antigravity quota error to extract precise resetsAtMs from ErrorInfo/RetryInfo
   parseError(response, bodyText) {
+    // Request-scoped (400): no account lock, no quota refresh, and combos move to their next model.
+    if (isAntigravityPromptRejection(response.status, bodyText)) {
+      return { status: HTTP_STATUS.BAD_REQUEST, message: ANTIGRAVITY_PROMPT_REJECTED_MESSAGE };
+    }
     if ((response.status === 429 || response.status === 409) && bodyText) {
       try {
         const json = JSON.parse(bodyText);
@@ -484,6 +507,9 @@ export class AntigravityExecutor extends BaseExecutor {
     } catch {
       // ignore parse errors → fall through to status/message based retry
     }
+
+    // The same body is refused the same way every time — retries only add backoff delay.
+    if (isAntigravityPromptRejection(response.status, bodyText)) return false;
 
     const errorMessage = this.extractErrorMessage(errorJson, bodyText);
 

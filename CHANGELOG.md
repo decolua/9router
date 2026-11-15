@@ -6,6 +6,8 @@
 
 ## Fixes
 - **Thinking**: map an `ultra` effort to `high` on Gemini level-based models without an `xhigh` tier, instead of letting it fall through to the lowest level.
+- **Antigravity**: reword six more fingerprinted Hermes Agent prompt strings in `ANTIGRAVITY_PROMPT_REWRITES` (`Be direct: match the length of your reply…`, `…is your authoritative reference`, `Hermes delivers their message…`, `# Hermes runtime environment` and its end marker, `# Google model operational directives`). Antigravity answers any one of them with a detail-free 429 `RESOURCE_EXHAUSTED` on every model, which looked like an exhausted quota. The rewrites keep the meaning and leave identifiers such as `skill_view(name='hermes-agent')` and the docs URL intact.
+- **Antigravity**: classify that bare `RESOURCE_EXHAUSTED` 429 (generic "Resource has been exhausted (e.g. check quota)." with no `details`) as a request-scoped 400 explaining that the prompt was rejected, instead of retrying it, refreshing quota and locking the model on the account. Real quota 429s, which carry `ErrorInfo`/`RetryInfo`, are handled as before.
 
 # v0.5.119 (2026-11-11)
 
