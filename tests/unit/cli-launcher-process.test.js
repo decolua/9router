@@ -96,6 +96,7 @@ describe("stopRecordedInstance", () => {
       killed,
       opts: {
         selfPid: 1,
+        parentPid: 2,
         isAlive: () => true,
         matchesExe: () => true,
         killPid: (pid) => killed.push(pid),
@@ -115,6 +116,31 @@ describe("stopRecordedInstance", () => {
     const { killed, opts } = deps({ selfPid: 10 });
     lp.stopRecordedInstance({ cliPid: 10, serverPid: 20, exe: EXE }, opts);
     expect(killed).toEqual([20]);
+  });
+
+  it("does not kill the handoff child's parent launcher", () => {
+    expect(lp.isProtectedPid("800", { selfPid: 925, parentPid: 800 })).toBe(true);
+    expect(lp.isProtectedPid(800, { selfPid: 925, parentPid: 800 })).toBe(true);
+    expect(lp.isProtectedPid(582, { selfPid: 925, parentPid: 800 })).toBe(false);
+    expect(lp.isProtectedPid("not-a-pid", { selfPid: 925, parentPid: 800 })).toBe(false);
+    expect(lp.isProtectedPid(process.ppid)).toBe(true);
+
+    const { killed, opts } = deps({ selfPid: 925, parentPid: 800 });
+    const result = lp.stopRecordedInstance({ cliPid: 800, serverPid: 20, exe: EXE }, opts);
+    expect(killed).toEqual([20]);
+    expect(result).toEqual([20]);
+
+    const source = fs.readFileSync(require.resolve("../../cli/cli.js"), "utf8");
+    const start = source.indexOf("function killAllAppProcesses");
+    const end = source.indexOf("function sleepSync");
+    const body = source.slice(start, end);
+    const winAt = body.indexOf('if (platform === "win32")');
+    const elseAt = body.indexOf("} else {", winAt);
+    const killAt = body.indexOf("// Kill all found processes", elseAt);
+    const windows = body.slice(winAt, elseAt);
+    const unix = body.slice(elseAt, killAt);
+    expect(windows).toContain("match && match[1] && !isProtectedPid(match[1])");
+    expect(unix).toContain("pid && !isNaN(pid) && !isProtectedPid(pid)");
   });
 
   it("skips PIDs that are no longer alive", () => {
