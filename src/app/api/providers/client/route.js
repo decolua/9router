@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/localDb";
+import { getProviderConnections, getSettings } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { isLeaseConnection } from "open-sse/services/minimaxCodeLease.js";
@@ -44,7 +44,8 @@ function sanitize(c) {
   return safe;
 }
 
-function isUsageEligible(connection) {
+function isUsageEligible(connection, customQuotaSources = {}) {
+  if (customQuotaSources[connection.id]) return true;
   return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
     connection.authType === "oauth" || isLeaseConnection(connection) || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
   );
@@ -60,8 +61,10 @@ function sortConnections(connections, sort) {
 
   if (sort === "provider") {
     return list.sort((a, b) => {
-      const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
-      const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
+      const indexA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
+      const indexB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
+      const orderA = indexA === -1 ? Number.MAX_SAFE_INTEGER : indexA;
+      const orderB = indexB === -1 ? Number.MAX_SAFE_INTEGER : indexB;
       if (orderA !== orderB) return orderA - orderB;
       return a.provider.localeCompare(b.provider);
     });
@@ -86,11 +89,18 @@ export async function GET(request) {
     const page = parsePositiveInt(searchParams.get("page"), 1);
     const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
 
+    const includeUnsupported = searchParams.get("includeUnsupported") === "1";
+    const settings = await getSettings();
+    const customQuotaSources = settings?.customQuotaSources && typeof settings.customQuotaSources === "object"
+      ? settings.customQuotaSources
+      : {};
+
     const allConnections = await getProviderConnections();
-    const eligibleConnections = allConnections.filter(isUsageEligible);
+    const eligibleConnections = allConnections.filter((connection) => isUsageEligible(connection, customQuotaSources));
+    const baseConnections = includeUnsupported ? allConnections : eligibleConnections;
     const providerOptions = Array.from(new Set(eligibleConnections.map((conn) => conn.provider))).sort();
 
-    const providerFilteredConnections = eligibleConnections.filter((conn) => (
+    const providerFilteredConnections = baseConnections.filter((conn) => (
       provider === "all" || conn.provider === provider
     ));
 
@@ -105,7 +115,10 @@ export async function GET(request) {
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const currentPage = Math.min(page, totalPages);
     const offset = (currentPage - 1) * pageSize;
-    const pageConnections = sortedConnections.slice(offset, offset + pageSize).map(sanitize);
+    const pageConnections = sortedConnections.slice(offset, offset + pageSize).map((connection) => ({
+      ...sanitize(connection),
+      hasCustomQuota: Boolean(customQuotaSources[connection.id]),
+    }));
 
     return NextResponse.json({
       connections: pageConnections,

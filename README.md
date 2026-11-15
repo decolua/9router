@@ -40,6 +40,7 @@
 - ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
 - ✅ **Multi-account** - Round-robin between accounts per provider
 - ✅ **Universal** - Works with Claude Code, Codex, Cursor, Cline, any CLI tool
+- ✅ **Custom quota sources** - Map any provider's usage API onto the quota tracker with [JSON paths](docs/CUSTOM_QUOTA.md)
 
 ---
 

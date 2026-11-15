@@ -41,6 +41,7 @@ import {
 } from "./utils";
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
+import CustomQuotaModal from "./CustomQuotaModal";
 import AutoPingScheduleModal from "@/app/(dashboard)/dashboard/providers/[id]/AutoPingScheduleModal";
 import { getScheduleSlotLabels } from "@/shared/services/quotaPingSchedule";
 import { USAGE_SUPPORTED_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
@@ -176,6 +177,8 @@ export default function ProviderLimits() {
   const [resetConfirmState, setResetConfirmState] = useState(null);
   const [resetCreditsState, setResetCreditsState] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [customQuotaOpen, setCustomQuotaOpen] = useState(false);
+  const [customQuotaConnection, setCustomQuotaConnection] = useState(null);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
   // Initialize providerFilter from URL ?provider= param so the page
@@ -1090,6 +1093,20 @@ export default function ProviderLimits() {
           </button>
 
 
+          {/* Custom quota source */}
+          <button
+            type="button"
+            onClick={() => {
+              setCustomQuotaConnection(null);
+              setCustomQuotaOpen(true);
+            }}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+            title="Map any provider usage API onto the quota tracker"
+          >
+            <span className="material-symbols-outlined text-[14px]">tune</span>
+            <span className="hidden sm:inline">Custom quota</span>
+          </button>
+
           {/* Refresh all button */}
           <button
             type="button"
@@ -1303,6 +1320,21 @@ export default function ProviderLimits() {
                         </span>
                       </button>
                     </Tooltip>
+                    {(conn.hasCustomQuota || !USAGE_SUPPORTED_PROVIDERS.includes(conn.provider)) && (
+                      <Tooltip text={conn.hasCustomQuota ? "Custom quota source configured" : "Configure custom quota source"}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomQuotaConnection(conn);
+                            setCustomQuotaOpen(true);
+                          }}
+                          aria-label="Configure custom quota source"
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${conn.hasCustomQuota ? "text-primary" : "text-text-muted"}`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">tune</span>
+                        </button>
+                      </Tooltip>
+                    )}
                     <Tooltip text="Edit connection">
                       <button
                         type="button"
@@ -1669,6 +1701,23 @@ export default function ProviderLimits() {
             </div>
           </div>
         </div>
+      )}
+
+      {customQuotaOpen && (
+        <CustomQuotaModal
+          isOpen
+          connection={customQuotaConnection}
+          onClose={() => {
+            setCustomQuotaOpen(false);
+            setCustomQuotaConnection(null);
+          }}
+          onSaved={async ({ connectionId, provider }) => {
+            await fetchConnections();
+            if (connectionId && provider) {
+              await fetchQuota(connectionId, provider);
+            }
+          }}
+        />
       )}
 
       <EditConnectionModal

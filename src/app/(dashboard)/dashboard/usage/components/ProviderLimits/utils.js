@@ -865,18 +865,27 @@ export function parseQuotaData(provider, data) {
         break;
 
       default:
-        // Generic fallback for unknown providers
+        // Generic fallback for unknown providers (custom quota sources land here)
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
               name: quota.name || name,
               used: quota.used || 0,
               total: quota.total || 0,
+              unit: quota.unit,
               percentage: quota.percentage,
               colorPercentage: quota.colorPercentage,
               percentageIsUsed: quota.percentageIsUsed === true,
+              remaining: quota.remaining,
+              remainingPercentage: quota.remainingPercentage,
               resetAt: quota.resetAt || null,
               emptyMessage: quota.emptyMessage || null,
+              unlimited: quota.unlimited === true,
+              isCreditBalance: quota.isCreditBalance === true,
+              currency: quota.currency,
+              recurring: quota.recurring,
+              neverExpires: quota.neverExpires === true,
+              detailUrl: quota.detailUrl,
             });
           });
         }
