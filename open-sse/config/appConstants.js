@@ -191,6 +191,10 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
   // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
+  // Exact-sentence gate: any systemInstruction text containing this phrase pair gets a bare
+  // 429 RESOURCE_EXHAUSTED even with quota intact (verified on gemini-3.8-flash-*, gemini-4-*).
+  // Same mechanism as the OpenClaw identity sentence, different trigger phrase.
+  { from: /solve coding tasks\.\s*Be concise, practical, and tool-aware\./gi, to: "work on their coding tasks. Keep responses concise and practical, and use the available tools when they help." },
   { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") }
 ];
 
