@@ -131,7 +131,9 @@
     "nous": "nous",
     "nous-portal": "nous",
     "nous-research": "nous",
-    "ns": "nous"
+    "ns": "nous",
+    "dh": "dothoosh",
+    "dothoosh": "dothoosh"
   },
   "idToAlias": {
     "agnes": "agnes",
@@ -176,6 +178,7 @@
     "deepgram": "deepgram",
     "deepseek": "deepseek",
     "deepseek-web": "deepseek-web",
+    "dothoosh": "dothoosh",
     "edge-tts": "edge-tts",
     "elevenlabs": "el",
     "exa": "exa",
