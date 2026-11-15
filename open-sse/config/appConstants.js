@@ -203,6 +203,12 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: /<!-- End Hermes runtime environment -->/g, to: "<!-- End runtime environment -->" },
   // Hermes adds this block for any model id containing "gemini" (every ag/gemini-* route).
   { from: /# Google model operational directives/g, to: "# Operational directives" },
+  // OpenClaw opens every agent prompt (full/minimal/none modes and the local-model prompt) with this
+  // identity line. Alone as the whole system prompt it gets the detail-free 429 on every model; with
+  // only this line reworded, OpenClaw's full gateway prompt returns 200 (probed live). The match is
+  // case-insensitive and needs the trailing period. "OpenClaw" by itself, OpenClaw's other identity
+  // lines and its stock workspace templates all pass, so the product name stays.
+  { from: /You are a personal assistant running inside OpenClaw\./gi, to: "You are a personal assistant that runs inside OpenClaw." },
 ];
 
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
