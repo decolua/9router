@@ -8,6 +8,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity, normalizeGeminiContents } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
+import { GEMINI_LONG_DECODE_MAX_OUTPUT, supportsGeminiLongDecode, wantsGeminiLongDecode, withGeminiLongDecode } from "../utils/geminiLongDecode.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -113,6 +114,17 @@ function buildIdeRequestId({ body, request, credentials, model, requestType }) {
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
+  }
+
+  // Gemini 4 long decode: Cloud Code takes the token inside the envelope (request.continuationToken).
+  async execute(args) {
+    const result = await super.execute(args);
+    if (!result?.response?.ok) return result;
+    const finalBody = result.transformedBody;
+    if (!wantsGeminiLongDecode(this.provider, finalBody?.model || args.model, finalBody?.request?.generationConfig)) return result;
+    const nextHop = async (continuationToken) =>
+      (await super.execute({ ...args, body: { ...args.body, request: { ...args.body?.request, continuationToken } } })).response;
+    return withGeminiLongDecode(result, { stream: args.stream, nextHop, signal: args.signal, log: args.log });
   }
 
   // Parse Antigravity quota error to extract precise resetsAtMs from ErrorInfo/RetryInfo
@@ -313,8 +325,12 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
-    if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
-      generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
+    // Long-decode models (Hydrogen accepts up to 1M live) keep the client's budget; others stay capped.
+    const outputCap = supportsGeminiLongDecode(this.provider, body.model || model)
+      ? GEMINI_LONG_DECODE_MAX_OUTPUT
+      : MAX_ANTIGRAVITY_OUTPUT_TOKENS;
+    if (generationConfig.maxOutputTokens > outputCap) {
+      generationConfig.maxOutputTokens = outputCap;
     }
 
     const transformedRequest = {

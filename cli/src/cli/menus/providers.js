@@ -53,6 +53,10 @@ const PROVIDER_MODELS = {
     { id: "glm-4.7" },
   ],
   ag: [
+    { id: "gemini-4-hydrogen-xhigh" },
+    { id: "gemini-4-hydrogen-high" },
+    { id: "gemini-4-hydrogen-medium" },
+    { id: "gemini-4-hydrogen-low" },
     { id: "gemini-3.8-flash-high" },
     { id: "gemini-3.8-flash-medium" },
     { id: "gemini-3.8-flash-low" },
@@ -112,6 +116,7 @@ const PROVIDER_MODELS = {
     { id: "claude-3-5-sonnet-20241022" },
   ],
   gemini: [
+    { id: "gemini-4-hydrogen" },
     { id: "gemini-3.8-flash" },
     { id: "gemini-3.7-flash" },
     { id: "gemini-3.6-flash" },
