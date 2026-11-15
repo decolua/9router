@@ -191,7 +191,18 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
   // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
-  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") }
+  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") },
+  // Hermes Agent's current prompt (agent/prompt_builder.py, SOUL.md) carries more fingerprinted
+  // strings than the identity line above; each one alone, as the whole system prompt, gets the
+  // detail-free 429 on every model (probed live). The rewrites keep the meaning — only the exact
+  // fingerprinted wording changes — and leave identifiers such as skill_view(name='hermes-agent') intact.
+  { from: /Be direct: match the length of your reply to the weight of the ask/gi, to: "Match the length of your reply to the weight of the ask" },
+  { from: /(documentation at https:\/\/hermes-agent\.nousresearch\.com\/docs) is your authoritative reference/gi, to: "$1 is the authoritative reference" },
+  { from: /Hermes delivers their message as a standalone user message/gi, to: "the harness delivers their message as a standalone user message" },
+  { from: /# Hermes runtime environment/g, to: "# Runtime environment" },
+  { from: /<!-- End Hermes runtime environment -->/g, to: "<!-- End runtime environment -->" },
+  // Hermes adds this block for any model id containing "gemini" (every ag/gemini-* route).
+  { from: /# Google model operational directives/g, to: "# Operational directives" },
 ];
 
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
