@@ -7,6 +7,7 @@ import {
   API_KEY_COLUMNS, groupDataByKey, sortData,
   renderApiKeyDetailCells, renderApiKeySummaryCells,
 } from "@/shared/components/UsageStats";
+import { withComboSubGroups } from "@/shared/utils/comboSubGroups";
 import UsageTable from "../usage/components/UsageTable";
 import ApiKeyUsageChart from "./components/ApiKeyUsageChart";
 
@@ -121,7 +122,7 @@ function ApiKeyUsageContent() {
         <UsageTable
           title="Usage by API Key"
           columns={API_KEY_COLUMNS}
-          groupedData={groupDataByKey(sortData(byApiKey, {}, sortBy, sortOrder), "keyName")}
+          groupedData={withComboSubGroups(groupDataByKey(sortData(byApiKey, {}, sortBy, sortOrder), "keyName"), groupDataByKey)}
           tableType="apiKey"
           sortBy={sortBy}
           sortOrder={sortOrder}

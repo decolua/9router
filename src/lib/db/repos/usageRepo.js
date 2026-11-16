@@ -63,6 +63,9 @@ function addToCounter(target, key, values) {
   if (values.meta) Object.assign(target[key], values.meta);
 }
 
+const comboSuffix = (combo) => (combo ? `|${combo}` : "");
+const rowCombo = (row) => parseJson(row?.meta, {})?.combo || null;
+
 function aggregateEntryToDay(day, entry) {
   const promptTokens = entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0;
   const completionTokens = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
@@ -92,8 +95,10 @@ function aggregateEntryToDay(day, entry) {
   }
 
   const apiKeyVal = entry.apiKey && typeof entry.apiKey === "string" ? entry.apiKey : "local-no-key";
-  const akModelKey = `${apiKeyVal}|${entry.model}|${entry.provider || "unknown"}`;
-  addToCounter(day.byApiKey, akModelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider, apiKey: entry.apiKey || null } });
+  // Suffix only when a combo was called, so direct-model keys stay the same
+  // composite days stored before combos were recorded.
+  const akModelKey = `${apiKeyVal}|${entry.model}|${entry.provider || "unknown"}${comboSuffix(entry.combo)}`;
+  addToCounter(day.byApiKey, akModelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider, apiKey: entry.apiKey || null, combo: entry.combo || null } });
 
   const endpoint = entry.endpoint || "Unknown";
   const epKey = `${endpoint}|${entry.model}|${entry.provider || "unknown"}`;
@@ -287,7 +292,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(entry.combo ? { combo: entry.combo } : {}),
         ]
       );
 
@@ -513,7 +518,7 @@ export async function getUsageStats(period = "all") {
         // accumulated — but it must not become a property name in the
         // response, which reaches the browser. Built from the raw provider,
         // never providerDisplayName: display names are not unique.
-        const akKey = `${apiKeyBucketId(ak.apiKey, apiKeyMap)}|${rawModel}|${provider}`;
+        const akKey = `${apiKeyBucketId(ak.apiKey, apiKeyMap)}|${rawModel}|${provider}${comboSuffix(ak.combo)}`;
         const providerDisplayName = providerNodeNameMap[provider] || provider;
         const apiKeyVal = ak.apiKey ? ak.apiKey.trim() : null;
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
@@ -521,7 +526,7 @@ export async function getUsageStats(period = "all") {
         const apiKeyMasked = maskApiKey(apiKeyVal);
         const apiKeyKey = apiKeyMasked || "local-no-key";
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, combo: ak.combo || null, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
         }
         stats.byApiKey[akKey].requests += ak.requests || 0;
         stats.byApiKey[akKey].promptTokens += ak.promptTokens || 0;
@@ -558,7 +563,7 @@ export async function getUsageStats(period = "all") {
       Date.now() - OVERLAY_WINDOW_MS
     );
     const histRows = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, meta FROM usageHistory WHERE timestamp >= ?`,
       [new Date(overlayCutoff).toISOString()]
     );
     for (const e of histRows) {
@@ -580,7 +585,7 @@ export async function getUsageStats(period = "all") {
       // 24h/today loops above so the overlay keeps working; this also
       // incidentally fixes the no-key branch, whose bare "local-no-key" never
       // matched the "local-no-key|model|provider" storage composite either.
-      const apiKeyKey = `${apiKeyBucketId(e.apiKey, apiKeyMap)}|${e.model}|${e.provider || ""}`;
+      const apiKeyKey = `${apiKeyBucketId(e.apiKey, apiKeyMap)}|${e.model}|${e.provider || ""}${comboSuffix(rowCombo(e))}`;
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
       const endpoint = e.endpoint || "Unknown";
@@ -598,7 +603,7 @@ export async function getUsageStats(period = "all") {
       cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
     }
     const filtered = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens, meta FROM usageHistory WHERE timestamp >= ?`,
       [cutoff]
     );
 
@@ -653,9 +658,10 @@ export async function getUsageStats(period = "all") {
         const keyName = keyInfo?.name || deletedKeyLabel(apiKeyVal);
         const apiKeyMasked = maskApiKey(apiKeyVal);
         // Not the raw key: this reaches the browser as a property name.
-        const akKey = `${apiKeyBucketId(r.apiKey, apiKeyMap)}|${r.model}|${r.provider || ""}`;
+        const combo = rowCombo(r);
+        const akKey = `${apiKeyBucketId(r.apiKey, apiKeyMap)}|${r.model}|${r.provider || ""}${comboSuffix(combo)}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, combo, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
@@ -667,9 +673,10 @@ export async function getUsageStats(period = "all") {
         // provider into one row for 24h/today while 7d/30d/60d/all keep them
         // split — a period toggle on the API Key Usage page would visibly
         // reshape this row.
-        const noKeyKey = `local-no-key|${r.model}|${r.provider || ""}`;
+        const combo = rowCombo(r);
+        const noKeyKey = `local-no-key|${r.model}|${r.provider || ""}${comboSuffix(combo)}`;
         if (!stats.byApiKey[noKeyKey]) {
-          stats.byApiKey[noKeyKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
+          stats.byApiKey[noKeyKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, combo, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[noKeyKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;

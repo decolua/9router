@@ -120,6 +120,9 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    // Recorded on the usage row so per-key stats can say which combo a key
+    // called — the row's model is only the member that answered.
+    if (clientRawRequest) clientRawRequest.combo = modelStr;
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;

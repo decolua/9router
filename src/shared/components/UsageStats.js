@@ -121,6 +121,8 @@ function getGroupKey(item, keyField) {
     case "accountName": return item.accountName || `Account ${item.connectionId?.slice(0, 8)}...` || "Unknown Account";
     case "keyName": return item.apiKeyMasked ? `${item.keyName} (${item.apiKeyMasked})` : item.keyName || "Unknown Key";
     case "endpoint": return item.endpoint || "Unknown Endpoint";
+    // Direct model calls, and traffic recorded before combos were tracked.
+    case "combo": return item.combo || "No combo";
     default: return item[keyField] || "Unknown";
   }
 }
