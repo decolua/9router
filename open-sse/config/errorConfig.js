@@ -75,6 +75,9 @@ export const ERROR_RULES = [
   // account fallback still applies, so other accounts keep serving.
   { provider: "qoder", text: "billing daily count exceeded", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
   { provider: "qoder-cn", text: "billing daily count exceeded", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  // NVIDIA NIM returns 400 with "degraded" when specific model cluster is unhealthy.
+  // Lock only the degraded model (modelScoped: true) without locking the API key.
+  { provider: "nvidia", text: "degraded", cooldownMs: 15 * 60 * 1000, modelScoped: true },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
