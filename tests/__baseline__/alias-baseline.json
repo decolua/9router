@@ -137,7 +137,11 @@
     "opendesign-go": "opendesign-go",
     "dr": "deeprelay",
     "relay": "deeprelay",
-    "deeprelay": "deeprelay"
+    "deeprelay": "deeprelay",
+    "qc": "qwencloud",
+    "qctp": "qwencloud",
+    "qwencloud": "qwencloud",
+    "qwen-cloud": "qwencloud"
   },
   "idToAlias": {
     "agnes": "agnes",
@@ -248,6 +252,7 @@
     "poolside": "poolside",
     "qoder": "qd",
     "qoder-cn": "qdcn",
+    "qwencloud": "qwencloud",
     "recraft": "recraft",
     "runcrate": "runcrate",
     "runwayml": "runwayml",
@@ -388,6 +393,7 @@
     "qd",
     "qdcn",
     "qianfan",
+    "qwencloud",
     "recraft",
     "runcrate",
     "runwayml",

@@ -158,6 +158,9 @@
     "quirks": {
       "clineEnvelope": true
     },
+    "usage": {
+      "url": "https://api.cline.bot/api/v1/users/me/plan/usage-limits"
+    },
     "auth": {
       "combined": true,
       "header": "Authorization",
@@ -189,7 +192,10 @@
     "auth": {
       "combined": true,
       "header": "Authorization",
-      "scheme": "bearer"
+      "scheme": "bearer",
+      "hooks": [
+        "codebuddyHeaders"
+      ]
     },
     "usage": {
       "url": "https://copilot.tencent.com/v2/billing/meter/get-user-resource"
@@ -731,8 +737,11 @@
   "nvidia": {
     "baseUrl": "https://integrate.api.nvidia.com/v1/chat/completions",
     "validateUrl": "https://integrate.api.nvidia.com/v1/models",
-    "format": "openai",
-    "timeoutMs": 90000
+    "timeoutMs": 90000,
+    "quirks": {
+      "dropClientMetadata": true
+    },
+    "format": "openai"
   },
   "ollama-local": {
     "baseUrl": "http://localhost:11434/api/chat",
@@ -849,7 +858,8 @@
     "quirks": {
       "forceAutoToolChoiceModels": [
         "muse-spark-1.3-contributor-free"
-      ]
+      ],
+      "reasoningAliasFields": true
     },
     "format": "openai"
   },
@@ -891,6 +901,14 @@
     "baseUrl": "https://api.siliconflow.com/v1/chat/completions",
     "validateUrl": "https://api.siliconflow.com/v1/models",
     "thinkingFormat": "openai",
+    "format": "openai"
+  },
+  "sensenova": {
+    "baseUrl": "https://token.sensenova.cn/v1/chat/completions",
+    "validateUrl": "https://token.sensenova.cn/v1/models",
+    "quirks": {
+      "reasoningAliasFields": true
+    },
     "format": "openai"
   },
   "together": {
@@ -1021,7 +1039,10 @@
     "auth": {
       "combined": true,
       "header": "Authorization",
-      "scheme": "bearer"
+      "scheme": "bearer",
+      "hooks": [
+        "codebuddyHeaders"
+      ]
     },
     "usage": {
       "url": "https://www.codebuddy.ai/v2/billing/meter/get-user-resource"
@@ -1113,7 +1134,33 @@
     "quirks": {
       "preserveCacheControl": true
     },
-    "format": "openai"
+    "format": "openai",
+    "transports": [
+      {
+        "format": "claude",
+        "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic/v1/messages",
+        "headers": {
+          "Anthropic-Version": "2023-06-01",
+          "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
+        },
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer",
+          "anthropicVersion": true
+        },
+        "thinkingFormat": "claude-adaptive"
+      },
+      {
+        "format": "openai",
+        "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      }
+    ]
   },
   "tokenharbor": {
     "baseUrl": "https://tokenharbor.ai/v1/chat/completions",
@@ -1278,6 +1325,11 @@
     "format": "openai",
     "authType": "cookie"
   },
+  "runcrate": {
+    "baseUrl": "https://api.runcrate.ai/v1/chat/completions",
+    "validateUrl": "https://www.runcrate.ai/api/v1/billing/balance",
+    "format": "openai"
+  },
   "sensenova-intl": {
     "baseUrl": "https://token.sensenova.ai/v1/chat/completions",
     "validateUrl": "https://token.sensenova.ai/v1/models",
@@ -1288,6 +1340,10 @@
   },
   "synthetic": {
     "baseUrl": "https://api.synthetic.new/openai/v1/chat/completions",
+    "validateUrl": "https://api.synthetic.new/v2/quotas",
+    "usage": {
+      "url": "https://api.synthetic.new/v2/quotas"
+    },
     "format": "openai"
   },
   "opendesign-go": {
@@ -1383,17 +1439,45 @@
       }
     ]
   },
-  "sensenova": {
-    "baseUrl": "https://token.sensenova.cn/v1/chat/completions",
-    "validateUrl": "https://token.sensenova.cn/v1/models",
+  "qwencloud": {
+    "baseUrl": "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1/chat/completions",
+    "validateUrl": "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1/models",
     "quirks": {
-      "reasoningAliasFields": true
+      "preserveCacheControl": true
     },
-    "format": "openai"
-  },
-  "runcrate": {
-    "baseUrl": "https://api.runcrate.ai/v1/chat/completions",
-    "validateUrl": "https://www.runcrate.ai/api/v1/billing/balance",
-    "format": "openai"
+    "format": "openai",
+    "transports": [
+      {
+        "format": "openai",
+        "baseUrl": "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1/chat/completions",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      },
+      {
+        "format": "claude",
+        "baseUrl": "https://token-plan.maas.qwencloudapi.com/apps/anthropic/v1/messages",
+        "headers": {
+          "Anthropic-Version": "2023-06-01",
+          "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
+        },
+        "auth": {
+          "combined": true,
+          "header": "x-api-key",
+          "scheme": "raw"
+        }
+      },
+      {
+        "format": "openai-responses",
+        "baseUrl": "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1/responses",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      }
+    ]
   }
 }
