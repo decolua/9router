@@ -270,7 +270,14 @@ export async function handleVideoProxyCore({
     }
   }
 
-  const bodyText = await upstream.text().catch(() => "");
+  let bodyText;
+  try {
+    bodyText = upstream.ok && adapter?.parseResponse
+      ? JSON.stringify(await adapter.parseResponse(upstream, { credentials, signal: fetchSignal }))
+      : await upstream.text();
+  } catch (error) {
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, sanitizeSecrets(`[${provider}] invalid video response: ${error.message}`, credentials));
+  }
   if (!requestId && onUsage) {
     try {
       const payload = JSON.parse(bodyText);

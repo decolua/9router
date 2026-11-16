@@ -5,6 +5,8 @@ import github from "./github.js";
 import openaiCompatNode from "./openaiCompatNode.js";
 import selfhostedEmbedding from "./selfhostedEmbedding.js";
 import ollamaLocal from "./ollamaLocal.js";
+import cohere from "./cohere.js";
+import pollinations from "./pollinations.js";
 
 const OPENAI_COMPAT_PROVIDERS = [
   "openai", "openrouter", "mistral", "voyage-ai", "fireworks",
@@ -13,6 +15,8 @@ const OPENAI_COMPAT_PROVIDERS = [
 ];
 
 const ADAPTERS = {
+  cohere,
+  pollinations,
   ...Object.fromEntries(OPENAI_COMPAT_PROVIDERS.map((id) => [id, createOpenAIEmbeddingAdapter(id)])),
   gemini,
   google_ai_studio: gemini,

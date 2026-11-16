@@ -243,15 +243,27 @@ async function transcribeHuggingFace(cfg, file, model, token) {
 }
 
 // Default: OpenAI/Groq/Whisper-compatible multipart
-async function transcribeOpenAICompatible(cfg, file, model, token, formData, onUsage) {
+async function transcribeOpenAICompatible(cfg, file, model, token, formData, onUsage, signal, proxyOptions) {
   const fd = new FormData();
-  fd.append("file", file, file.name || "audio.wav");
+  if (cfg.format === "cohere-stt") {
+    const language = formData.get("language");
+    if (typeof language !== "string" || !language.trim()) return createErrorResult(400, "Cohere transcription requires language");
+    if (typeof file.arrayBuffer !== "function") return createErrorResult(400, "Invalid audio file");
+    if (file.size > 25 * 1024 * 1024) return createErrorResult(400, "Cohere audio files must not exceed 25MB");
+    if (!/\.(flac|mp3|mpeg|mpga|ogg|wav)$/i.test(file.name || "")) return createErrorResult(400, "Cohere supports FLAC, MP3, MPEG, MPGA, OGG and WAV audio");
+    if (formData.get("response_format") && formData.get("response_format") !== "json") return createErrorResult(400, "Cohere transcription supports only json response_format");
+    if (formData.get("prompt")) return createErrorResult(400, "Cohere transcription does not support prompt");
+  }
   fd.append("model", model);
   for (const k of ["language", "prompt", "response_format", "temperature"]) {
     const v = formData.get(k);
     if (v !== null && v !== undefined && v !== "") fd.append(k, v);
   }
-  const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
+  fd.append("file", file, file.name || "audio.wav");
+  const options = { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd, signal };
+  const res = cfg.format === "cohere-stt" || cfg.format === "pollinations-stt"
+    ? await proxyAwareFetch(cfg.baseUrl, options, proxyOptions)
+    : await fetch(cfg.baseUrl, options);
   if (!res.ok) return upstreamError(res);
   const ct = res.headers.get("content-type") || "application/json";
   const txt = await res.text();
@@ -369,7 +381,7 @@ export async function handleSttCore({ provider, model, formData, credentials, st
       case "huggingface-asr": return await transcribeHuggingFace(cfg, file, model, token);
       case "gemini-stt":      return await transcribeGemini(cfg, file, model, token, formData, onUsage);
       case "elevenlabs-stt":  return await transcribeElevenLabs(cfg, file, model, token, formData);
-      default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData, onUsage);
+      default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData, onUsage, signal, proxyOptions);
     }
   } catch (err) {
     return createErrorResult(err.status || HTTP_STATUS.BAD_GATEWAY, err.message || "STT request failed");

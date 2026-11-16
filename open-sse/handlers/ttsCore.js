@@ -75,7 +75,7 @@ export async function handleTtsCore({ provider, model, input, credentials, respo
     const adapter = getTtsAdapter(provider);
     if (adapter) {
       if (upstreamFormat && !adapter.supportsUpstreamFormat) return createErrorResult(400, "Upstream codec override is not supported by this adapter");
-      const result = await adapter.synthesize(input.trim(), model, credentials, upstreamCodec || responseFormat, { language, style, voice, upstreamFormat: upstreamCodec, onUsage });
+      const result = await adapter.synthesize(input.trim(), model, credentials, upstreamCodec || responseFormat, { language, style, voice, upstreamFormat: upstreamCodec, onUsage, signal, proxyOptions });
       // Adapter may return a full {success, response} (legacy) or {base64, format}
       if (result.success !== undefined) return result;
       if (result.format === "pcm") {

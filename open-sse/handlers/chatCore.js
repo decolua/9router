@@ -33,6 +33,8 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { resolveCohereModels } from "../services/cohereModels.js";
+import { resolvePollinationsModels } from "../services/pollinationsModels.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -187,7 +189,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
   if (!passthrough) {
-    const caps = getCapabilitiesForModel(provider, model);
+    let caps = getCapabilitiesForModel(provider, model);
+    if (provider === "cohere" || provider === "pollinations") {
+      try {
+        const resolveModels = provider === "cohere" ? resolveCohereModels : resolvePollinationsModels;
+        const { models } = await resolveModels(credentials, { proxyOptions: credentials?.providerSpecificData || {} });
+        const live = models.find(entry => entry.id === stripThinkingSuffix(model) || entry.aliases?.includes(stripThinkingSuffix(model)));
+        if (live?.capabilities) caps = { ...caps, ...live.capabilities };
+      } catch (error) {
+        log?.warn?.("MODELS", `${provider} catalog unavailable: ${error.message}`);
+      }
+    }
     if (stripUnsupportedModalities(body, sourceFormat, caps)) {
       log?.debug?.("MODALITY", `stripped unsupported media for ${provider}/${model}`);
     }
