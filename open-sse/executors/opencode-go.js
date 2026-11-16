@@ -73,8 +73,23 @@ function normalizeResponsesTools(body) {
     validNames.add(tool.name);
     return true;
   });
+  // Preserve an explicit client tool_choice: only a named reference that
+  // dangles (no matching declared tool) is dropped. Strings ("auto" /
+  // "required" / "none") and non-function objects (allowed_tools, …) pass
+  // through untouched.
   if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
-    if (body.tool_choice.type === "function") {
+    // Normalize the Chat Completions nested forced shape to the Responses flat shape.
+    const nested = body.tool_choice.function;
+    if (typeof body.tool_choice.name !== "string" && nested && typeof nested === "object" && !Array.isArray(nested)) {
+      const n = typeof nested.name === "string" ? nested.name.trim() : "";
+      if (n) {
+        const { function: _nested, ...rest } = body.tool_choice;
+        body.tool_choice = { ...rest, name: n.slice(0, MAX_TOOL_NAME_LEN) };
+      } else {
+        delete body.tool_choice;
+      }
+    }
+    if (body.tool_choice?.type === "function") {
       const n = typeof body.tool_choice.name === "string" ? body.tool_choice.name.trim() : "";
       if (!n || !validNames.has(n)) delete body.tool_choice;
     }
