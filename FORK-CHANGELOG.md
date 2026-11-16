@@ -10,10 +10,11 @@ See [UPGRADE.md](UPGRADE.md) for how the fork is carried forward.
 
 ### Features
 
-#### Claude Code CLI 2.1.301, and a Jenkins job
+#### Claude Code CLI 2.1.325, and a Jenkins job
 
-The image's `CLAUDE_CODE_VERSION` moves from 2.1.281 to 2.1.301 (npm `latest`; the
-`stable` tag is 2.1.292). `Jenkinsfile` builds and pushes through the shared
+The image's `CLAUDE_CODE_VERSION` moves from 2.1.281 to 2.1.325 (npm `latest`; the
+`stable` tag is 2.1.311). It was first moved to 2.1.301, then to 2.1.325 without
+re-measuring anything below. `Jenkinsfile` builds and pushes through the shared
 library with `deployToK8s: false`; the Kubernetes-Application tag stays manual.
 Not changed: `CLAUDE_CLI_VERSION` in `open-sse/providers/shared.js` (the plain
 `claude` provider's user-agent) is still 2.1.281, and the `claude-cli` code cites

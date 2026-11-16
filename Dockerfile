@@ -97,7 +97,7 @@ ENV DATA_DIR=/app/data
 # unpinned CLI would change what routed requests run on every image rebuild.
 # To move it, change the default below (the Jenkins shared library cannot pass
 # build-args) or build by hand with `--build-arg CLAUDE_CODE_VERSION=<x.y.z>`.
-ARG CLAUDE_CODE_VERSION=2.1.301
+ARG CLAUDE_CODE_VERSION=2.1.325
 ARG NPM_REGISTRY
 RUN npm install -g --registry="${NPM_REGISTRY:-https://registry.npmjs.org}" \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
