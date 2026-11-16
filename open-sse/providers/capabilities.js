@@ -37,6 +37,7 @@
 
 import { matchPattern } from "./pricing.js";
 import { looksLikeVisionModel } from "./visionPatterns.js";
+import cohere from "./registry/cohere.js";
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -243,6 +244,11 @@ const DEVIN_CLI_GPT_CAPS = { vision: true, reasoning: true, search: true, thinki
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  cohere: Object.fromEntries(cohere.models.map(model => [model.id, {
+    ...model.capabilities,
+    thinkingFormat: "openai",
+    ...(model.kind === "embedding" ? { tools: false } : model.kind === "stt" ? { audioInput: true, tools: false } : {}),
+  }])),
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {

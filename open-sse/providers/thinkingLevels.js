@@ -42,6 +42,7 @@ const CLAUDE_NO_XHIGH = ["none", "low", "medium", "high", "max"];
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
+  { provider: "cohere", pattern: "*", levels: ["none", "high"] },
   // Gemini 4 Hydrogen adds "xhigh" on top of low/medium/high (default high); "minimal" is
   // still a 400 ("Thinking level MINIMAL is not supported"). Must precede the family entry.
   { pattern: "*gemini-4-hydrogen*", levels: ["low", "medium", "high", "xhigh"] },
