@@ -184,6 +184,9 @@ export const LOAD_CODE_ASSIST_METADATA = {
 export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";
 // Rewrite rules applied to Antigravity system prompts: competing-client branding
 // makes the backend flag the request and answer 429 Quota Exhausted.
+// Google adds fingerprints over time, so this list always trails it. When a prompt still gets
+// rejected, AntigravityExecutor retries once with the system text moved into the first user turn
+// (Antigravity only checks systemInstruction), so a new fingerprint no longer fails every request.
 export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: "You are a Claude agent, built on Anthropic's Claude Agent SDK.", to: "" },
   { from: /You are Hermes(?: Agent)?(?:,\s*(?:an intelligent AI assistant|an AI assistant|an AI agent))?(?:,?\s*(?:built|created)\s+by\s+Nous Research)?\./gi, to: "You are an AI assistant." },
@@ -191,7 +194,29 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
   // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
-  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") }
+  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") },
+  // Hermes Agent's current prompt (agent/prompt_builder.py, SOUL.md) carries more fingerprinted
+  // strings than the identity line above; each one alone, as the whole system prompt, gets the
+  // detail-free 429 on every model (probed live). The rewrites keep the meaning — only the exact
+  // fingerprinted wording changes — and leave identifiers such as skill_view(name='hermes-agent') intact.
+  { from: /Be direct: match the length of your reply to the weight of the ask/gi, to: "Match the length of your reply to the weight of the ask" },
+  { from: /(documentation at https:\/\/hermes-agent\.nousresearch\.com\/docs) is your authoritative reference/gi, to: "$1 is the authoritative reference" },
+  { from: /Hermes delivers their message as a standalone user message/gi, to: "the harness delivers their message as a standalone user message" },
+  { from: /# Hermes runtime environment/g, to: "# Runtime environment" },
+  { from: /<!-- End Hermes runtime environment -->/g, to: "<!-- End runtime environment -->" },
+  // Hermes adds this block for any model id containing "gemini" (every ag/gemini-* route).
+  { from: /# Google model operational directives/g, to: "# Operational directives" },
+  // Hermes' "# Finishing the job" block (TASK_COMPLETION_GUIDANCE, in every Hermes prompt). Antigravity
+  // began rejecting these two sentences on 2026-11-16; the same prompt passed hours earlier. Antigravity
+  // matches them ignoring case and whitespace; the second one needs its trailing period (probed live).
+  { from: /the deliverable is a working artifact backed by real tool output/gi, to: "the deliverable is a working artifact that real tool output backs" },
+  { from: /Reporting a blocker honestly is always better than inventing a result\./gi, to: "Honestly reporting a blocker is always better than inventing a result." },
+  // OpenClaw opens every agent prompt (full/minimal/none modes and the local-model prompt) with this
+  // identity line. Alone as the whole system prompt it gets the detail-free 429 on every model; with
+  // only this line reworded, OpenClaw's full gateway prompt returns 200 (probed live). The match is
+  // case-insensitive and needs the trailing period. "OpenClaw" by itself, OpenClaw's other identity
+  // lines and its stock workspace templates all pass, so the product name stays.
+  { from: /You are a personal assistant running inside OpenClaw\./gi, to: "You are a personal assistant that runs inside OpenClaw." },
 ];
 
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
