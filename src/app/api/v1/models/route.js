@@ -23,6 +23,8 @@ import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
+import { resolveCohereModels } from "open-sse/services/cohereModels.js";
+import { resolvePollinationsModels } from "open-sse/services/pollinationsModels.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -65,6 +67,12 @@ function comboSeatCapabilities(seat) {
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
 const LIVE_MODEL_RESOLVERS = {
+  cohere: async (conn) => resolveCohereModels(conn, {
+    proxyOptions: await resolveConnectionProxyConfig(conn.providerSpecificData || {}),
+  }),
+  pollinations: async (conn) => resolvePollinationsModels(conn, {
+    proxyOptions: await resolveConnectionProxyConfig(conn.providerSpecificData || {}),
+  }),
   kiro: async (conn) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,
@@ -191,6 +199,7 @@ const MODEL_TYPE_TO_KIND = {
   imageToText: "imageToText",
   video: "video",
   realtime: "realtime",
+  systemone: "systemone",
 };
 
 function modelKind(model) {
@@ -509,7 +518,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       if (liveResolver && !hasExplicitEnabledModels) {
         try {
           const live = await liveResolver(conn);
-          if (live?.models?.length) {
+          if (Array.isArray(live?.models) && (live.models.length || providerId === "cohere" || providerId === "pollinations")) {
             rawModelIds = live.models.map((m) => m.id);
             liveModelKindById = new Map(
               live.models

@@ -14,6 +14,7 @@ import {
   isNousApiKeyAccepted,
 } from "open-sse/services/nous.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { validatePollinationsKey } from "open-sse/services/pollinationsModels.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -395,6 +396,11 @@ export async function POST(request) {
             }),
           });
           isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
+        case "pollinations": {
+          await validatePollinationsKey({ apiKey });
+          isValid = true;
           break;
         }
 

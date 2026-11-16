@@ -17,6 +17,8 @@ import { resolveClineModels, resolveClinepassModels } from "open-sse/services/cl
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
+import { resolveCohereModels } from "open-sse/services/cohereModels.js";
+import { resolvePollinationsModels } from "open-sse/services/pollinationsModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 const MODEL_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -356,7 +358,16 @@ const PROVIDER_MODELS_CONFIG = {
   together: createOpenAIModelsConfig("https://api.together.xyz/v1/models"),
   fireworks: createOpenAIModelsConfig("https://api.fireworks.ai/inference/v1/models"),
   cerebras: createOpenAIModelsConfig("https://api.cerebras.ai/v1/models"),
-  cohere: createOpenAIModelsConfig("https://api.cohere.ai/v1/models"),
+  cohere: {
+    customResolver: async (connection) => resolveCohereModels(connection, {
+      proxyOptions: await resolveConnectionProxyConfig(connection.providerSpecificData || {}),
+    }),
+  },
+  pollinations: {
+    customResolver: async (connection) => resolvePollinationsModels(connection, {
+      proxyOptions: await resolveConnectionProxyConfig(connection.providerSpecificData || {}),
+    }),
+  },
   nebius: createOpenAIModelsConfig("https://api.studio.nebius.ai/v1/models"),
   siliconflow: createOpenAIModelsConfig("https://api.siliconflow.com/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),
@@ -727,6 +738,7 @@ async function fetchProviderModels(connection) {
         provider: connection.provider,
         connectionId: connection.id,
         models: result.models,
+        ...(result.suggestedModels ? { suggestedModels: result.suggestedModels } : {}),
         ...(result.warning ? { warning: result.warning } : {})
       });
     }
@@ -788,13 +800,17 @@ export async function GET(request, { params }) {
     const { id } = await params;
     const connection = await getProviderConnectionById(id);
 
+    if (!connection && id === "pollinations") {
+      return NextResponse.json({ provider: id, ...await resolvePollinationsModels() });
+    }
+
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    return cachedModelList(connection, () => fetchProviderModels(connection));
+    return await cachedModelList(connection, () => fetchProviderModels(connection));
   } catch (error) {
     console.log("Error fetching provider models:", error);
-    return NextResponse.json({ error: "Failed to fetch models" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Failed to fetch models" }, { status: error.status || 500 });
   }
 }
