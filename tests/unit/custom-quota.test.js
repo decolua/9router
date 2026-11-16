@@ -143,10 +143,10 @@ describe("fillCustomQuotaTemplate", () => {
   it("fills connection variables", () => {
     const text = fillCustomQuotaTemplate("{{baseUrl}}/usage?key={{apiKey}}&p={{provider}}", {
       apiKey: "secret",
-      provider: "openai-compatible-staffinc",
-      providerSpecificData: { baseUrl: "https://ai.staffinc.example/v1" },
+      provider: "openai-compatible-acme",
+      providerSpecificData: { baseUrl: "https://llm.example.com/v1" },
     });
-    expect(text).toBe("https://ai.staffinc.example/v1/usage?key=secret&p=openai-compatible-staffinc");
+    expect(text).toBe("https://llm.example.com/v1/usage?key=secret&p=openai-compatible-acme");
   });
 
   it("replaces unknown variables with empty strings", () => {
@@ -192,7 +192,7 @@ describe("fetchCustomQuota", () => {
 
   it("requests the configured endpoint and resolves rows", async () => {
     const config = {
-      plan: "Staffinc",
+      plan: "Gateway",
       request: {
         url: "{{baseUrl}}/key/info",
         method: "GET",
