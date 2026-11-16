@@ -30,6 +30,14 @@ export const TTS_PROVIDER_CONFIG = {
     voiceKey: "openai-tts-voices",
     voicesPerModel: true,
   },
+  "pollinations": {
+    hasModelSelector: true,
+    hasVoiceIdInput: true,
+    hasStyleInput: true,
+    hasLanguageHint: true,
+    defaultModel: "openai/tts-1",
+    defaultVoiceId: "alloy",
+  },
   "openrouter": {
     hasLanguageDropdown: false,
     hasModelSelector: true,

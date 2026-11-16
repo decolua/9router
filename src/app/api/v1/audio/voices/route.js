@@ -8,6 +8,7 @@ const PROVIDER_API = {
   inworld: (origin) => `${origin}/api/media-providers/tts/inworld/voices`,
   "edge-tts": (origin) => `${origin}/api/media-providers/tts/voices?provider=edge-tts`,
   "local-device": (origin) => `${origin}/api/media-providers/tts/voices?provider=local-device`,
+  pollinations: (origin) => `${origin}/api/media-providers/tts/voices?provider=pollinations`,
 };
 
 export async function OPTIONS() {
@@ -32,7 +33,7 @@ export async function GET(request) {
     }
 
     let data;
-    if (provider === "edge-tts" || provider === "local-device") {
+    if (["edge-tts", "local-device", "pollinations"].includes(provider)) {
       // The public route has API-key auth; a server self-fetch cannot use that
       // key to enter the dashboard-protected API. Reuse its service directly.
       data = await listTtsVoices(provider, lang);

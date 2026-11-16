@@ -11,9 +11,11 @@ import selfhostedTts from "./selfhostedTts.js";
 import ollamaLocal from "./ollamaLocal.js";
 import { FORMAT_HANDLERS } from "./genericFormats.js";
 import { parseModelVoice } from "./_base.js";
+import pollinations, { fetchPollinationsVoices } from "./pollinations.js";
 
 // Special providers with custom synthesize() logic
 const SPECIAL_ADAPTERS = {
+  pollinations,
   "google-tts": googleTts,
   "edge-tts": edgeTts,
   "local-device": localDevice,
@@ -48,6 +50,7 @@ export async function synthesizeViaConfig(provider, text, model, credentials) {
 
 // Voice fetchers (used by /api/media-providers/tts/voices route)
 export const VOICE_FETCHERS = {
+  pollinations: fetchPollinationsVoices,
   "edge-tts": fetchEdgeTtsVoices,
   "local-device": fetchLocalDeviceVoices,
   elevenlabs: fetchElevenLabsVoices,

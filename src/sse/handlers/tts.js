@@ -122,7 +122,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
     let result;
     try {
       if (provider === "codex") credentials = await checkAndRefreshToken(provider, credentials);
-      const proxyOptions = provider === "codex" ? await resolveConnectionProxyConfig(credentials._connection?.providerSpecificData || credentials.providerSpecificData) : undefined;
+      const proxyOptions = ["codex", "pollinations"].includes(provider) ? await resolveConnectionProxyConfig(credentials._connection?.providerSpecificData || credentials.providerSpecificData) : undefined;
       const args = { provider, model, input: body.input, credentials, responseFormat, upstreamFormat, language, style, voice: body.voice, signal, proxyOptions };
       result = await runSpeechInference(handleTtsCore, args, usageContext);
       if (provider === "codex" && result.status === 401 && credentials.refreshToken && !signal.aborted) {
