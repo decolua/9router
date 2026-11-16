@@ -5,9 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, ZedAuthModal, XiaomiMimoAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, ZedAuthModal, XiaomiMimoAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal, AutoPingScheduleModal as CronScheduleModal, ClaudeCliStatusCard, ClaudeCliAccountsCard } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
+import { unlistedLiveModels } from "@/shared/utils/unlistedModels";
+import { AUTO_PING_SETTINGS_KEYS } from "@/shared/constants/config";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
@@ -37,11 +39,6 @@ const MCODE_LEASE_PROVIDERS = new Set(["minimax-code", "minimax-code-global"]);
 // renders the live per-connection catalog from GET /api/providers/[id]/models
 // when one resolves, and falls back to the static rows otherwise.
 const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode"]);
-
-const AUTO_PING_SETTINGS_KEYS = {
-  claude: "claudeAutoPing",
-  codex: "codexAutoPing",
-};
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -80,12 +77,49 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
-  const [autoPing, setAutoPing] = useState({ enabled: false, connections: {}, schedules: {} });
+  // model id -> the effort that model runs at (see open-sse/services/modelEffort.js)
+  const [modelEfforts, setModelEfforts] = useState({});
+  const [autoPing, setAutoPing] = useState({ enabled: false, connections: {}, schedules: {}, cron: {} });
   const [scheduleConnection, setScheduleConnection] = useState(null);
+  const [cronScheduleTarget, setCronScheduleTarget] = useState(null);
   const [suggestedModels, setSuggestedModels] = useState([]);
-  const [liveModels, setLiveModels] = useState([]);
+  // What the provider itself reported, tagged with the provider it was asked.
+  //
+  // The [id] route reuses this component across client-side navigation, so an
+  // answer can arrive after the page has moved on — from the automatic fetch or
+  // from the button, which invites a click and then a click away. This list
+  // feeds the "not in the catalog yet" section, where "Add all" registers
+  // models under whichever provider's page is open, so a late write landing on
+  // the wrong page is not a stale render but models filed under the wrong
+  // provider. Every writer stamps the id it was called for, and a tag that does
+  // not match the page is simply not read.
+  const [liveCatalog, setLiveCatalog] = useState({ providerId: null, models: [], note: null });
+  const liveModels = liveCatalog.providerId === providerId ? liveCatalog.models : [];
+  const liveCheckNote = liveCatalog.providerId === providerId ? liveCatalog.note : null;
+  // Stable per provider, so the fetch effect below can depend on it without
+  // re-running every render — and so the id each writer stamps is the one that
+  // was current when the write was started, not when it lands.
+  const rememberLiveModels = useCallback(
+    (models) => setLiveCatalog({ providerId, models, note: null }),
+    [providerId],
+  );
+  const rememberLiveNote = useCallback((note) => setLiveCatalog((prev) => ({
+    providerId,
+    models: prev.providerId === providerId ? prev.models : [],
+    note,
+  })), [providerId]);
   // Live-catalog fetch warning/error (surfaced for zed only; cursor behavior unchanged).
+  //
+  // Deliberately outside the tag above, and safe only because of two things: it
+  // renders behind `providerId === "zed"`, and every path into the zed effect
+  // clears it first. Surface it for any other provider and it needs the tag,
+  // because nothing else stops a zed error appearing on another provider's page.
   const [liveModelsError, setLiveModelsError] = useState(null);
+  const [addingLiveModels, setAddingLiveModels] = useState(false);
+  // An explicit check against the provider's own catalog. Deliberately not
+  // automatic: it is a real upstream request per provider page, and nobody
+  // asked for one every time a page is opened.
+  const [checkingLive, setCheckingLive] = useState(false);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -340,9 +374,15 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
+      setModelEfforts(thinkingCfg.models && typeof thinkingCfg.models === "object" ? thinkingCfg.models : {});
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
       const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
-      setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {}, schedules: apCfg.schedules || {} });
+      setAutoPing({
+        enabled: apCfg.enabled === true,
+        connections: apCfg.connections || {},
+        schedules: apCfg.schedules || {},
+        cron: apCfg.cron || {},
+      });
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
 
@@ -429,16 +469,23 @@ export default function ProviderDetailPage() {
     saveProviderStrategy("round-robin", value);
   };
 
-  const saveThinkingConfig = async (mode) => {
+  // `mode` is the provider-wide default, `models` the per-model efforts. Either
+  // can be saved without losing the other; the entry goes away when both are empty.
+  const saveThinkingConfig = async (mode, models = modelEfforts) => {
     try {
       const settingsRes = await fetch("/api/settings", { cache: "no-store" });
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       const current = settingsData.providerThinking || {};
       const updated = { ...current };
-      if (!mode || mode === "auto") {
+      const hasMode = mode && mode !== "auto";
+      const cleanModels = Object.fromEntries(Object.entries(models || {}).filter(([, level]) => level && level !== "auto"));
+      if (!hasMode && Object.keys(cleanModels).length === 0) {
         delete updated[providerId];
       } else {
-        updated[providerId] = { mode };
+        updated[providerId] = {
+          ...(hasMode ? { mode } : {}),
+          ...(Object.keys(cleanModels).length ? { models: cleanModels } : {}),
+        };
       }
       await fetch("/api/settings", {
         method: "PATCH",
@@ -453,6 +500,22 @@ export default function ProviderDetailPage() {
   const handleThinkingModeChange = (mode) => {
     setThinkingMode(mode);
     saveThinkingConfig(mode);
+  };
+
+  const handleModelEffortChange = (modelId, level) => {
+    const next = { ...modelEfforts };
+    if (!level || level === "auto") delete next[modelId]; else next[modelId] = level;
+    setModelEfforts(next);
+    saveThinkingConfig(thinkingMode, next);
+  };
+  // The levels this model takes, without "none" (that is the thinking switch, not an effort).
+  const effortLevelsFor = (modelId) => {
+    // The Claude Code CLI has no effort of its own to set; offering one would be a
+    // selector that does nothing.
+    if (providerId === "claude-cli") return null;
+    const levels = getThinkingLevels(providerId, modelId);
+    const efforts = levels ? levels.filter((l) => l !== "none") : [];
+    return efforts.length ? efforts : null;
   };
 
   const saveAutoPing = async (next) => {
@@ -479,6 +542,14 @@ export default function ProviderDetailPage() {
     });
   };
 
+  // `null` entry removes the schedule; anything else replaces it wholesale.
+  const handleAutoPingSchedule = async (connectionId, entry) => {
+    const nextCron = { ...(autoPing.cron || {}) };
+    if (entry) nextCron[connectionId] = entry;
+    else delete nextCron[connectionId];
+    await saveAutoPing({ ...autoPing, cron: nextCron });
+  };
+
   useEffect(() => {
     fetchConnections();
     fetchAliases();
@@ -493,13 +564,16 @@ export default function ProviderDetailPage() {
   useEffect(() => {
     const isLiveCatalog = LIVE_MODEL_CATALOG_PROVIDERS.has(providerId);
     if (!isLiveCatalog) {
-      setLiveModels([]);
+      // No automatic fetch, and no clearing either: for every other provider
+      // the list is whatever "Check for new models" last fetched, and this
+      // effect also runs when the connection list changes, which would undo it.
+      // A list belonging to another provider is handled by its tag, not here.
       return;
     }
 
     const connection = connections.find((item) => item.isActive !== false);
     if (!connection?.id) {
-      setLiveModels([]);
+      rememberLiveModels([]);
       if (providerId === "zed") setLiveModelsError(null);
       return;
     }
@@ -511,24 +585,24 @@ export default function ProviderDetailPage() {
       .then(({ ok, data }) => {
         if (cancelled) return;
         if (ok && Array.isArray(data?.models) && data.models.length > 0) {
-          setLiveModels(data.models);
+          rememberLiveModels(data.models);
           if (providerId === "zed" && data?.warning) setLiveModelsError(data.warning);
           return;
         }
         if (providerId === "zed") {
-          setLiveModels([]);
+          rememberLiveModels([]);
           setLiveModelsError(data?.warning || data?.error || "Zed returned no live models.");
         }
       })
       .catch(() => {
         if (!cancelled && providerId === "zed") {
-          setLiveModels([]);
+          rememberLiveModels([]);
           setLiveModelsError("Failed to reach the Zed model catalog.");
         }
       });
 
     return () => { cancelled = true; };
-  }, [providerId, connections]);
+  }, [providerId, connections, rememberLiveModels]);
 
   // Fetch suggested models from provider's public API (if configured)
   useEffect(() => {
@@ -587,6 +661,64 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error adding custom model:", error);
+    }
+  };
+
+  /**
+   * Ask this provider what models it has, so the ones missing from the
+   * catalog can be listed.
+   *
+   * cursor and zed already resolve their catalog live, because the registry
+   * carries nothing usable for them. Everything else has a hand-maintained
+   * list that goes stale the day a model is released, and this is the button
+   * that says so.
+   */
+  const handleCheckLiveModels = async () => {
+    if (checkingLive) return;
+    const connection = connections.find((item) => item.isActive !== false);
+    if (!connection?.id) {
+      rememberLiveNote("Add an active connection first — the model list comes from the provider.");
+      return;
+    }
+    setCheckingLive(true);
+    rememberLiveNote(null);
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !Array.isArray(data?.models)) {
+        // Models first, note second: remembering a list clears the note, so the
+        // other order would announce nothing.
+        rememberLiveModels([]);
+        rememberLiveNote(data?.error || data?.warning
+          || `The provider did not return a model list (HTTP ${res.status}).`);
+        return;
+      }
+      rememberLiveModels(data.models);
+      if (data.models.length === 0) rememberLiveNote("The provider reported no models.");
+    } catch {
+      rememberLiveModels([]);
+      rememberLiveNote("Could not reach the provider to ask for its model list.");
+    } finally {
+      setCheckingLive(false);
+    }
+  };
+
+  /**
+   * Adopt models the provider itself reports that the catalog has never heard
+   * of. The catalog is hand-maintained, so a model released yesterday is
+   * invisible here until someone edits it; the list these come from was just
+   * fetched from the provider. They are added as custom models, which is the
+   * same thing a person typing the id into the box would get.
+   */
+  const handleAddLiveModels = async (list) => {
+    if (addingLiveModels || !list.length) return;
+    setAddingLiveModels(true);
+    try {
+      for (const model of list) {
+        await handleAddCustomModel(model.id, "llm", providerStorageAlias);
+      }
+    } finally {
+      setAddingLiveModels(false);
     }
   };
 
@@ -1077,6 +1209,12 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                autoPingSchedule={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
+                  active: (autoPing.cron?.[conn.id]?.expressions || []).length > 0
+                    && autoPing.cron[conn.id].enabled !== false,
+                  summary: (autoPing.cron?.[conn.id]?.expressions || []).join(", "),
+                  onOpen: () => setCronScheduleTarget(conn),
+                } : null}
                 autoPing={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
                   isActive: autoPing.connections[conn.id] === true || autoPing.schedules?.[conn.id]?.enabled === true,
                   reactiveOn: autoPing.connections[conn.id] === true,
@@ -1223,6 +1361,13 @@ export default function ProviderDetailPage() {
       type: "llm",
     });
 
+    // Reported by the provider, absent from everything above.
+    const unlistedModels = unlistedLiveModels({
+      liveModels,
+      listedModels: allModels,
+      customModelRows,
+    });
+
     return (
       <div className="flex flex-wrap gap-3">
         {/* Custom models first */}
@@ -1249,6 +1394,9 @@ export default function ProviderDetailPage() {
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
             thinkingSuffix={resolveThinkingSuffix(model.id)}
+            effortLevels={effortLevelsFor(model.id)}
+            effort={modelEfforts[model.id]}
+            onEffortChange={(level) => handleModelEffortChange(model.id, level)}
           />
         ))}
 
@@ -1275,6 +1423,9 @@ export default function ProviderDetailPage() {
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
               thinkingSuffix={resolveThinkingSuffix(model.id)}
+              effortLevels={effortLevelsFor(model.id)}
+              effort={modelEfforts[model.id]}
+              onEffortChange={(level) => handleModelEffortChange(model.id, level)}
             />
           );
         })}
@@ -1360,6 +1511,40 @@ export default function ProviderDetailPage() {
                   onClick={() => handleEnableModel(m.id)}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
                   title="Restore model"
+                >
+                  <span className="material-symbols-outlined text-[13px]">add</span>
+                  {m.id}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Reported by the provider, not in the catalog yet */}
+        {unlistedModels.length > 0 && (
+          <div className="w-full mt-2">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-text-muted">
+                {`Not in the catalog yet (${unlistedModels.length}) — reported by this provider:`}
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="library_add"
+                disabled={addingLiveModels}
+                onClick={() => handleAddLiveModels(unlistedModels)}
+              >
+                {addingLiveModels ? "Adding..." : "Add all"}
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {unlistedModels.map((m) => (
+                <button
+                  key={m.id}
+                  disabled={addingLiveModels}
+                  onClick={() => handleAddLiveModels([m])}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors disabled:opacity-40"
+                  title="Add this model"
                 >
                   <span className="material-symbols-outlined text-[13px]">add</span>
                   {m.id}
@@ -1549,7 +1734,12 @@ export default function ProviderDetailPage() {
 
       {/* Connections */}
       {isFreeNoAuth ? (
-        <NoAuthProxyCard providerId={providerId} />
+        <>
+          {/* Accounts first: it is the card that decides whether anything works. */}
+          {providerId === "claude-cli" && <ClaudeCliAccountsCard />}
+          {providerId === "claude-cli" && <ClaudeCliStatusCard />}
+          <NoAuthProxyCard providerId={providerId} />
+        </>
       ) : (
         <Card>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1818,14 +2008,25 @@ export default function ProviderDetailPage() {
               </select>
             )}
           </div>
-          {!isCompatible && (() => {
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="cloud_sync"
+              disabled={checkingLive}
+              onClick={handleCheckLiveModels}
+              title="Ask the provider which models it has, and list the ones this catalog is missing"
+            >
+              {checkingLive ? "Checking..." : "Check for new models"}
+            </Button>
+            {!isCompatible && (() => {
             const allIds = [
               ...models,
               ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
             ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All
@@ -1839,6 +2040,7 @@ export default function ProviderDetailPage() {
               </div>
             );
           })()}
+          </div>
         </div>
         {!!modelsTestError && (
           <div className="mb-3">
@@ -1871,6 +2073,9 @@ export default function ProviderDetailPage() {
         )}
         {providerId === "zed" && !!liveModelsError && (
           <p className="text-xs text-red-500 mb-3 break-words">{liveModelsError}</p>
+        )}
+        {!!liveCheckNote && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mb-3 break-words">{liveCheckNote}</p>
         )}
         {renderModelsSection()}
       </Card>
@@ -1914,6 +2119,15 @@ export default function ProviderDetailPage() {
           onClose={() => setShowOAuthModal(false)}
         />
       )}
+
+      <CronScheduleModal
+        isOpen={!!cronScheduleTarget}
+        provider={providerId}
+        connection={cronScheduleTarget || {}}
+        value={cronScheduleTarget ? autoPing.cron?.[cronScheduleTarget.id] : null}
+        onSave={(entry) => handleAutoPingSchedule(cronScheduleTarget.id, entry)}
+        onClose={() => setCronScheduleTarget(null)}
+      />
 
       {/* Xiaomi Desktop: auto-import local credentials modal */}
       <XiaomiMimoAuthModal

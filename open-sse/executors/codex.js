@@ -514,8 +514,16 @@ export class CodexExecutor extends BaseExecutor {
       }
     }
 
-    // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
-    if (!body.reasoning) {
+    // Priority: effort named in the model id > reasoning.effort > reasoning_effort param > default.
+    // The model id wins because it is the operator's explicit choice for this model
+    // (`cx/gpt-6-luna-low`), whereas an agent client sends an effort of its own on
+    // every request — which used to throw the suffix away. Same order as the
+    // `(low)` spelling, which thinkingUnified already applies over the client.
+    if (modelEffort) {
+      const effort = normalizeReasoningEffort(body.model, modelEffort);
+      body.reasoning = { ...(body.reasoning || {}), effort };
+      if (!responsesLite && !body.reasoning.summary) body.reasoning.summary = "auto";
+    } else if (!body.reasoning) {
       const effort = normalizeReasoningEffort(body.model, body.reasoning_effort || modelEffort || (responsesLite ? 'medium' : 'low'));
       body.reasoning = responsesLite ? { effort } : { effort, summary: "auto" };
     } else {

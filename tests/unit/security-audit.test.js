@@ -52,13 +52,21 @@ describe("AUDIT-002: API key masking", () => {
     expect(livePath.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("byApiKey object keys should use masked key, not raw key", () => {
+  it("byApiKey object keys should use a safe bucket id, not the raw key", () => {
     const source = fs.readFileSync(
       path.resolve(REPO_ROOT, "src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // The 24h path should use apiKeyMasked in the akKey template
-    expect(source).toContain("${apiKeyMasked}|${r.model}|${r.provider");
+    // The 24h path used to build its akKey from apiKeyMasked directly; it now
+    // goes through apiKeyBucketId(...), which resolves to the key's id,
+    // sha256(rawKey).slice(0, 8), or "local-no-key" — never the raw key, and
+    // never the masked form either: every 9Router key is
+    // `sk-${machineId}-...`, so apiKeyMasked's first 8 characters are the
+    // same machineId prefix for every key on an install and can't identify
+    // one. Also verified behaviorally in
+    // tests/unit/usage-stats-no-raw-keys.test.js; kept here as the #1962
+    // audit-trail source guard.
+    expect(source).toContain("apiKeyBucketId(r.apiKey, apiKeyMap)");
     // Should NOT use raw r.apiKey in the key
     expect(source).not.toContain("${r.apiKey}|${r.model}|${r.provider");
   });

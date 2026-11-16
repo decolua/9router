@@ -30,6 +30,10 @@ function buildProviderEntry(r) {
     ...(r.regions ? { regions: r.regions, defaultRegion: r.defaultRegion } : {}),
     ...(r.hasProviderSpecificData ? { hasProviderSpecificData: true } : {}),
     ...(r.noAuth ? { noAuth: true } : {}),
+    // noAuth alone does not mean usable: these two still need a signed-in CLI
+    // or a running bridge on the host, and each connection is one account.
+    ...(r.localSetup ? { localSetup: true } : {}),
+    ...(r.supportsAccounts ? { supportsAccounts: true } : {}),
     ...(r.passthroughModels ? { passthroughModels: true } : {}),
     ...(r.hasOAuth ? { hasOAuth: true } : {}),
     ...(r.authModes ? { authModes: r.authModes } : {}),
@@ -165,4 +169,13 @@ export const USAGE_SUPPORTED_PROVIDERS = REGISTRY
 
 export const USAGE_APIKEY_PROVIDERS = REGISTRY
   .filter(r => r.features?.usageApikey)
+  .map(r => r.id);
+
+// Providers whose connections carry authType "none" because their credential
+// is local, so they are eligible for a usage lookup on this flag rather than
+// on an auth type. It does not mean there is no upstream quota: claude-cli
+// reads the real Claude windows (src/shared/services/claudeCliUsage.js) and
+// only falls back to counting what this server routed (routedUsage.js).
+export const USAGE_ROUTED_PROVIDERS = REGISTRY
+  .filter(r => r.features?.usageRouted)
   .map(r => r.id);

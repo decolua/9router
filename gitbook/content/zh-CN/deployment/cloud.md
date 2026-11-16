@@ -113,7 +113,7 @@ pm2 monit
 在 `app` 目录中创建 `Dockerfile`:
 
 ```dockerfile
-FROM node:20-alpine
+FROM node:22.23.4-alpine
 
 WORKDIR /app
 

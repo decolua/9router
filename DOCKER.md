@@ -8,6 +8,24 @@ Run 9Router in a container. Published image: [`decolua/9router`](https://hub.doc
 
 ## Quick start
 
+`docker run` gives you the router on its own. **`docker compose up` also gives
+you the Claude Code CLI provider**, which needs the binary present in the
+container — which is what most people want:
+
+```bash
+cp .env.example .env     # set JWT_SECRET; see the notes in that file
+docker compose up -d
+```
+
+> First run builds two images and takes several minutes: the router (so Claude
+> Code is inside it — the published image is upstream's and has no Claude Code)
+> and the bridge (Chromium, Electron and a virtual display). Give Docker at
+> least 4 GB of memory for the router's Next.js build.
+
+Open http://localhost:20128.
+
+Router only, no local providers:
+
 ```bash
 docker run -d \
   -p 20128:20128 \
@@ -18,6 +36,53 @@ docker run -d \
 ```
 
 App listens on port `20128`. Open: http://localhost:20128
+
+---
+
+## Reaching the provider cards remotely
+
+The Claude Code card drives routes that are normally restricted to loopback,
+because on a desktop they can spawn a process or open a window. In a container that restriction only gets in the way — there is no
+desktop behind them — so it is lifted automatically when 9Router detects
+`/.dockerenv` or `KUBERNETES_SERVICE_HOST`. Dashboard authentication still
+applies.
+
+If you run 9Router outside a container but reach the dashboard from another
+machine, set it explicitly:
+
+```yaml
+    environment:
+      NINEROUTER_HOST_ROUTES_REMOTE: "1"
+```
+
+`0` forces the loopback rule back on.
+
+---
+
+## The local provider
+
+### Claude Code CLI — bundled in the image
+
+`@anthropic-ai/claude-code` is installed in the image, so the **claude-cli**
+provider works with nothing else to install. It runs `claude -p` instead of
+replaying OAuth tokens, which is the point: traffic looks like an ordinary
+Claude Code session.
+
+The container has no terminal for the sign-in TUI, so an account is attached
+with a token instead. On any machine that already has Claude Code:
+
+```bash
+claude setup-token          # prints a long-lived token
+```
+
+Then in the dashboard: **Providers → Claude Code CLI (-p) → Claude Code
+accounts → paste the token**. Add several tokens for several accounts;
+9Router falls back between them like any other provider.
+
+> Each account is one token (in a container) or one Claude Code config
+> directory (on a desktop). Both are per-connection, so accounts never share
+> credentials.
+
 
 ## Manage container
 

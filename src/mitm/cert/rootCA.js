@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
-const forge = require("node-forge");
+const { X509Certificate } = require("crypto");
+const selfsigned = require("selfsigned");
 const { MITM_DIR } = require("../paths");
 
 const ROOT_CA_KEY_PATH = path.join(MITM_DIR, "rootCA.key");
@@ -11,9 +12,9 @@ const ROOT_CA_CERT_PATH = path.join(MITM_DIR, "rootCA.crt");
  */
 function isCertExpired(certPath) {
   try {
-    const cert = forge.pki.certificateFromPem(fs.readFileSync(certPath, "utf8"));
+    const cert = new X509Certificate(fs.readFileSync(certPath));
     const expiryThreshold = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    return cert.validity.notAfter < expiryThreshold;
+    return new Date(cert.validTo) < expiryThreshold;
   } catch {
     return true; // treat unreadable cert as expired
   }
@@ -23,7 +24,7 @@ function isCertExpired(certPath) {
  * Generate Root CA certificate (only once, auto-regenerate if expired)
  * This Root CA will sign all dynamic leaf certificates
  */
-function generateRootCA() {
+async function generateRootCA() {
   const exists = fs.existsSync(ROOT_CA_KEY_PATH) && fs.existsSync(ROOT_CA_CERT_PATH);
   if (exists && !isCertExpired(ROOT_CA_CERT_PATH)) {
     console.log("✅ Root CA already exists");
@@ -41,52 +42,27 @@ function generateRootCA() {
 
   console.log("🔐 Generating Root CA certificate...");
 
-  // Generate RSA key pair
-  const keys = forge.pki.rsa.generateKeyPair(2048);
-
-  // Create Root CA certificate
-  const cert = forge.pki.createCertificate();
-  cert.publicKey = keys.publicKey;
-  cert.serialNumber = "01";
-  cert.validity.notBefore = new Date();
-  cert.validity.notAfter = new Date();
-  cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 10);
-
   const attrs = [
     { name: "commonName", value: "9Router MITM Root CA" },
     { name: "organizationName", value: "9Router" },
     { name: "countryName", value: "US" }
   ];
+  const notBeforeDate = new Date();
+  const notAfterDate = new Date(notBeforeDate);
+  notAfterDate.setFullYear(notAfterDate.getFullYear() + 10);
+  const pems = await selfsigned.generate(attrs, {
+    algorithm: "sha256",
+    keySize: 2048,
+    notBeforeDate,
+    notAfterDate,
+    extensions: [
+      { name: "basicConstraints", cA: true, critical: true },
+      { name: "keyUsage", keyCertSign: true, cRLSign: true, critical: true }
+    ]
+  });
 
-  cert.setSubject(attrs);
-  cert.setIssuer(attrs); // Self-signed
-
-  cert.setExtensions([
-    {
-      name: "basicConstraints",
-      cA: true,
-      critical: true
-    },
-    {
-      name: "keyUsage",
-      keyCertSign: true,
-      cRLSign: true,
-      critical: true
-    },
-    {
-      name: "subjectKeyIdentifier"
-    }
-  ]);
-
-  // Self-sign the certificate
-  cert.sign(keys.privateKey, forge.md.sha256.create());
-
-  // Save to disk
-  const privateKeyPem = forge.pki.privateKeyToPem(keys.privateKey);
-  const certPem = forge.pki.certificateToPem(cert);
-
-  fs.writeFileSync(ROOT_CA_KEY_PATH, privateKeyPem);
-  fs.writeFileSync(ROOT_CA_CERT_PATH, certPem);
+  fs.writeFileSync(ROOT_CA_KEY_PATH, pems.private, { mode: 0o600 });
+  fs.writeFileSync(ROOT_CA_CERT_PATH, pems.cert, { mode: 0o644 });
 
   console.log("✅ Root CA generated successfully");
   return { key: ROOT_CA_KEY_PATH, cert: ROOT_CA_CERT_PATH };
@@ -103,64 +79,37 @@ function loadRootCA() {
   const keyPem = fs.readFileSync(ROOT_CA_KEY_PATH, "utf8");
   const certPem = fs.readFileSync(ROOT_CA_CERT_PATH, "utf8");
 
-  return {
-    key: forge.pki.privateKeyFromPem(keyPem),
-    cert: forge.pki.certificateFromPem(certPem)
-  };
+  return { key: keyPem, cert: certPem };
 }
 
 /**
  * Generate leaf certificate for a specific domain, signed by Root CA
  */
-function generateLeafCert(domain, rootCA) {
-  // Generate key pair for leaf cert
-  const keys = forge.pki.rsa.generateKeyPair(2048);
+async function generateLeafCert(domain, rootCA) {
+  const notBeforeDate = new Date();
+  const notAfterDate = new Date(notBeforeDate);
+  notAfterDate.setFullYear(notAfterDate.getFullYear() + 1);
+  const pems = await selfsigned.generate([{ name: "commonName", value: domain }], {
+    algorithm: "sha256",
+    keySize: 2048,
+    notBeforeDate,
+    notAfterDate,
+    ca: rootCA,
+    extensions: [
+      { name: "basicConstraints", cA: false },
+      { name: "keyUsage", digitalSignature: true, keyEncipherment: true },
+      { name: "extKeyUsage", serverAuth: true, clientAuth: true },
+      {
+        name: "subjectAltName",
+        altNames: [
+          { type: 2, value: domain },
+          { type: 2, value: `*.${domain}` }
+        ]
+      }
+    ]
+  });
 
-  // Create leaf certificate
-  const cert = forge.pki.createCertificate();
-  cert.publicKey = keys.publicKey;
-  cert.serialNumber = Math.floor(Math.random() * 1000000).toString();
-  cert.validity.notBefore = new Date();
-  cert.validity.notAfter = new Date();
-  cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
-
-  cert.setSubject([
-    { name: "commonName", value: domain }
-  ]);
-
-  cert.setIssuer(rootCA.cert.subject.attributes);
-
-  cert.setExtensions([
-    {
-      name: "basicConstraints",
-      cA: false
-    },
-    {
-      name: "keyUsage",
-      digitalSignature: true,
-      keyEncipherment: true
-    },
-    {
-      name: "extKeyUsage",
-      serverAuth: true,
-      clientAuth: true
-    },
-    {
-      name: "subjectAltName",
-      altNames: [
-        { type: 2, value: domain }, // DNS
-        { type: 2, value: `*.${domain}` } // Wildcard
-      ]
-    }
-  ]);
-
-  // Sign with Root CA
-  cert.sign(rootCA.key, forge.md.sha256.create());
-
-  return {
-    key: forge.pki.privateKeyToPem(keys.privateKey),
-    cert: forge.pki.certificateToPem(cert)
-  };
+  return { key: pems.private, cert: pems.cert };
 }
 
 module.exports = {

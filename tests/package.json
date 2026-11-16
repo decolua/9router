@@ -9,9 +9,10 @@
     "test:watch": "vitest --reporter=verbose"
   },
   "devDependencies": {
+    "playwright-core": "^1.63.0",
     "vitest": "^4.0.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": "^22.23.4 || ^24.22.1"
   }
 }

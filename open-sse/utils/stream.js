@@ -8,6 +8,8 @@ import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStream
 import { restoreToolNames } from "./opencodeFingerprint.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { buildErrorBody } from "./error.js";
+import { bodyErrorFromJson } from "./upstreamBodyError.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -86,6 +88,19 @@ export function createSSEStream(options = {}) {
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
+  // Tool calls, for the record only — they are forwarded to the client either
+  // way. A turn whose whole answer is a tool call accumulated no text, so the
+  // dashboard recorded it as "[Empty streaming response]": the one shape an
+  // agentic client produces constantly, filed as if nothing had come back.
+  // Keyed by the index the deltas carry, because arguments arrive in fragments.
+  const accumulatedToolCalls = new Map();
+  const rememberToolCall = (index, name, argsFragment) => {
+    const key = String(index ?? accumulatedToolCalls.size);
+    const call = accumulatedToolCalls.get(key) || { name: "", args: "" };
+    if (name) call.name = name;
+    if (argsFragment) call.args += argsFragment;
+    accumulatedToolCalls.set(key, call);
+  };
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -127,8 +142,14 @@ export function createSSEStream(options = {}) {
     }
 
     if (onStreamComplete) {
+      // Only when there is no text to show: a turn that said something AND
+      // called a tool is described by what it said.
+      const toolSummary = accumulatedContent ? "" : [...accumulatedToolCalls.values()]
+        .filter((call) => call.name)
+        .map((call) => `[tool_call] ${call.name}(${call.args || ""})`)
+        .join("\n");
       onStreamComplete({
-        content: accumulatedContent,
+        content: accumulatedContent || toolSummary,
         thinking: accumulatedThinking
       }, finalUsage, ttftAt);
     }
@@ -270,6 +291,11 @@ export function createSSEStream(options = {}) {
                 totalContentLength += reasoning.length;
                 accumulatedThinking += reasoning;
               }
+              if (Array.isArray(delta?.tool_calls)) {
+                for (const call of delta.tool_calls) {
+                  rememberToolCall(call?.index, call?.function?.name, call?.function?.arguments);
+                }
+              }
 
               const extracted = extractUsage(parsed);
               if (extracted) {
@@ -294,6 +320,18 @@ export function createSSEStream(options = {}) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
+
+              // A failure that reaches the client mid-stream (too late to fail over)
+              // goes out in the standard `{error:{message,type,code}}` shape. Some
+              // gateways send a bare string (`{"error":"…"}`), which OpenAI clients
+              // cannot read a message from.
+              if (typeof parsed.error === "string") {
+                const failure = bodyErrorFromJson(parsed);
+                if (failure) {
+                  output = `data: ${JSON.stringify(buildErrorBody(failure.status, failure.message))}\n`;
+                  injectedUsage = true;
+                }
+              }
             } catch {
               // Skip non-JSON data lines silently — don't forward garbage to clients.
               // Upstream providers sometimes return plain-text errors (HTML, rate-limit
@@ -312,6 +350,9 @@ export function createSSEStream(options = {}) {
 
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
+          // The upstream's own terminator was just forwarded: flush() must not add a
+          // second one (every passthrough stream used to end in two).
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") streamDoneSent = true;
           // Responses clients (codex CLI) close on response.completed instead of [DONE]
           if (responsesTerminal) finalizeStream();
           continue;
@@ -373,6 +414,14 @@ export function createSSEStream(options = {}) {
         if (parsed.delta?.thinking) {
           totalContentLength += parsed.delta.thinking.length;
           accumulatedThinking += parsed.delta.thinking;
+        }
+        // Claude format - tool call. The name arrives when the block opens and
+        // the arguments as partial_json after it, both keyed by block index.
+        if (parsed.type === "content_block_start" && parsed.content_block?.type === "tool_use") {
+          rememberToolCall(parsed.index, parsed.content_block.name, "");
+        }
+        if (parsed.type === "content_block_delta" && parsed.delta?.type === "input_json_delta") {
+          rememberToolCall(parsed.index, "", parsed.delta.partial_json);
         }
         
         // OpenAI format - content

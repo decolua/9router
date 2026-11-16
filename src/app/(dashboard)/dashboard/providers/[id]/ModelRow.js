@@ -1,7 +1,7 @@
 import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix }) {
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix, effortLevels, effort, onEffortChange }) {
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
@@ -29,6 +29,19 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           <span className="flex min-w-0 items-center text-[9px] gap-1 pl-1">
             {model.name && <span className="break-all sm:truncate text-[9px] italic text-text-muted/70">{model.name}</span>}
             <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
+            {effortLevels && onEffortChange && (
+              <select
+                value={effort || "auto"}
+                onChange={(e) => onEffortChange(e.target.value)}
+                title="Reasoning effort for this model. Applied over what the client sends; an effort written into the model name still wins."
+                className="rounded border border-border bg-background px-1 py-0 text-[10px] focus:border-primary focus:outline-none"
+              >
+                <option value="auto">Effort: auto</option>
+                {effortLevels.map((level) => (
+                  <option key={level} value={level}>{`Effort: ${level}`}</option>
+                ))}
+              </select>
+            )}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
@@ -101,4 +114,7 @@ ModelRow.propTypes = {
   onDisable: PropTypes.func,
   caps: PropTypes.object,
   thinkingSuffix: PropTypes.string,
+  effortLevels: PropTypes.arrayOf(PropTypes.string),
+  effort: PropTypes.string,
+  onEffortChange: PropTypes.func,
 };

@@ -206,8 +206,41 @@ export default function UsageTable({
                   {renderSummaryCells(group)}
                   <ValueCells item={group.summary} viewMode={viewMode} isSummary />
                 </tr>
+                {/* Optional second level (e.g. provider under API key) */}
+                {expanded.has(group.groupKey) && group.subGroups && group.subGroups.map((sub) => {
+                  const subKey = `${group.groupKey}::${sub.groupKey}`;
+                  return (
+                    <Fragment key={`sub-${subKey}`}>
+                      <tr
+                        className="group-sub-summary cursor-pointer bg-bg-subtle/20 hover:bg-bg-subtle/50 transition-colors"
+                        onClick={() => toggleGroup(subKey)}
+                      >
+                        <td className="py-3 pl-12 pr-6">
+                          <div className="flex items-center gap-2">
+                            <span className={`material-symbols-outlined text-[16px] text-text-muted transition-transform ${expanded.has(subKey) ? "rotate-90" : ""}`}>
+                              chevron_right
+                            </span>
+                            <Badge variant="neutral" size="sm">{sub.groupKey}</Badge>
+                            <span className="text-xs text-text-muted">{sub.items.length}</span>
+                          </div>
+                        </td>
+                        {renderSummaryCells(sub)}
+                        <ValueCells item={sub.summary} viewMode={viewMode} isSummary />
+                      </tr>
+                      {expanded.has(subKey) && sub.items.map((item) => (
+                        <tr
+                          key={`detail-${item.key}`}
+                          className="group-detail hover:bg-bg-subtle/20 transition-colors"
+                        >
+                          {renderDetailCells(item)}
+                          <ValueCells item={item} viewMode={viewMode} />
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
                 {/* Detail rows */}
-                {expanded.has(group.groupKey) && group.items.map((item) => (
+                {expanded.has(group.groupKey) && !group.subGroups && group.items.map((item) => (
                   <tr
                     key={`detail-${item.key}`}
                     className="group-detail hover:bg-bg-subtle/20 transition-colors"

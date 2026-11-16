@@ -35,6 +35,7 @@ import WindsurfExecutor from "./windsurf.js";
 import { DefaultExecutor } from "./default.js";
 import { MinimaxCodeExecutor } from "./minimax-code.js";
 import { DevinCliExecutor } from "./devin-cli.js";
+import { ClaudeCliExecutor } from "./claude-cli.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -54,6 +55,8 @@ const executors = {
   opencode: new OpenCodeExecutor(),
   "opencode-go": new OpenCodeGoExecutor(),
   "opencode-zen": new OpenCodeZenExecutor(),
+  "claude-cli": new ClaudeCliExecutor(),
+  ccli: new ClaudeCliExecutor(), // Alias
   "grok-web": new GrokWebExecutor(),
   "grok-cli": new GrokCliExecutor(),
   gcli: new GrokCliExecutor(), // Alias

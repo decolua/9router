@@ -10,46 +10,56 @@ const CONFIG_CACHE_TTL_MS = 5000;
 let cachedConfig = null;
 let cachedConfigTs = 0;
 
+/**
+ * Whether an environment variable has settled this, or null when none did.
+ *
+ * Read outside everything that can fail. It used to be decided inside the same
+ * try as the settings read, so any error there — and the catch swallows all of
+ * them — dropped the operator's explicit choice and disabled recording. On a
+ * server whose dashboard is not reachable that is the only switch there is.
+ */
+function envObservability(env = process.env) {
+  if (env.ENABLE_REQUEST_LOGS !== undefined) {
+    return String(env.ENABLE_REQUEST_LOGS).toLowerCase() === "true";
+  }
+  if (env.OBSERVABILITY_ENABLED !== undefined) {
+    return String(env.OBSERVABILITY_ENABLED).toLowerCase() !== "false";
+  }
+  return null;
+}
+
+function envNumber(value, fallback) {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 async function getObservabilityConfig() {
   if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
+
+  const fromEnv = envObservability();
+  let settings = {};
   try {
     const { getSettings } = await import("./settingsRepo.js");
-    const settings = await getSettings();
-    const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
-    if (envRequestLogs !== undefined) {
-      const enabled = envRequestLogs.toLowerCase() === "true";
-      cachedConfig = {
-        enabled,
-        maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-        batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-        flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-        maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
-      };
-      cachedConfigTs = Date.now();
-      return cachedConfig;
-    }
-    const envFallback = process.env.OBSERVABILITY_ENABLED !== "false";
-    const uiFlag = typeof settings.enableObservability === "boolean";
-    const enabled = uiFlag
-      ? settings.enableObservability
-      : envFallback;
-
-    cachedConfig = {
-      enabled,
-      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-      batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-      flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-      maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
-    };
+    settings = (await getSettings()) || {};
   } catch {
-    cachedConfig = {
-      enabled: false,
-      maxRecords: DEFAULT_MAX_RECORDS,
-      batchSize: DEFAULT_BATCH_SIZE,
-      flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
-      maxJsonSize: DEFAULT_MAX_JSON_SIZE,
-    };
+    // Recording is not worth failing a request over, and the environment's
+    // answer still stands when the settings table cannot be read.
+    settings = {};
   }
+
+  cachedConfig = {
+    // The environment wins when it said anything; otherwise the dashboard's
+    // own switch does, which is off until somebody turns it on.
+    enabled: fromEnv !== null ? fromEnv : settings.enableObservability === true,
+    maxRecords: settings.observabilityMaxRecords
+      || envNumber(process.env.OBSERVABILITY_MAX_RECORDS, DEFAULT_MAX_RECORDS),
+    batchSize: settings.observabilityBatchSize
+      || envNumber(process.env.OBSERVABILITY_BATCH_SIZE, DEFAULT_BATCH_SIZE),
+    flushIntervalMs: settings.observabilityFlushIntervalMs
+      || envNumber(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS, DEFAULT_FLUSH_INTERVAL_MS),
+    maxJsonSize: (settings.observabilityMaxJsonSize
+      || envNumber(process.env.OBSERVABILITY_MAX_JSON_SIZE, 5)) * 1024,
+  };
   cachedConfigTs = Date.now();
   return cachedConfig;
 }
@@ -85,6 +95,27 @@ function truncateField(obj, maxSize) {
   return obj || {};
 }
 
+/**
+ * `providerRequest`, with the conversation's shape kept even when the rest of
+ * it is too large to store.
+ *
+ * The shape is turn counts, tool names and ids, block types and text lengths —
+ * no message content, and the thing a looping client is actually diagnosed
+ * from. Truncating the field wholesale dropped it precisely for the long
+ * tool-heavy conversations that are worth diagnosing, leaving a preview of the
+ * first 200 characters instead.
+ */
+function truncateProviderRequest(providerRequest, maxSize) {
+  const truncated = truncateField(providerRequest, maxSize);
+  if (!truncated?._truncated) return truncated;
+  const shape = providerRequest?.conversation;
+  if (!shape) return truncated;
+  const kept = { ...truncated, conversation: shape };
+  // Unless the shape alone is the thing that is too big, in which case there
+  // is nothing to do but say so.
+  return JSON.stringify(kept).length > maxSize ? truncated : kept;
+}
+
 async function flushToDatabase() {
   if (isFlushing) return;
   if (writeBuffer.length === 0) return;
@@ -112,7 +143,7 @@ async function flushToDatabase() {
             latency: item.latency || {},
             tokens: item.tokens || {},
             request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
+            providerRequest: truncateProviderRequest(item.providerRequest, config.maxJsonSize),
             providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
             response: truncateField(item.response, config.maxJsonSize),
             pxpipe: item.pxpipe || undefined,
@@ -138,6 +169,31 @@ async function flushToDatabase() {
   } finally {
     isFlushing = false;
   }
+}
+
+/**
+ * Whether requests are being recorded at all.
+ *
+ * Off is the default, and an empty Request Details tab looks exactly like a
+ * server that has served nothing — so the tab has to be able to tell the two
+ * apart and say which it is.
+ */
+export async function isObservabilityRecording() {
+  return (await getObservabilityConfig()).enabled === true;
+}
+
+/**
+ * The name of the environment variable that settled it, or null when the
+ * dashboard's own switch did.
+ *
+ * Telling an operator to flip a switch that an environment variable is already
+ * overriding is advice that cannot work — and `.env.example` used to ship
+ * exactly that pair, so this is the case that wasted the most time.
+ */
+export function observabilityEnvSource(env = process.env) {
+  if (env.ENABLE_REQUEST_LOGS !== undefined) return "ENABLE_REQUEST_LOGS";
+  if (env.OBSERVABILITY_ENABLED !== undefined) return "OBSERVABILITY_ENABLED";
+  return null;
 }
 
 export async function saveRequestDetail(detail) {
