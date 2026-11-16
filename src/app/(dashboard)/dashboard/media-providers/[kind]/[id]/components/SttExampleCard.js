@@ -8,13 +8,16 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { Row } from "./exampleShared";
 
-export function SttExampleCard({ providerId }) {
+export function SttExampleCard({ providerId, catalogModels }) {
   const providerAlias = getProviderAlias(providerId);
-  const builtinSttModels = getModelsByProviderId(providerId).filter((m) => getModelKind(m) === "stt");
+  const builtinSttModels = (catalogModels ?? getModelsByProviderId(providerId)).filter((m) => getModelKind(m) === "stt");
   const [customSttModels, setCustomSttModels] = useState([]);
   const sttModels = [...builtinSttModels, ...customSttModels];
 
   const [selectedModel, setSelectedModel] = useState(builtinSttModels[0]?.id ?? "");
+  useEffect(() => {
+    setSelectedModel((current) => sttModels.some((m) => m.id === current) ? current : sttModels[0]?.id || "");
+  }, [catalogModels]);
   const selectedModelObj = sttModels.find((m) => m.id === selectedModel);
   const allowedParams = Array.isArray(selectedModelObj?.params) ? selectedModelObj.params : providerId === "openrouter" ? ["language", "prompt", "response_format"] : [];
   const responseFormats = selectedModelObj?.responseFormats || (providerId === "openrouter" ? ["json", "text"] : ["json", "text", "srt", "verbose_json", "vtt"]);

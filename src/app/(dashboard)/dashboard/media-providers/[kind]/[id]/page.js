@@ -14,11 +14,13 @@ import { EmbeddingExampleCard } from "./components/EmbeddingExampleCard";
 import { TtsExampleCard } from "./components/TtsExampleCard";
 import { GenericExampleCard } from "./components/GenericExampleCard";
 import { SttExampleCard } from "./components/SttExampleCard";
+import { useProviderModels } from "@/shared/hooks/useProviderModels";
 
 // MediaProviderDetailPage
 export default function MediaProviderDetailPage() {
   const { kind, id } = useParams();
   const router = useRouter();
+  const { models: catalogModels, suggestedModels, error: catalogError } = useProviderModels(id);
   const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kind);
   const isCustom = isCustomEmbeddingProvider(id) && kind === "embedding";
 
@@ -178,6 +180,9 @@ export default function MediaProviderDetailPage() {
           providerId={id}
           kindFilter={kind}
           providerAliasOverride={isCustom ? customNode?.prefix : undefined}
+          catalogModels={catalogModels}
+          catalogError={catalogError}
+          suggestedModels={suggestedModels}
         />
       )}
 
@@ -200,11 +205,11 @@ export default function MediaProviderDetailPage() {
 
       {/* Example — per kind */}
       {kind === "embedding" && (
-        <EmbeddingExampleCard providerId={id} customAlias={customNode?.prefix} />
+        <EmbeddingExampleCard key={`${id}-${kind}`} providerId={id} customAlias={customNode?.prefix} catalogModels={catalogModels} />
       )}
-      {kind === "tts" && <TtsExampleCard providerId={id} />}
-      {kind === "stt" && !isCustom && <SttExampleCard providerId={id} />}
-      {!isCustom && KIND_EXAMPLE_CONFIG[kind] && <GenericExampleCard providerId={id} kind={kind} />}
+      {kind === "tts" && <TtsExampleCard key={`${id}-${kind}`} providerId={id} catalogModels={catalogModels} />}
+      {kind === "stt" && !isCustom && <SttExampleCard key={`${id}-${kind}`} providerId={id} catalogModels={catalogModels} />}
+      {!isCustom && KIND_EXAMPLE_CONFIG[kind] && <GenericExampleCard key={`${id}-${kind}`} providerId={id} kind={kind} catalogModels={catalogModels} />}
 
       {isCustom && (
         <AddCustomEmbeddingModal

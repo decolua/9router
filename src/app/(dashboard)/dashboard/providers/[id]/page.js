@@ -33,7 +33,7 @@ const ONE_BY_ONE_DELAY_MS = 1000;
 // Providers whose registry list is only an offline fallback: the dashboard
 // renders the live per-connection catalog from GET /api/providers/[id]/models
 // when one resolves, and falls back to the static rows otherwise.
-const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode"]);
+const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode", "cohere", "pollinations"]);
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
   codex: "codexAutoPing",
@@ -80,8 +80,7 @@ export default function ProviderDetailPage() {
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {}, schedules: {} });
   const [scheduleConnection, setScheduleConnection] = useState(null);
   const [suggestedModels, setSuggestedModels] = useState([]);
-  const [liveModels, setLiveModels] = useState([]);
-  // Live-catalog fetch warning/error (surfaced for zed only; cursor behavior unchanged).
+  const [liveModels, setLiveModels] = useState(null);
   const [liveModelsError, setLiveModelsError] = useState(null);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
@@ -165,7 +164,7 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = LIVE_MODEL_CATALOG_PROVIDERS.has(providerId) && liveModels.length > 0
+  const models = LIVE_MODEL_CATALOG_PROVIDERS.has(providerId) && liveModels !== null
     ? liveModels
     : applyQoderModelNames(staticModels, customModels, getProviderAlias(providerId));
   const providerAlias = getProviderAlias(providerId);
@@ -488,10 +487,7 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
-  // Live per-connection catalogs (cursor, zed): the static registry carries
-  // no usable list, so resolve from the active connection. Fires only when
-  // the provider id or connection list changes — no polling, no loop.
-  // Cursor path is statement-identical to before; zed adds error surfacing.
+  // Resolve account catalogs when connected; Pollinations also has a public catalog.
   useEffect(() => {
     const isLiveCatalog = LIVE_MODEL_CATALOG_PROVIDERS.has(providerId);
     if (!isLiveCatalog) {
@@ -500,32 +496,34 @@ export default function ProviderDetailPage() {
     }
 
     const connection = connections.find((item) => item.isActive !== false);
-    if (!connection?.id) {
-      setLiveModels([]);
-      if (providerId === "zed") setLiveModelsError(null);
+    if (!connection?.id && providerId !== "pollinations") {
+      setLiveModels(null);
+      setLiveModelsError(null);
       return;
     }
 
     let cancelled = false;
-    if (providerId === "zed") setLiveModelsError(null);
-    fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" })
+    setLiveModels(null);
+    setLiveModelsError(null);
+    fetch(`/api/providers/${connection?.id || providerId}/models`, { cache: "no-store" })
       .then(async (res) => ({ ok: res.ok, data: await res.json().catch(() => null) }))
       .then(({ ok, data }) => {
         if (cancelled) return;
-        if (ok && Array.isArray(data?.models) && data.models.length > 0) {
+        if (ok && Array.isArray(data?.models) && (data.models.length > 0 || ["cohere", "pollinations"].includes(providerId))) {
           setLiveModels(data.models);
-          if (providerId === "zed" && data?.warning) setLiveModelsError(data.warning);
+          if (providerId === "pollinations") setSuggestedModels((data.suggestedModels || []).filter((model) => model.kind === "llm"));
+          if (data?.warning) setLiveModelsError(data.warning);
           return;
         }
-        if (providerId === "zed") {
-          setLiveModels([]);
-          setLiveModelsError(data?.warning || data?.error || "Zed returned no live models.");
+        if (["zed", "cohere", "pollinations"].includes(providerId)) {
+          setLiveModels(null);
+          setLiveModelsError(data?.warning || data?.error || "Failed to load the model catalog.");
         }
       })
       .catch(() => {
-        if (!cancelled && providerId === "zed") {
-          setLiveModels([]);
-          setLiveModelsError("Failed to reach the Zed model catalog.");
+        if (!cancelled && ["zed", "cohere", "pollinations"].includes(providerId)) {
+          setLiveModels(null);
+          setLiveModelsError("Failed to reach the model catalog.");
         }
       });
 
@@ -1336,7 +1334,7 @@ export default function ProviderDetailPage() {
           if (notAdded.length === 0) return null;
           return (
             <div className="w-full mt-2">
-              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+              <p className="text-xs text-text-muted mb-2">{providerId === "pollinations" ? "Quest-eligible suggestions — consume Pollen; add explicitly:" : "Suggested free models (≥200k context):"}</p>
               <div className="flex flex-wrap gap-2">
                 {notAdded.map((m) => (
                   <button
@@ -1888,7 +1886,7 @@ export default function ProviderDetailPage() {
             })()}
           </div>
         )}
-        {providerId === "zed" && !!liveModelsError && (
+        {!!liveModelsError && (
           <p className="text-xs text-red-500 mb-3 break-words">{liveModelsError}</p>
         )}
         {renderModelsSection()}

@@ -37,7 +37,7 @@ export const NO_AUTH_PROVIDER_IDS = Object.keys(AI_PROVIDERS)
 // Static registry stays as fallback when live fetch fails or is empty.
 // zed added in #4244: its backend customResolver already returns live models
 // but the frontend omitted it, hiding Zed entirely from the Combo picker.
-export const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed"];
+export const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "cohere", "pollinations"];
 
 export const ALL_PROVIDERS = { ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS };
 
@@ -158,7 +158,7 @@ export function buildModelGroups({
       return;
     }
 
-    if (providerInfo.passthroughModels) {
+    if (providerInfo.passthroughModels && !["cohere", "pollinations"].includes(providerId)) {
       const aliasModels = Object.entries(modelAliasesSafe)
         .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
         .map(([aliasName, fullModel]) => ({

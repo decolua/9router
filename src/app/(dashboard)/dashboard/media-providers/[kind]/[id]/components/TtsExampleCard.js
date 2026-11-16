@@ -18,8 +18,9 @@ const DEFAULT_TTS_RESPONSE_EXAMPLE = `// Audio will appear here after running.
   "audio": "//NExAANaAIIAUAAANNNNNNNN..." // base64 encoded MP3
 }`;
 
-export function TtsExampleCard({ providerId }) {
+export function TtsExampleCard({ providerId, catalogModels }) {
   const providerAlias = getProviderAlias(providerId);
+  const providerModels = catalogModels ?? getModelsByProviderId(providerId);
   const config = TTS_PROVIDER_CONFIG[providerId] || TTS_PROVIDER_CONFIG["edge-tts"];
   const formatOptions = config.formatOptions || [
     { value: "mp3", label: "MP3 (Binary)" },
@@ -45,6 +46,12 @@ export function TtsExampleCard({ providerId }) {
     }
     return "";
   });
+
+  useEffect(() => {
+    if (providerId !== "pollinations" || !catalogModels) return;
+    const models = catalogModels.filter((m) => getModelKind(m) === "tts");
+    setSelectedModel((current) => models.some((m) => m.id === current) ? current : models[0]?.id || "");
+  }, [catalogModels, providerId]);
 
   // Form state
   const [input, setInput]               = useState("Hello, this is a text to speech test.");
@@ -235,7 +242,7 @@ export function TtsExampleCard({ providerId }) {
       const voice = activeVoiceId.trim();
       return `${providerAlias}/${model}${voice && voice !== "default" ? `/${voice}` : ""}`;
     }
-    if ((providerId === "openrouter" || providerId === "codex") && selectedModel) return `${providerAlias}/${selectedModel}`;
+    if (["openrouter", "codex", "pollinations"].includes(providerId) && selectedModel) return `${providerAlias}/${selectedModel}`;
     if (config.hasModelSelector && selectedModel && activeVoiceId) return `${providerAlias}/${selectedModel}/${activeVoiceId}`;
     if (config.hasModelSelector && selectedModel) return `${providerAlias}/${selectedModel}`;
     if (activeVoiceId) return `${providerAlias}/${activeVoiceId}`;
@@ -246,6 +253,7 @@ export function TtsExampleCard({ providerId }) {
     const b = { model: modelFull, input };
     if (providerId === "openrouter") b.voice = activeVoiceId || "alloy";
     if (providerId === "codex" && activeVoiceId) b.voice = activeVoiceId;
+    if (providerId === "pollinations" && activeVoiceId) b.voice = activeVoiceId;
     if (config.hasLanguageHint && languageHint) b.language = languageHint;
     if (config.hasStyleInput && style.trim()) b.style = style.trim();
     if (responseFormat && responseFormat !== "json" && responseFormat !== "mp3") {
@@ -353,7 +361,7 @@ export function TtsExampleCard({ providerId }) {
               />
             </Row>
           )}
-          {providerId !== "selfhosted-tts" && config.hasModelSelector && (config.modelKey || getModelsByProviderId(providerId).some(m => getModelKind(m) === "tts")) && (
+          {providerId !== "selfhosted-tts" && config.hasModelSelector && (config.modelKey || providerModels.some(m => getModelKind(m) === "tts")) && (
             <Row label="Model">
               <select
                 value={selectedModel}
@@ -361,7 +369,7 @@ export function TtsExampleCard({ providerId }) {
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               >
                 {(() => {
-                  const ttsModels = getModelsByProviderId(providerId).filter(m => getModelKind(m) === "tts");
+                  const ttsModels = providerModels.filter(m => getModelKind(m) === "tts");
                   return [...(ttsModels.length ? ttsModels : getModelsByProviderId(config.modelKey) || []), ...customModels.filter((m) => !ttsModels.some((builtIn) => builtIn.id === m.id))].map((m) => (
                     <option key={m.id} value={m.id}>{m.name || m.id}</option>
                   ));

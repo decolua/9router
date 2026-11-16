@@ -113,7 +113,7 @@ AddCustomModelModal.propTypes = {
 // ── ModelsCard ─────────────────────────────────────────────────
 // Self-contained card: shows models for a provider, filtered by optional `kindFilter`.
 // kindFilter: if provided, only shows models with matching type/kinds field.
-export default function ModelsCard({ providerId, kindFilter, providerAliasOverride }) {
+export default function ModelsCard({ providerId, kindFilter, providerAliasOverride, catalogModels, catalogError = "", suggestedModels = [] }) {
   const { copied, copy } = useCopyToClipboard();
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
@@ -207,7 +207,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   };
 
   // Built-in models — filter by kindFilter if provided
-  const allBuiltIn = getModelsByProviderId(providerId);
+  const allBuiltIn = catalogModels ?? getModelsByProviderId(providerId);
   const builtInModels = kindFilter
     ? allBuiltIn.filter((m) => {
         if (m.kinds) return m.kinds.includes(kindFilter);
@@ -233,7 +233,18 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
           <h2 className="text-lg font-semibold">Models{kindFilter ? ` — ${kindFilter.toUpperCase()}` : ""}</h2>
         </div>
         {testError && <p className="text-xs text-red-500 mb-3 break-words">{testError}</p>}
+        {catalogError && <p role="alert" className="text-xs text-red-500 mb-3 break-words">{catalogError}</p>}
 
+        <div className="flex flex-wrap gap-2 mb-3">
+          {suggestedModels.filter((model) => getModelKind(model) === effectiveType && !myCustomModels.some((custom) => custom.id === model.id)).map((model) => (
+            <Button key={model.id} size="sm" variant="secondary" icon="add" title="Quest-eligible: consumes Pollen; not free" onClick={async () => {
+              const response = await fetch("/api/models/custom", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerAlias, id: model.id, type: effectiveType }) });
+              if (!response.ok) { setTestError("Failed to add suggested model"); return; }
+              await fetchData();
+              window.dispatchEvent(new Event("customModelChanged"));
+            }}>Suggest: {model.name || model.id} (Pollen)</Button>
+          ))}
+        </div>
         <div className="flex flex-wrap gap-3">
           {displayModels.map((model) => {
             const fullModel = `${providerAlias}/${model.id}`;
@@ -323,4 +334,7 @@ ModelsCard.propTypes = {
   providerId: PropTypes.string.isRequired,
   kindFilter: PropTypes.string, // e.g. "tts", "embedding" — filters models shown
   providerAliasOverride: PropTypes.string, // override alias (e.g. for custom-embedding nodes using prefix)
+  catalogModels: PropTypes.array,
+  catalogError: PropTypes.string,
+  suggestedModels: PropTypes.array,
 };

@@ -26,7 +26,7 @@ const PROVIDER_ORDER = [
 // Static registry stays as fallback when live fetch fails or is empty.
 // zed added in #4244: its backend customResolver already returns live models
 // but the frontend omitted it, hiding Zed entirely from the Combo picker.
-const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed"];
+const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "cohere", "pollinations"];
 
 // Fetch a provider's account-scoped catalog for every active connection and merge
 // the results. Entries collapse by model id on purpose: two connections of the
@@ -158,6 +158,8 @@ export default function ModelSelectModal({
   const clineModels = useLiveProviderModels(isOpen, clineConnectionIds, "Cline");
   const clinepassModels = useLiveProviderModels(isOpen, clinepassConnectionIds, "ClinePass");
   const zedModels = useLiveProviderModels(isOpen, zedConnectionIds, "Zed");
+  const cohereModels = useLiveProviderModels(isOpen, liveConnectionIdsByProvider.cohere, "Cohere");
+  const pollinationsModels = useLiveProviderModels(isOpen, liveConnectionIdsByProvider.pollinations, "Pollinations");
 
   const fetchCombos = async () => {
     try {
@@ -301,7 +303,7 @@ export default function ModelSelectModal({
         return;
       }
 
-      if (providerInfo.passthroughModels) {
+      if (providerInfo.passthroughModels && !["cohere", "pollinations"].includes(providerId)) {
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
@@ -408,7 +410,7 @@ export default function ModelSelectModal({
           hasModels: mergedModels.length > 0,
         };
       } else {
-        const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : providerId === "zed" ? zedModels : [];
+        const liveModels = ({ cursor: cursorModels, cline: clineModels, clinepass: clinepassModels, zed: zedModels, cohere: cohereModels, pollinations: pollinationsModels })[providerId] || [];
         const hardcodedModels = liveModels.length > 0
           ? liveModels
           : getModelsByProviderId(providerId);
@@ -435,7 +437,7 @@ export default function ModelSelectModal({
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
         const merged = [
-          ...applyQoderModelNames(hardcodedModels, customModels, alias).map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
+          ...applyQoderModelNames(hardcodedModels, customModels, alias).map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m), capabilities: m.capabilities })),
           ...customAliasModels,
           ...customRegisteredModels,
         ];
@@ -502,7 +504,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels, cohereModels, pollinationsModels]);
 
   // Parse search query into structured query (regex, positive tokens, negative tokens)
   const parsedQuery = useMemo(() => parseSearchQuery(searchQuery), [searchQuery]);
@@ -533,7 +535,7 @@ export default function ModelSelectModal({
       let models = group.models;
       // Filter by input-modality capability (vision/pdf/audioInput/videoInput).
       if (capFilter) {
-        models = models.filter((m) => getCaps(m.value)?.[capFilter] === true);
+        models = models.filter((m) => (m.capabilities || getCaps(m.value))?.[capFilter] === true);
         if (models.length === 0) return;
       }
       if (!parsedQuery.isEmpty) {
