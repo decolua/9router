@@ -1,6 +1,7 @@
 # Unreleased
 
-Next local beta: `0.5.120-beta.11` (skip previously published beta versions).
+## Fixes
+- **Codex images**: resize individual inline and fetched images exceeding 30,000 32×32 patches before forwarding. Preserve aspect ratio and requested detail; images within the limit remain unchanged. Install Sharp directly for server and CLI image processing.
 
 ## Features
 - **Free-tier providers**: add Cohere chat, multimodal embeddings and transcription using evaluation API keys; add Pollinations chat, embeddings, images/edits, speech, transcription, decisions and realtime, with native video job routing when an eligible model is available. Populate supported models automatically from the live catalogs in provider pages, selectors and `/v1/models`; exclude deprecated/ineligible Cohere models and Pollinations paid-only models. Free-tier allowances, key permissions and account budgets still apply.

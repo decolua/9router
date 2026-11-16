@@ -28,6 +28,7 @@
     "node-machine-id": "^1.1.12",
     "react": "19.2.1",
     "react-dom": "19.2.1",
+    "sharp": "^0.35.5",
     "confbox": "^0.2.4"
   },
   "comment_sqlite": "sql.js + better-sqlite3 are NOT bundled here. They are installed into ~/.9router/runtime/node_modules by hooks/postinstall.js (and re-checked at runtime by cli.js). This avoids Windows EBUSY errors when updating the global CLI, since native .node files no longer live under the locked install dir.",

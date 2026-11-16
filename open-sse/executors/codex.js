@@ -7,6 +7,7 @@ import {
 } from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
+import { fitCodexImage } from "../utils/codexImage.js";
 import { getModelUpstreamId, getProviderModels } from "../config/providerModels.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { CODEX_EARLY_RETRY, CODEX_EARLY_RETRY_TIMEOUT_MS, CODEX_EARLY_RETRY_ATTEMPTS, DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
@@ -265,16 +266,15 @@ export class CodexExecutor extends BaseExecutor {
     if (!Array.isArray(body?.input)) return;
     for (const item of body.input) {
       if (!Array.isArray(item.content)) continue;
-      const pending = item.content.map(async (c) => {
-        if (c.type !== "image_url") return c;
+      for (let index = 0; index < item.content.length; index++) {
+        const c = item.content[index];
+        if (c.type !== "image_url" && c.type !== "input_image") continue;
         const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
-        const detail = c.image_url?.detail || "auto";
-        if (!url) return c;
-        if (url.startsWith("data:")) return { type: "input_image", image_url: url, detail };
-        const fetched = await fetchImageAsBase64(url, { timeoutMs: 15000 });
-        return { type: "input_image", image_url: fetched?.url || url, detail };
-      });
-      item.content = await Promise.all(pending);
+        if (!url) continue;
+        const detail = c.detail || c.image_url?.detail || "auto";
+        const fetched = url.startsWith("data:") ? null : await fetchImageAsBase64(url, { timeoutMs: 15000 });
+        item.content[index] = { ...c, type: "input_image", image_url: await fitCodexImage(fetched?.url || url), detail };
+      }
     }
   }
 
