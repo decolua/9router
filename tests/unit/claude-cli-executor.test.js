@@ -347,14 +347,14 @@ describe("claude-cli never spawns through a shell", () => {
   });
 
   it("refuses a .cmd shim it cannot resolve instead of handing it to cmd.exe", () => {
-    const plan = buildSpawnPlan("C:/nope/npm/claude.cmd", ["-p"]);
+    const plan = buildSpawnPlan("C:/nope/npm/claude.cmd", ["-p"], "win32");
     expect(plan.command).toBeUndefined();
     expect(plan.error).toContain("CLI_CLAUDE_BIN");
   });
 
   it("never names a shell as the command", () => {
     for (const bin of ["C:/npm/claude.cmd", "C:/npm/claude.bat", "C:/bin/claude.exe", "/usr/bin/claude"]) {
-      const plan = buildSpawnPlan(bin, ["-p"]);
+      const plan = buildSpawnPlan(bin, ["-p"], "win32");
       const command = String(plan.command || "").toLowerCase();
       expect(command).not.toContain("cmd.exe");
       expect(command).not.toContain("powershell");

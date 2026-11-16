@@ -19,9 +19,9 @@ ARG NPM_REGISTRY
 
 RUN apk add --no-cache python3 make g++ linux-headers
 
-COPY package.json package-lock.json ./
+COPY package.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci \
+    npm install \
       --registry="${NPM_REGISTRY}" \
       --fetch-retries=5 \
       --fetch-retry-factor=2 \
@@ -60,6 +60,8 @@ RUN if [ -n "$NODE_BUILD_HEAP_MB" ]; then \
 # them, so OpenCode Free fails with HTTP 502 ("resolve is undefined").
 # Install them (with their native bindings/transitive deps) in an isolated dir
 # so the runner stage can copy them into /app/node_modules.
+# Fork: held to the ranges in package.json / LAZY_DEP_VERSIONS — bare names
+# would take whatever major is `latest` on the day Jenkins builds.
 RUN --mount=type=cache,target=/root/.npm \
     mkdir -p /opt/lazy-runtime && cd /opt/lazy-runtime && \
     npm init -y >/dev/null && \
@@ -70,7 +72,7 @@ RUN --mount=type=cache,target=/root/.npm \
       --fetch-retry-mintimeout=10000 \
       --fetch-retry-maxtimeout=120000 \
       --fetch-timeout=300000 \
-      wreq-js playwright-core
+      "wreq-js@^3.2.0" "playwright-core@^1.62.1"
 
 FROM ${NODE_IMAGE} AS runner
 ARG ALPINE_MIRROR
@@ -95,7 +97,7 @@ ENV DATA_DIR=/app/data
 # unpinned CLI would change what routed requests run on every image rebuild.
 # To move it, change the default below (the Jenkins shared library cannot pass
 # build-args) or build by hand with `--build-arg CLAUDE_CODE_VERSION=<x.y.z>`.
-ARG CLAUDE_CODE_VERSION=2.1.301
+ARG CLAUDE_CODE_VERSION=2.1.325
 ARG NPM_REGISTRY
 RUN npm install -g --registry="${NPM_REGISTRY:-https://registry.npmjs.org}" \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
