@@ -1,21 +1,21 @@
 # Unreleased
-<<<<<<< HEAD
-=======
+
+Next local beta: `0.5.120-beta.11` (skip previously published beta versions).
 
 ## Features
+- **Free-tier providers**: add Cohere chat, multimodal embeddings and transcription using evaluation API keys; add Pollinations chat, embeddings, images/edits, speech, transcription, decisions and realtime, with native video job routing when an eligible model is available. Populate supported models automatically from the live catalogs in provider pages, selectors and `/v1/models`; exclude deprecated/ineligible Cohere models and Pollinations paid-only models. Free-tier allowances, key permissions and account budgets still apply.
 - **Gemini 4 Hydrogen**: add `gemini-4-hydrogen` to the Gemini API provider, and to Antigravity as `gemini-4-hydrogen-xhigh|high|medium|low` plus a bare `gemini-4-hydrogen` that resolves to `-high` (Hydrogen's default level). Hydrogen serves a native `xhigh` thinking level: `xhigh`/`max`/`ultra` intents (or an `(xhigh)` suffix) reach the wire as `thinkingLevel: "xhigh"` instead of collapsing to `high`, and on Antigravity a client `reasoning_effort: "xhigh"`/`"max"` routes to the `-xhigh` tier. Only tier-preset entries whose upstream id carries `(xhigh)` can be promoted, so standalone ids such as `ws/gpt-5.4-xhigh` are never swapped in by a client setting. `none`/`minimal` still floor at `low` (Hydrogen 400s on MINIMAL). Declares 1M context, 64K per-request output and PDF/audio/video input; bills at $1.50/$7.50 with $0.075 cached reads; adds the tiers to the Antigravity quota list, the Antigravity IDE (MITM) slots and the CLI model menus.
 - **Gemini 4 Hydrogen**: long decode — a `max_tokens` above 64K now runs Google's `CONTINUATION` hops inside the gateway (Gemini API: top-level `continuationToken`; Antigravity: `request.continuationToken`), streaming and non-streaming, so the client sees one continuous turn with usage summed across hops. A failed later hop ends the turn as `MAX_TOKENS`. Antigravity keeps Hydrogen's requested output budget instead of capping it at 64,000; other models stay capped.
 
 ## Fixes
+- **Pollinations pricing**: automatically list only explicitly zero-priced models; Quest-eligible or unknown-price models are opt-in suggestions, never automatically enabled.
+- **Pollinations**: recognize currency-only Pollen pricing as charge-free, so `stealth/glyph-cluster` appears automatically; missing pricing and nonzero charges remain suggestions.
+- **Model discovery**: load Pollinations' public catalog without requiring a saved connection, populate Cohere/Pollinations media model cards from live discovery, preserve successful empty catalogs and display discovery failures.
 - **Thinking**: map an `ultra` effort to `high` on Gemini level-based models without an `xhigh` tier, instead of letting it fall through to the lowest level.
 - **Antigravity**: reword six more fingerprinted Hermes Agent prompt strings in `ANTIGRAVITY_PROMPT_REWRITES` (`Be direct: match the length of your reply…`, `…is your authoritative reference`, `Hermes delivers their message…`, `# Hermes runtime environment` and its end marker, `# Google model operational directives`). Antigravity answers any one of them with a detail-free 429 `RESOURCE_EXHAUSTED` on every model, which looked like an exhausted quota. The rewrites keep the meaning and leave identifiers such as `skill_view(name='hermes-agent')` and the docs URL intact.
 - **Antigravity**: classify that bare `RESOURCE_EXHAUSTED` 429 (generic "Resource has been exhausted (e.g. check quota)." with no `details`) as a request-scoped 400 explaining that the prompt was rejected, instead of retrying it, refreshing quota and locking the model on the account. Real quota 429s, which carry `ErrorInfo`/`RetryInfo`, are handled as before.
 - **Antigravity**: reword OpenClaw's opening identity line (`You are a personal assistant running inside OpenClaw.` → `…that runs inside OpenClaw.`), which triggers the same detail-free 429 rejection on every model.
 
-# v0.5.120-beta.10 (2026-11-13)
-
-# v0.5.120-beta.9 (2026-11-13)
->>>>>>> 075a7c6 (feat(gemini): add Gemini 4 Hydrogen to the Gemini API and Antigravity)
 
 ## Fixes
 - **Usage**: prompt-retention captures no longer break on large Anthropic `/v1/messages` requests. Retained payloads use a dedicated cap (`OBSERVABILITY_RETENTION_MAX_JSON_SIZE`, default 10MB) instead of the 5KB disk-observability limit, so Original/Client/Translated views stay renderable for real Claude Code bodies, and a client disconnect mid-stream now finalizes the capture instead of leaving the response placeholder empty forever.

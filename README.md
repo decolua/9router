@@ -529,6 +529,13 @@ without a `baseUrl` is reported as a configuration error rather than quietly
 falling back to `api.openai.com`, which would send your input text and API key to
 a third party under a provider named "Self-hosted".
 
+### Cohere and Pollinations free tiers
+
+Add an API-key connection under **Providers → Free Tier**. Models populate automatically from the upstream catalog; `/v1/models?kind=embedding` lists embedding models without manual registration.
+
+- **Cohere**: obtain an [evaluation key](https://dashboard.cohere.com/api-keys). Evaluation access is rate-limited, capped at 1,000 calls/month and not intended for production; production keys can incur charges. Supports chat (streaming, tools, vision and structured output where the model supports them), embeddings and transcription. Use `cohere/<model>`, such as `cohere/embed-v4.0`. Embeddings accept `input_type`, `dimensions`, `truncate` and multimodal content arrays; image inputs must be base64 data URIs. Transcription requires `language`, JSON output and a supported audio file up to 25MB. See [Cohere's API documentation](https://docs.cohere.com/).
+- **Pollinations**: obtain a [secret `sk_` key](https://enter.pollinations.ai/keys); `pk_` app keys cannot authenticate generation. Only models explicitly marked `paid_only: false` with a supported endpoint are auto-listed. Requests consume Pollen, including Quest Pollen where eligible: free-tier placement does not mean unlimited or zero-cost generation. Account balance, key budget and model permissions apply. Supports chat, embeddings, images/edits, speech/voices, transcription, decisions and OpenAI-protocol realtime. Video generation and polling use the native job API when an eligible video model is available; upstream has no edit/extension endpoints. Use `pollinations/<publisher>/<model>`; realtime uses the same model prefix at `/v1/realtime`. 3D output is not exposed because 9Router has no 3D endpoint. See [Pollinations' API documentation](https://gen.pollinations.ai/docs).
+
 ---
 
 ## 💡 Key Features
