@@ -93,6 +93,16 @@ export function qoderJobTokenExchangeUrl(region) {
 }
 export const QODER_JOB_TOKEN_EXCHANGE_URL = qoderJobTokenExchangeUrl(QODER_REGION_INTL);
 
+// Job-token rotation (qodercli 1.1.85 uses this; the jobToken/exchange response
+// carries a rotating `refresh_token` of its own, `jrt-...`). POST with the
+// CURRENT jt- as Bearer + {refresh_token: <jrt-...>} answers a fresh jt- and a
+// fresh jrt-. This is NOT the device-flow `/api/v1/deviceToken/refresh`, which
+// only accepts `drt-` tokens.
+export function qoderJobTokenRefreshUrl(region) {
+  return `${qoderOpenApiBase(region)}/api/v1/jobToken/refresh`;
+}
+export const QODER_JOB_TOKEN_REFRESH_URL = qoderJobTokenRefreshUrl(QODER_REGION_INTL);
+
 // Inference endpoints (under /algo on the chat host, all COSY-signed)
 export const QODER_CHAT_SIG_PATH = "/api/v2/service/pro/sse/agent_chat_generation";
 export const QODER_CHAT_URL = `${QODER_CHAT_BASE}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common`;
@@ -159,6 +169,7 @@ export const QODER_MODEL_MAP = {
   qmodel: "qmodel",
   qfmodel: "qfmodel",
   qmodel_latest: "qmodel_latest",
+  qmodel_preview: "qmodel_preview",
   qmodel_38max: "qmodel_38max",
   dmodel: "dmodel",
   dfmodel: "dfmodel",
@@ -198,6 +209,14 @@ const QODER_STATIC_MODEL_CONFIG_BASE = Object.freeze({
   format: "openai",
   source: "system",
   url: "",
+  // The lite-plan roster states three selectable windows per slot; contextTier.js
+  // picks the smallest one that fits the prompt, so declaring them here lets an
+  // account without a live catalog still reach the widest window instead of
+  // being pinned to the ~180K default.
+  context_config: Object.freeze(["200K", "400K", "1M"]),
+  // Every static row is billed except `lite`, which the free tier serves on the
+  // COSY surface only — gRPC refuses it with `116 quota exceeded`.
+  is_free: false,
 });
 
 export const QODER_STATIC_MODEL_CONFIGS = Object.freeze({
@@ -217,17 +236,131 @@ export const QODER_STATIC_MODEL_CONFIGS = Object.freeze({
     is_reasoning: true,
     max_input_tokens: 180000,
   }),
+  // Everything else the registry advertises. A per-account /model/list omits
+  // models the account is entitled to (production hit this with qmodel_latest:
+  // a 400 "model_config not yet known" in 205ms, never reaching upstream). The
+  // chat endpoint does not validate model_config.key against the catalog, so a
+  // static block makes the model routable. A live catalog entry always wins.
+  ultimate: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "ultimate", display_name: "Ultimate", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  auto: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "auto", display_name: "Auto", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  performance: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "performance", display_name: "Performance", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  efficient: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "efficient", display_name: "Efficient", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  lite: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "lite", display_name: "Lite", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  qmodel_38max: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qmodel_38max", display_name: "Qwen3.8-Max", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  // Qoder recycles slot keys: the live catalog (ide-text v1.0.357, 2026-11-11)
+  // publishes qmodel_latest as "Qwen4-Max-Preview" (enable:false but usable)
+  // and qmodel_preview as "Qwen3.8-Max-Preview" (2.4T params). A live catalog
+  // entry always wins over these display names.
+  qmodel_latest: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qmodel_latest", display_name: "Qwen4-Max-Preview", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  qmodel_preview: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qmodel_preview", display_name: "Qwen3.8-Max-Preview", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  qmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qmodel", display_name: "Qwen3.7-Plus", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  qfmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "qfmodel", display_name: "Qwen3.8-Flash", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  kmodel_latest: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "kmodel_latest", display_name: "Kimi-K3.1-Pro", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  kmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "kmodel", display_name: "Kimi-K2.8-Preview", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  gmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "gmodel", display_name: "GLM-5.3", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  gfmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "gfmodel", display_name: "GLM-5.3-Flash", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  dmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "dmodel", display_name: "DeepSeek-V4-Pro", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  dfmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "dfmodel", display_name: "DeepSeek-Flash", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
+  mmodel: Object.freeze({ ...QODER_STATIC_MODEL_CONFIG_BASE, key: "mmodel", display_name: "MiniMax-M3.1-Flash", is_vl: false, is_reasoning: false, max_input_tokens: 180000 }),
 });
 
 /**
- * Static `model_config` for a canonical Qoder key, or null when there is no
- * block for it (so genuinely unknown keys still fail loudly). Returns a fresh
- * copy — callers may mutate `key` while aligning the alias path.
- */
+* Static `model_config` for a canonical Qoder key, or null when there is no
+* block for it (so genuinely unknown keys still fail loudly). Returns a fresh
+* copy — callers may mutate `key` while aligning the alias path.
+*/
 export function getQoderStaticModelConfig(key) {
-  const cfg = QODER_STATIC_MODEL_CONFIGS[key];
-  return cfg ? { ...cfg, key } : null;
+ const cfg = QODER_STATIC_MODEL_CONFIGS[key];
+ return cfg ? { ...cfg, key } : null;
 }
+
+/**
+* Accepts a Qoder model as either a canonical slot key (`qmodel_latest`) or a
+* display name ("Qwen4-Max-Preview", "qwen4 max preview" — case-insensitive,
+* spaces/underscores tolerated) and returns the canonical key.
+*
+* Wire keys are recycled slot aliases, not model names: qmodel_latest was
+* Qwen3.7-Max and now carries Qwen4-Max-Preview. Letting clients pass the
+* display name means they never have to know the slot. Returns the input
+* unchanged when it is already a known key or not a known display name — the
+* executor's model_config resolution decides whether it is routable.
+*/
+const QODER_DISPLAY_NAME_TO_KEY = (() => {
+ const map = new Map();
+ for (const [key, cfg] of Object.entries(QODER_STATIC_MODEL_CONFIGS)) {
+   if (cfg.display_name) map.set(normalizeQoderModelName(cfg.display_name), key);
+ }
+ return map;
+})();
+
+function normalizeQoderModelName(name) {
+ return String(name || "")
+   .trim()
+   .toLowerCase()
+   .replace(/[\s_]+/g, "-");
+}
+
+export function resolveQoderModelKey(modelStr) {
+ const raw = String(modelStr || "").replace(/^qoder\//, "");
+ if (!raw) return raw;
+ if (Object.prototype.hasOwnProperty.call(QODER_MODEL_MAP, raw)) return QODER_MODEL_MAP[raw];
+ return QODER_DISPLAY_NAME_TO_KEY.get(normalizeQoderModelName(raw)) || raw;
+}
+
+/**
+ * Copies a `model_config` for the chat body, minus its `source` field.
+ *
+ * Qoder routes the chat by that field: the catalog's `source:"system"` puts the
+ * request in the managed lane, which answers `10605 / queueType=p3` while that
+ * lane is busy, whereas the identical payload with the field omitted is served
+ * immediately (measured against a live account). `source` selects a lane, not a
+ * model — `model_config.key` already identifies the model — so dropping it
+ * changes nothing else: `max_input_tokens`, `is_reasoning` and `context_config`
+ * keep steering the request exactly as the IDE steers it. The X-Model-Source
+ * header keeps reporting the catalog's value.
+ */
+export function qoderChatModelConfig(modelConfig, { keepSource = false } = {}) {
+  if (modelConfig == null || typeof modelConfig !== "object") return modelConfig;
+  if (keepSource || !("source" in modelConfig)) return modelConfig;
+  const { source: _source, ...rest } = modelConfig;
+  return rest;
+}
+
+/**
+ * Model keys the free tier serves.
+ *
+ * The roster marks one slot as free (`lite`); everything else is billed. The
+ * live catalog does not state it, so the rule is kept here rather than inferred
+ * per request: gRPC refuses free-tier rows with `116 quota exceeded`, which
+ * makes getting this wrong a hard failure rather than a slow one.
+ */
+export const QODER_FREE_TIER_KEYS = Object.freeze(["lite"]);
+
+/** True when a model key or its catalog entry belongs to the free tier. */
+export function isQoderFreeTier(modelConfig, modelKey = "") {
+  if (modelConfig?.is_free === true) return true;
+  const key = String(modelKey || modelConfig?.key || "").trim();
+  return QODER_FREE_TIER_KEYS.includes(key);
+}
+
+/**
+ * Model-server gRPC hosts, one per deployment.
+ *
+ * The gRPC surface (`model.chat.ChatService/ChatCompletionStream`) is a separate
+ * transport from the COSY HTTP surface. It does not fix a hard body cap so much
+ * as remove the slowdown: measured against a live account with the same model, a
+ * 280K-character request answered in 5.1s over gRPC against 73s over COSY, and a
+ * 1.2M-character request answered in 16.3s where COSY had not answered after
+ * 300s. That is what makes the roster's 1M-token windows usable. Free-tier rows
+ * are refused here with `116 quota exceeded`, so they stay on COSY.
+ */
+export const QODER_GRPC_HOSTS = Object.freeze({
+  [QODER_REGION_INTL]: "api2.qoder.sh",
+  [QODER_REGION_CN]: "gateway.qoder.com.cn",
+});
+
+/** gRPC service path on the model-server host. */
+export const QODER_GRPC_SERVICE_PATH = "/model.chat.ChatService/ChatCompletionStream";
 
 // RSA public key for COSY encryption (extracted from Qoder IDE v0.9).
 // Matches the CLIProxyAPIPlus branch and live qodercli traffic.

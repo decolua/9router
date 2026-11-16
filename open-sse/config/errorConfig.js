@@ -62,6 +62,19 @@ export const ERROR_RULES = [
   // Intl gateway blocks affect the account/IP, so let the connection back off.
   { provider: "codebuddy-intl", text: "request illegal", backoff: true },
   { provider: "codebuddy-intl", text: "conversation id missing", backoff: true },
+  // Qoder invalidates job/device tokens server-side ahead of the local expiry
+  // bookkeeping; the executor already re-exchanges once, so reaching here means
+  // the PAT itself is dead. A short 2-minute cooldown would just make every
+  // client retry into the same dead credential every 2 minutes — hold it long
+  // enough that the operator sees "unavailable / reconnect" instead.
+  { provider: "qoder", text: "login expired", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "qoder-cn", text: "login expired", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  // Billing daily count (110): the account's daily request window is exhausted.
+  // A 2-minute cooldown just makes the client retry into the same exhausted
+  // window every 2 minutes until midnight UTC; hold the max cooldown instead —
+  // account fallback still applies, so other accounts keep serving.
+  { provider: "qoder", text: "billing daily count exceeded", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "qoder-cn", text: "billing daily count exceeded", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
   // NVIDIA NIM returns 400 with "degraded" when specific model cluster is unhealthy.
   // Lock only the degraded model (modelScoped: true) without locking the API key.
   { provider: "nvidia", text: "degraded", cooldownMs: 15 * 60 * 1000, modelScoped: true },

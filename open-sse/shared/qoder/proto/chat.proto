@@ -1,0 +1,322 @@
+syntax = "proto3";
+
+package model.chat;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_multiple_files = true;
+option java_package = "com.qoder.grpc.model.chat";
+option java_outer_classname = "ChatProto";
+
+// Reasoning effort level for model reasoning
+enum ReasoningEffort {
+  REASONING_EFFORT_UNSPECIFIED = 0;
+  REASONING_EFFORT_NONE = 1;
+  REASONING_EFFORT_LOW = 2;
+  REASONING_EFFORT_MEDIUM = 3;
+  REASONING_EFFORT_HIGH = 4;
+  REASONING_EFFORT_XHIGH = 5;
+  REASONING_EFFORT_MAX = 6;
+}
+
+// ─── Request messages ────────────────────────────────────────────────────────
+
+// Chat completion request matching OpenAI-compatible API
+message ChatCompletionRequest {
+  string model = 1;
+  repeated ChatMessage messages = 2;
+  google.protobuf.DoubleValue temperature = 3;
+  google.protobuf.DoubleValue top_p = 4;
+  google.protobuf.Int32Value max_tokens = 5;
+  bool stream = 6;
+  repeated string stop = 7;
+  google.protobuf.DoubleValue presence_penalty = 8;
+  google.protobuf.DoubleValue frequency_penalty = 9;
+  google.protobuf.Int32Value n = 10;
+  google.protobuf.StringValue user = 11;
+  google.protobuf.Int32Value seed = 12;
+  Reasoning reasoning = 13;
+  google.protobuf.BoolValue parallel_tool_calls = 14;
+  map<string, double> logit_bias = 15;
+  repeated Tool tools = 16;
+  google.protobuf.Value tool_choice = 17;
+  ResponseFormat response_format = 18;
+  repeated string modalities = 19;
+  StreamOptions stream_options = 20;
+  map<string, ChatPatchList> patches = 21;
+  ChatMetadata metadata = 22;
+  google.protobuf.Struct extras = 23;
+  CustomModelConfig custom_model = 24;
+}
+
+// Wrapper for repeated ChatPatch (used in patches map value)
+message ChatPatchList {
+  repeated ChatPatch patches = 1;
+}
+
+// Chat message in the conversation (request side)
+message ChatMessage {
+  string cache_id = 1;
+  string role = 2;
+  // content can be plain text or a list of multimodal content parts
+  oneof content_type {
+    string text_content = 3;
+    ContentPartList parts_content = 12;
+  }
+  google.protobuf.StringValue name = 4;
+  repeated ToolCall tool_calls = 5;
+  google.protobuf.StringValue tool_call_id = 6;
+  google.protobuf.StringValue tool_call_call_id = 7;
+  google.protobuf.StringValue reasoning_content = 8;
+  ReasoningItem reasoning_item = 9;
+  google.protobuf.Struct extends = 10;
+}
+
+// Wrapper for repeated ContentPart
+message ContentPartList {
+  repeated ContentPart parts = 1;
+}
+
+// Content part for multimodal messages
+message ContentPart {
+  string type = 1;
+  google.protobuf.StringValue text = 2;
+  ImageUrl image_url = 3;
+  InputAudio input_audio = 4;
+  CacheControl cache_control = 5;
+}
+
+// Cache control configuration for content parts
+message CacheControl {
+  string type = 1;
+}
+
+// Image URL in message content
+message ImageUrl {
+  string url = 1;
+  google.protobuf.StringValue detail = 2;
+}
+
+// Audio input in message content
+message InputAudio {
+  string data = 1;
+  string format = 2;
+}
+
+// Reasoning item for model series (e.g. gpt-5)
+message ReasoningItem {
+  string id = 1;
+  google.protobuf.StringValue encrypted_content = 2;
+}
+
+// Streaming options
+message StreamOptions {
+  google.protobuf.BoolValue include_usage = 1;
+}
+
+// Tool available for the model to call
+message Tool {
+  string cache_id = 1;
+  string type = 2;
+  Function function = 3;
+  Advisor advisor = 4;
+}
+
+// Function definition
+message Function {
+  string name = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.Struct parameters = 3;
+  google.protobuf.BoolValue strict = 4;
+}
+
+// Advisor definition
+message Advisor {
+  string name = 1;
+  string model = 2;
+  int32 max_uses = 3;
+}
+
+// Tool call made by the assistant
+message ToolCall {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue call_id = 2;
+  google.protobuf.StringValue type = 3;
+  FunctionCall function = 4;
+}
+
+// Function call details
+message FunctionCall {
+  string name = 1;
+  google.protobuf.Value arguments = 2;
+}
+
+// Reasoning configuration
+message Reasoning {
+  ReasoningEffort effort = 1;
+}
+
+// Response format specification
+message ResponseFormat {
+  string type = 1;
+  JsonSchema json_schema = 2;
+}
+
+// JSON schema for structured outputs
+message JsonSchema {
+  string name = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.Struct schema = 3;
+  google.protobuf.BoolValue strict = 4;
+}
+
+// Metadata attached to the chat request
+message ChatMetadata {
+  WorkspaceMetadata workspace = 1;
+  BusinessMetadata business = 2;
+  ContextMetadata context = 3;
+  UserMetadata user = 4;
+}
+
+// Workspace metadata
+message WorkspaceMetadata {
+  int32 file_count = 1;
+  repeated string languages = 2;
+  string codebase_status = 3;
+  string codebase_soft_status = 4;
+  string codebase_external_id = 5;
+  string data_policy = 6;
+}
+
+// Business metadata
+message BusinessMetadata {
+  string id = 1;
+  string name = 2;
+  int64 begin_at = 3;
+  string product = 4;
+  string version = 5;
+  string type = 6;
+  string stage = 7;
+  string sub_task = 8;
+}
+
+// Context metadata for request tracing and client identification
+message ContextMetadata {
+  string request_id = 1;
+  string session_id = 2;
+  string task_id = 3;
+  string request_set_id = 4;
+  string machine_id = 5;
+  string client_type = 6;
+  string source_session_id = 7;
+}
+
+// User metadata
+message UserMetadata {
+  string user_id = 1;
+}
+
+// Custom model configuration (bring-your-own-key)
+message CustomModelConfig {
+  string name = 1;
+  string url = 2;
+  string style = 3;
+  string provider = 4;
+  string type = 5;
+  string model = 6;
+  google.protobuf.Struct parameters = 7;
+}
+
+// Patch to apply to the chat request
+message ChatPatch {
+  string cache_id = 1;
+  string action = 2;
+  google.protobuf.Int32Value position = 3;
+  google.protobuf.StringValue content = 4;
+  google.protobuf.StringValue name = 5;
+  google.protobuf.StringValue rename_to = 6;
+  google.protobuf.StringValue description = 7;
+  google.protobuf.Struct parameters = 8;
+}
+
+// ─── Response messages ───────────────────────────────────────────────────────
+
+// Shared response chat message type (used in both streaming delta and
+// non-streaming message fields)
+message ResponseChatMessage {
+  string role = 1;
+  string content = 2;
+  string reasoning_content = 3;
+  repeated google.protobuf.Struct tool_calls = 4;
+  google.protobuf.Value reasoning_item = 5;
+  google.protobuf.Struct extends = 6;
+}
+
+// Single choice in the non-streaming response
+message NonStreamChoice {
+  int32 index = 1;
+  ResponseChatMessage message = 2;
+  string finish_reason = 3;
+}
+
+// Chat completion response (non-streaming)
+message ChatCompletionResponse {
+  int64 code = 1;
+  string id = 2;
+  string object = 3;
+  int64 created = 4;
+  string model = 5;
+  repeated NonStreamChoice choices = 6;
+  Usage usage = 7;
+  google.protobuf.Struct extras = 8;
+}
+
+// Single choice in the streaming chunk
+message StreamChoice {
+  int32 index = 1;
+  ResponseChatMessage delta = 2;
+  string finish_reason = 3;
+}
+
+// Streaming response chunk
+message ChatCompletionChunk {
+  int64 code = 1;
+  string id = 2;
+  string object = 3;
+  int64 created = 4;
+  string model = 5;
+  repeated StreamChoice choices = 6;
+  Usage usage = 7;
+  google.protobuf.Struct extras = 8;
+}
+
+// Token usage statistics
+message Usage {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens = 3;
+  PromptTokensDetails prompt_tokens_details = 4;
+  CompletionTokensDetails completion_tokens_details = 5;
+}
+
+// Prompt token details
+message PromptTokensDetails {
+  int32 cached_tokens = 1;
+  int32 cacheable_tokens = 2;
+}
+
+// Completion token details
+message CompletionTokensDetails {
+  int32 reasoning_tokens = 1;
+}
+
+// ─── Service definition ──────────────────────────────────────────────────────
+
+service ChatService {
+  // Unary non-streaming chat completion
+  rpc ChatCompletion(ChatCompletionRequest) returns (ChatCompletionResponse);
+
+  // Server-streaming chat completion; each message is one SSE chunk
+  rpc ChatCompletionStream(ChatCompletionRequest) returns (stream ChatCompletionChunk);
+}

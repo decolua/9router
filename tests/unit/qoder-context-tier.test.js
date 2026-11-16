@@ -183,10 +183,14 @@ describe("routableQoderModels", () => {
     // Sonus (smodel) / Cantus (cmodel) are absent from the catalog but the
     // executor still routes them via QODER_STATIC_MODEL_CONFIGS, so they lead
     // the list instead of vanishing from /v1/models.
-    expect(routableQoderModels(catalog)).toEqual([
+    const models = routableQoderModels(catalog);
+    expect(models.slice(0, 2)).toEqual([
       { id: "smodel", name: "Sonus", hidden: false },
       { id: "cmodel", name: "Cantus", hidden: false },
-      { id: "qmodel_38max", name: "Qwen3.8-Max", hidden: false },
+    ]);
+    expect(models).toContainEqual({ id: "qmodel_latest", name: "Qwen4-Max-Preview", hidden: false });
+    expect(models).toContainEqual({ id: "qmodel_38max", name: "Qwen3.8-Max", hidden: false });
+    expect(models.slice(-2)).toEqual([
       { id: "qfmodel", name: "Qwen Fast", hidden: true },
       { id: "dmodel", name: "dmodel", hidden: true },
     ]);

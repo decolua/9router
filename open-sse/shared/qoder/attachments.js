@@ -24,7 +24,8 @@ import {
   QODER_IMAGE_UPLOAD_SIG_PATH,
   QODER_INLINE_FALLBACK_MAX_BYTES,
   QODER_MAX_PAYLOAD_BYTES,
-  qoderInferenceBase,
+  qoderRegionBases,
+  QODER_REGION_INTL,
 } from "./constants.js";
 
 const IMAGE_MIME_RE = /^image\//i;
@@ -53,15 +54,18 @@ function stubText({ name, mime, bytes, reason }) {
   return `[file omitted: ${label}${size} — ${reason}]`;
 }
 
+/**
+ * Build the multipart body qodercli sends for an image upload:
+ *   --<boundary>\r\nContent-Disposition: form-data; name="file"; filename="image.png"\r\n...
+ * The boundary prefix `----qodercli-` is part of the client's own format.
+ */
 export function buildMultipartFile(buffer, { fieldName = "file", fileName, mediaType } = {}) {
-  const boundary = `----9routerQoder${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
-  const filename = fileName || `upload.${mimeExt(mediaType)}`;
+  const boundary = `----qodercli-${uuidv4().replace(/-/g, "")}`;
   const head = Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\nContent-Type: ${mediaType || "application/octet-stream"}\r\n\r\n`,
+    `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\nContent-Type: ${mediaType || "application/octet-stream"}\r\n\r\n`,
   );
   const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
-  const body = Buffer.concat([head, buffer, tail]);
-  return { boundary, body };
+  return { boundary, body: Buffer.concat([head, buffer, tail]) };
 }
 
 function extractUrlFromUploadResponse(json) {
@@ -83,14 +87,26 @@ function extractUrlFromUploadResponse(json) {
 }
 
 async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions, signal }) {
-  const requestId = uuidv4();
-  const url = `${qoderInferenceBase(credentials)}${`/algo${QODER_IMAGE_UPLOAD_SIG_PATH}`}?request_id=${requestId}`;
+  // Verified against production (200 + OSS URL) and against qodercli 1.1.86:
+  //   host  center.qoder.sh          (endpoint type "fn", NOT api2/openapi)
+  //   PUT   /algo/api/v2/image/upload?request_id=<32 hex>
+  //   body  multipart/form-data, field "file"
+  //   auth  Authorization: Bearer COSY.<payload>.<sig>
+  //   sig   COSY over String(body.length), NOT over the body bytes
+  //         (`.withWasmSigning().wasmSigningBody(String(len)).ignoreSignedBody()`),
+  //         while Cosy-Bodylength still carries the real body length.
+  // Signing the body bytes instead is what produced 403 "Signature invalid".
+  const requestId = uuidv4().replace(/-/g, "");
+  const center = qoderRegionBases(credentials?.region || QODER_REGION_INTL).center;
+  const url = `${center}/algo${QODER_IMAGE_UPLOAD_SIG_PATH}?request_id=${requestId}`;
   const { boundary, body } = buildMultipartFile(buffer, {
     fileName: `image.${mimeExt(mediaType)}`,
     mediaType: mediaType || "application/octet-stream",
   });
+
   const psd = credentials?.providerSpecificData || {};
-  const cosyHeaders = buildCosyHeaders(body, url, {
+  const signedBody = Buffer.from(String(body.length));
+  const cosyHeaders = buildCosyHeaders(signedBody, url, {
     userId: psd.userId,
     authToken: credentials.accessToken,
     name: credentials.displayName || "",
@@ -99,11 +115,15 @@ async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions
   });
   const headers = {
     ...cosyHeaders,
-    Accept: "application/json",
+    // buildCosyHeaders hashed/length-ed the signed string; the wire body is the
+    // multipart payload, so the length header must describe that.
+    "Cosy-Bodylength": String(body.length),
     "Content-Type": `multipart/form-data; boundary=${boundary}`,
     "Content-Length": String(body.length),
+    Accept: "application/json",
     "AI-CLIENT-TIMESTAMP": String(Math.floor(Date.now() / 1000)),
     "Accept-Encoding": "identity",
+    "X-Request-Id": requestId,
   };
   const res = await proxyAwareFetch(
     url,
@@ -334,6 +354,7 @@ export async function rewriteQoderMessageAttachments(messages, {
 export function clearQoderUploadCache() {}
 
 export const __test__ = {
+  buildMultipartFile,
   extractUrlFromUploadResponse,
   decodedBytes,
   stubText,
