@@ -52,6 +52,26 @@ export function isAntigravityPromptRejection(status, bodyText) {
   return !(Array.isArray(err.details) && err.details.length > 0);
 }
 
+// Read an upstream error body once and keep it readable for later callers. proxyAwareFetch's
+// DNS-bypass path (the default for Antigravity's Google hosts) returns a plain object with no
+// clone(), and its text() drains the socket, so the retry hook, the prompt-rejection check and
+// parseUpstreamError must share a single read. A real Response is cloned and left untouched.
+function readBodyOnce(response) {
+  if (!response?._bodyTextOnce) {
+    const canClone = typeof response?.clone === "function";
+    const read = canClone ? () => response.clone().text()
+      : typeof response?.text === "function" ? response.text.bind(response) : async () => "";
+    const pending = Promise.resolve().then(read).then(t => (typeof t === "string" ? t : ""), () => "");
+    response._bodyTextOnce = pending;
+    if (!canClone) {
+      // The original body is drained now: serve later readers from this read.
+      response.text = () => pending;
+      response.json = async () => JSON.parse(await pending);
+    }
+  }
+  return response._bodyTextOnce;
+}
+
 const ANTIGRAVITY_TRANSIENT_STATUSES = new Set([
   HTTP_STATUS.SERVER_ERROR,
   HTTP_STATUS.BAD_GATEWAY,
@@ -502,7 +522,7 @@ export class AntigravityExecutor extends BaseExecutor {
     let retryMs = this.parseRetryHeaders(response.headers);
 
     try {
-      bodyText = await response.clone().text();
+      bodyText = await readBodyOnce(response);
       errorJson = bodyText ? JSON.parse(bodyText) : null;
     } catch {
       // ignore parse errors → fall through to status/message based retry

@@ -21,6 +21,21 @@ const REAL_QUOTA = JSON.stringify({ error: { code: 429, message: "Individual quo
 
 const response = (status, body) => new Response(body, { status, headers: { "content-type": "application/json" } });
 
+// proxyAwareFetch's DNS-bypass path (the default for Antigravity's Google hosts) returns this shape:
+// no clone(), and text() drains the socket, so a second read gets nothing.
+const bypassResponse = (status, body) => {
+  let drained = false;
+  const res = {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: "",
+    headers: new Map([["content-type", "application/json"]]),
+    text: async () => { if (drained) return ""; drained = true; return body; },
+  };
+  res.json = async () => JSON.parse(await res.text());
+  return res;
+};
+
 beforeEach(() => fetchMock.mockReset());
 
 describe("isAntigravityPromptRejection", () => {
@@ -74,5 +89,18 @@ describe("Antigravity executor handling", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((await parseUpstreamError(upstream, ag)).statusCode).toBe(400);
+  });
+
+  it("does not retry the bare rejection on the DNS-bypass response shape", async () => {
+    fetchMock.mockImplementation(async () => bypassResponse(429, BARE));
+    const { response: upstream } = await ag.execute({
+      model: "gemini-4-hydrogen",
+      body: { model: "gemini-4-hydrogen-high", request: { contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: {} } },
+      stream: true,
+      credentials: { accessToken: "t", projectId: "p", connectionId: "c" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The retry hook already read the body; the error parser must still see it.
+    expect(await parseUpstreamError(upstream, ag)).toMatchObject({ statusCode: 400, message: ANTIGRAVITY_PROMPT_REJECTED_MESSAGE });
   });
 });
