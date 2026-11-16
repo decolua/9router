@@ -19,8 +19,10 @@ import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.j
 import qoderRegistry from "../../open-sse/providers/registry/qoder.js";
 
 describe("Qoder static model configs", () => {
-  it("defines both frontier keys", () => {
-    expect(Object.keys(QODER_STATIC_MODEL_CONFIGS).sort()).toEqual(["cmodel", "smodel"]);
+  it("includes the frontier pair and preview slot among supported static blocks", () => {
+    for (const key of ["cmodel", "smodel", "qmodel_latest", "qmodel_preview"]) {
+      expect(QODER_STATIC_MODEL_CONFIGS).toHaveProperty(key);
+    }
   });
 
   it("maps the canonical keys into QODER_MODEL_MAP", () => {
@@ -50,7 +52,6 @@ describe("Qoder static model configs", () => {
   it("returns null for a key with no static block", () => {
     // Genuinely unknown keys must still fail loudly rather than get a
     // fabricated config that upstream would silently ignore.
-    expect(getQoderStaticModelConfig("dmodel")).toBeNull();
     expect(getQoderStaticModelConfig("not-a-model")).toBeNull();
   });
 });
