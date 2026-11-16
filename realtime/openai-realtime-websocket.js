@@ -80,7 +80,8 @@ module.exports = function openAIRealtimeWebSocket(server, req, socket, head, opt
     reject(socket, "400 Bad Request");
     return true;
   }
-  if (!REALTIME_MODELS.has(model)) { reject(socket, "400 Bad Request"); return true; }
+  const pollinations = model.startsWith("pollinations/");
+  if (!REALTIME_MODELS.has(model) && !(pollinations && /^pollinations\/[a-z0-9][a-z0-9._/-]{0,199}$/i.test(model))) { reject(socket, "400 Bad Request"); return true; }
   if (!req.headers.authorization && !req.headers["x-api-key"]) { reject(socket, "401 Unauthorized"); return true; }
   const ip = socket.remoteAddress || "unknown";
   if ((pendingByIp.get(ip) || 0) >= 2 || activeSessions + pendingSessions >= MAX_SESSIONS) { reject(socket, "503 Service Unavailable"); return true; }
@@ -136,7 +137,9 @@ module.exports = function openAIRealtimeWebSocket(server, req, socket, head, opt
     if (result?.status) return fail(`${result.status} ${result.status === 401 ? "Unauthorized" : result.status === 403 ? "Forbidden" : result.status === 400 ? "Bad Request" : "Service Unavailable"}`);
     if (!result?.apiKey) return fail();
     if (excluded.includes(result.connectionId)) return fail();
-    const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+    const url = pollinations
+      ? `wss://gen.pollinations.ai/v1/realtime?model=${encodeURIComponent(model.slice(13))}`
+      : `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
     const createUpstream = options.createUpstream || ((target, key) => new WebSocket(target, {
       headers: { authorization: `Bearer ${key}`, "openai-beta": "realtime=v1" },
       perMessageDeflate: false,

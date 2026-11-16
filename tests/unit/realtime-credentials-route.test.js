@@ -35,6 +35,9 @@ vi.mock("../../src/lib/network/connectionProxy.js", () => ({
   pickProxyPoolId: vi.fn(),
 }));
 
+vi.mock("../../open-sse/services/pollinationsModels.js", () => ({
+  resolvePollinationsModels: vi.fn(async () => ({ models: [{ id: "openai/gpt-realtime-2.1", kind: "realtime" }] })),
+}));
 const { POST } = await import("../../src/app/api/internal/realtime-credentials/route.js");
 const { resolveConnectionProxyConfig } = await import("../../src/lib/network/connectionProxy.js");
 const { getProviderConnections, updateProviderConnection } = await import("../../src/lib/localDb.js");
@@ -120,7 +123,7 @@ describe("internal realtime credential route", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("connects the standalone websocket through the real loopback route", async () => {
+  it.each(["gpt-realtime", "pollinations/openai/gpt-realtime-2.1"])("connects %s through the real loopback route", async (model) => {
     globalThis[Symbol.for("9router.realtime.internal-secret")] = "process-secret";
     let internalRequest;
     let upstream;
@@ -152,7 +155,10 @@ describe("internal realtime credential route", () => {
     });
     server.on("upgrade", (request, socket, head) => {
       upgrade(server, request, socket, head, {
-        createUpstream: (_url, apiKey) => {
+        createUpstream: (url, apiKey) => {
+          expect(url).toBe(model.startsWith("pollinations/")
+            ? "wss://gen.pollinations.ai/v1/realtime?model=openai%2Fgpt-realtime-2.1"
+            : "wss://api.openai.com/v1/realtime?model=gpt-realtime");
           expect(apiKey).toBe("provider-secret");
           upstream = {
             readyState: 0,
@@ -170,13 +176,13 @@ describe("internal realtime credential route", () => {
     });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
-    const client = new WebSocket(`ws://127.0.0.1:${server.address().port}/v1/realtime?model=gpt-realtime`, {
+    const client = new WebSocket(`ws://127.0.0.1:${server.address().port}/v1/realtime?model=${encodeURIComponent(model)}`, {
       headers: { authorization: "Bearer client-key" },
     });
     await once(client, "open");
     expect(internalRequest.headers["x-9r-realtime-secret"]).toBe("process-secret");
     expect(internalRequest.headers.authorization).toBe("Bearer client-key");
-    expect(JSON.parse(internalRequest.body)).toEqual({ model: "gpt-realtime" });
+    expect(JSON.parse(internalRequest.body)).toEqual({ model });
     client.close();
     await once(client, "close");
     server.close();
