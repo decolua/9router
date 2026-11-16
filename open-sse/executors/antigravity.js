@@ -8,6 +8,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity, normalizeGeminiContents } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
+import { GEMINI_ROLE } from "../translator/schema/index.js";
 import { GEMINI_LONG_DECODE_MAX_OUTPUT, supportsGeminiLongDecode, wantsGeminiLongDecode, withGeminiLongDecode } from "../utils/geminiLongDecode.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
@@ -40,8 +41,9 @@ const ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS = [
 // so it is request-scoped: retrying, refreshing quota, or locking the account cannot help.
 const ANTIGRAVITY_BARE_EXHAUSTED_MESSAGE = /^Resource has been exhausted \(e\.g\. check quota\)\.?$/;
 export const ANTIGRAVITY_PROMPT_REJECTED_MESSAGE = "Antigravity rejected this request (upstream 429 RESOURCE_EXHAUSTED with no quota details, so this is not your quota). "
-  + "Antigravity refuses system prompts that carry certain third-party agent text; 9router rewrites the known strings "
-  + "(ANTIGRAVITY_PROMPT_REWRITES), so this prompt contains text it does not cover yet.";
+  + "Antigravity refuses system prompts that carry certain third-party agent text. 9router rewrites the known strings "
+  + "(ANTIGRAVITY_PROMPT_REWRITES) and retries a refused prompt once with the system text moved into the first user turn, "
+  + "but this request was still refused.";
 
 export function isAntigravityPromptRejection(status, bodyText) {
   if (status !== HTTP_STATUS.RATE_LIMITED || !bodyText) return false;
@@ -70,6 +72,16 @@ function readBodyOnce(response) {
     }
   }
   return response._bodyTextOnce;
+}
+
+// Antigravity fingerprints systemInstruction only: the same text sent in a user turn passes (probed
+// live). Returns a copy of the envelope with the system parts moved to the front of the first user
+// turn (normalizeGeminiContents merges the two), or null when there is no system text to move.
+export function moveSystemInstructionToContents(body) {
+  const { systemInstruction, ...request } = body?.request || {};
+  const parts = (systemInstruction?.parts || []).filter(p => typeof p?.text === "string" && p.text.trim());
+  if (parts.length === 0) return null;
+  return { ...body, request: { ...request, contents: [{ role: GEMINI_ROLE.USER, parts }, ...(request.contents || [])] } };
 }
 
 const ANTIGRAVITY_TRANSIENT_STATUSES = new Set([
@@ -155,10 +167,22 @@ export class AntigravityExecutor extends BaseExecutor {
     super("antigravity", PROVIDERS.antigravity);
   }
 
-  // Gemini 4 long decode: Cloud Code takes the token inside the envelope (request.continuationToken).
   async execute(args) {
-    const result = await super.execute(args);
+    let result = await super.execute(args);
+    // A prompt rejection means systemInstruction carries text Google fingerprints that
+    // ANTIGRAVITY_PROMPT_REWRITES does not cover yet. Retry once with that text moved into the first
+    // user turn, so a new fingerprint costs one extra round trip instead of failing every request.
+    // Image requests never send systemInstruction, so there is nothing to move for them.
+    if (result?.response?.status === HTTP_STATUS.RATE_LIMITED && !isImageModel(args.model)) {
+      const moved = moveSystemInstructionToContents(args.body);
+      if (moved && isAntigravityPromptRejection(result.response.status, await readBodyOnce(result.response))) {
+        args.log?.warn?.("ANTIGRAVITY", "System prompt rejected (fingerprinted third-party text not in ANTIGRAVITY_PROMPT_REWRITES); retrying with it in the first user turn");
+        args = { ...args, body: moved };
+        result = await super.execute(args);
+      }
+    }
     if (!result?.response?.ok) return result;
+    // Gemini 4 long decode: Cloud Code takes the token inside the envelope (request.continuationToken).
     const finalBody = result.transformedBody;
     if (!wantsGeminiLongDecode(this.provider, finalBody?.model || args.model, finalBody?.request?.generationConfig)) return result;
     const nextHop = async (continuationToken) =>
