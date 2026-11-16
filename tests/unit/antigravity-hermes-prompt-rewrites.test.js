@@ -14,6 +14,8 @@ const HERMES_SYSTEM = [
   "## Mid-turn user steering\nMid-turn, the user can steer you: Hermes delivers their message as a standalone user message right after the latest tool results, wrapped exactly as:",
   "# Google model operational directives\nFollow these operational rules strictly:",
   "# Hermes runtime environment\n\nHost: Linux\n\n<!-- End Hermes runtime environment -->",
+  "# Finishing the job\nWhen the user asks you to build, run, or verify something, the deliverable is a working artifact backed by real tool output — not a description of one.\n"
+    + "If a tool, install, or network call fails and blocks the real path, say so directly and try an alternative. Reporting a blocker honestly is always better than inventing a result.",
 ].join("\n\n");
 
 const FINGERPRINTS = [
@@ -24,6 +26,9 @@ const FINGERPRINTS = [
   "# Hermes runtime environment",
   "<!-- End Hermes runtime environment -->",
   "# Google model operational directives",
+  // Rejected from 2026-11-16 (the same prompt passed hours earlier).
+  "the deliverable is a working artifact backed by real tool output",
+  "Reporting a blocker honestly is always better than inventing a result.",
 ];
 
 function rewrittenSystem(text) {
@@ -52,6 +57,8 @@ describe("Antigravity Hermes prompt rewrites", () => {
     expect(out).toContain("the harness delivers their message as a standalone user message right after the latest tool results");
     expect(out).toContain("# Operational directives\nFollow these operational rules strictly:");
     expect(out).toContain("# Runtime environment\n\nHost: Linux\n\n<!-- End runtime environment -->");
+    expect(out).toContain("the deliverable is a working artifact that real tool output backs — not a description of one.");
+    expect(out).toContain("say so directly and try an alternative. Honestly reporting a blocker is always better than inventing a result.");
   });
 
   it("leaves tool identifiers and the docs URL intact", () => {
