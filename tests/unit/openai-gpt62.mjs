@@ -26,7 +26,7 @@ for (const [id, name, input, output, cached, cacheCreation] of [
     assert.equal(getModelMeta("openai", model.id).responsesLite, undefined);
   });
 
-  test(`${id}: bare API ID does not infer unverified Codex OAuth`, async () => {
+  test(`${id}: bare API ID preserves API inference`, async () => {
     assert.deepEqual(await getModelInfoCore(id), { provider: "openai", model: id });
   });
 
@@ -62,10 +62,10 @@ for (const [id, name, input, output, cached, cacheCreation] of [
     assert.notDeepEqual(getPricingForModel("cx", id), expected);
   });
 
-  test(`${id}: no invented extended variant or OAuth catalog promise`, () => {
+  test(`${id}: both catalogs reject invented extended variants`, () => {
     assert.equal(isValidModel("openai", id), true); // Accepted neighbor.
     assert.equal(isValidModel("openai", `${id}[1m]`), false);
-    assert.equal(isValidModel("cx", id), false); // Same ID, unverified provider.
+    assert.equal(isValidModel("cx", id), true);
     assert.equal(isValidModel("cx", `${id}[1m]`), false);
   });
 }

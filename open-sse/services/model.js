@@ -124,7 +124,7 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 
 // Config-driven prefix → provider inference (first match wins, fallback "openai").
 const MODEL_PREFIX_PROVIDERS = [
-  // These exact IDs are documented on the public API, not yet verified on OAuth.
+  // Bare GPT-6.2 IDs select the API; explicit Codex prefixes select OAuth.
   // Preserve the trailing thinking suffix supported by the model/translator contract.
   [/^gpt-6\.2-(?:sol|astra)(?:\([^()]+\)\s*)?$/, "openai"],
   // Codex CLI sends this bare virtual model for auto-review - keep it on OAuth Codex (#1398).

@@ -243,8 +243,6 @@ const DEVIN_CLI_GPT_CAPS = { vision: true, reasoning: true, search: true, thinki
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
-  // Public API docs: https://developers.openai.com/api/docs/models/gpt-6.2-sol
-  // and /gpt-6.2-astra. These limits are not a Codex OAuth guarantee.
   openai: {
     "gpt-6.2-sol": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1050000, maxOutput: 128000 },
     "gpt-6.2-astra": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1050000, maxOutput: 128000 },
@@ -318,6 +316,8 @@ export const PROVIDER_CAPABILITIES = {
     "claude-haiku-5-5": { vision: true, reasoning: true, search: true, thinkingFormat: "commandcode", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 128000 },
   },
   "codex": {
+    "gpt-6.2-sol":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 128000 },
+    "gpt-6.2-astra":             { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
     "gpt-6-astra":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
     "gpt-6-sol":                 { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
     // Without its own entry gpt-6.1-sol fell through to *gpt-6* (1.05M), overstating
@@ -847,6 +847,10 @@ export function getCapabilitiesForModel(provider, model) {
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  const codexModel = /^(gpt-6\.2-(?:sol|astra))\([^()]+\)\s*$/.exec(baseModel)?.[1];
+  if ((provider === "codex" || provider === "cx") && codexModel) {
+    return { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES.codex[codexModel] };
+  }
 
   // CommandCode wire is /alpha/generate for every model. Family patterns
   // (deepseek-v4 → thinkingFormat:deepseek, vision:false) must not win here.
