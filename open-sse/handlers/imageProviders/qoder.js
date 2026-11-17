@@ -128,6 +128,8 @@ export default {
 
   // OAuth / job-token connections stay usable for chat but are skipped for images.
   canUseCredentials: (credentials) => qoderPatOf(credentials) !== null,
+  unusableCredentialsReason: "not a PAT connection (Cloud Agents need pt-...)",
+  unusableCredentialsMessage: NOT_PAT_MESSAGE,
 
   async executeViaExecutor(model, body, credentials, log, { onUsage } = {}) {
     const pat = qoderPatOf(credentials);
