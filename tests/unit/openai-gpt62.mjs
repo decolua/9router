@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { getProviderModels, getModelMeta, getModelUpstreamId, isValidModel } from "../../open-sse/config/providerModels.js";
 import { getModelInfoCore } from "../../open-sse/services/model.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
-import { getPricingForModel } from "../../open-sse/providers/pricing.js";
+import { calculateCostFromTokens, getPricingForModel } from "../../open-sse/providers/pricing.js";
+import { canonicalizeUsage, extractUsage } from "../../open-sse/utils/usageTracking.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 
@@ -15,9 +16,9 @@ for (const provider of ["openai", "cx"]) {
 
 // OpenAI API docs: /api/docs/models/gpt-6.2-{sol,astra} and /api/docs/pricing.
 // Standard short-context prices, USD per million tokens; not Codex OAuth rates.
-for (const [id, name, input, output, cached, cacheCreation] of [
-  ["gpt-6.2-sol", "GPT-6.2 Sol", 2, 10, 0.1, 2.5],
-  ["gpt-6.2-astra", "GPT-6.2 Astra", 8, 40, 0.4, 10],
+for (const [id, name, input, output, cached, cacheCreation, expectedCost] of [
+  ["gpt-6.2-sol", "GPT-6.2 Sol", 2, 10, 0.1, 2.5, 0.30],
+  ["gpt-6.2-astra", "GPT-6.2 Astra", 8, 40, 0.4, 10, 1.20],
 ]) {
   test(`${id}: public catalog and routing preserve the official API ID`, async () => {
     const models = getProviderModels("openai");
@@ -61,11 +62,27 @@ for (const [id, name, input, output, cached, cacheCreation] of [
     assert.equal(neighbor.reasoning_effort, "none");
   });
 
-  test(`${id}: Standard API pricing is provider scoped`, () => {
-    const expected = { input, output, cached, reasoning: output, cache_creation: cacheCreation };
-    assert.deepEqual(getPricingForModel("openai", id), expected);
-    assert.notDeepEqual(getPricingForModel("codex", id), expected);
-    assert.notDeepEqual(getPricingForModel("cx", id), expected);
+  test(`${id}: Standard API and Codex reference pricing`, async () => {
+    const tokens = canonicalizeUsage(extractUsage({
+      type: "response.completed",
+      response: { usage: { input_tokens: 100000, output_tokens: 10000, output_tokens_details: { reasoning_tokens: 8000 } } },
+    }));
+    const expectedRates = { input, output, cached, reasoning: output, cache_creation: cacheCreation };
+    const catalogModel = getProviderModels("cx").find((entry) => entry.id === id);
+    const codex = await getModelInfoCore(`cx/${catalogModel.id}`);
+    for (const [provider, model] of [
+      [codex.provider, codex.model],
+      [codex.provider, `${codex.model} (high)`],
+      ["cx", id],
+    ]) {
+      const pricing = getPricingForModel(provider, model);
+      assert.equal(calculateCostFromTokens(tokens, pricing), expectedCost, `${provider}/${model} cost`);
+      assert.deepEqual(pricing, expectedRates, `${provider}/${model} rates`);
+    }
+    const apiPricing = getPricingForModel("openai", id);
+    assert.deepEqual(apiPricing, expectedRates);
+    assert.equal(calculateCostFromTokens({ prompt_tokens: 100000, completion_tokens: 10000 }, apiPricing), expectedCost);
+    assert.equal(getPricingForModel("openrouter", id), null, `openrouter/${id} rates`);
   });
 
   test(`${id}: both catalogs reject invented extended variants`, () => {

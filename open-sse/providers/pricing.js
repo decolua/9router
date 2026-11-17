@@ -1,7 +1,7 @@
 // Pricing rates for AI models — all rates in $/1M tokens
 //
 // Fallback order (first match wins):
-//   1. PROVIDER_PRICING[provider][model]  — provider-specific override
+//   1. Provider-specific pricing (including Codex Standard reference estimates)
 //   2. FREE_MODEL_NAMESPACES               — upstream bills these at $0
 //   3. MODEL_PRICING[model]               — canonical model price (provider-agnostic)
 //   4. PATTERN_PRICING                    — glob pattern match (e.g. "codex-*")
@@ -192,19 +192,28 @@ export const MODEL_PRICING = {
   "coder-model":                  { input: 1.50,  output: 6.00,  cached: 0.75,  reasoning: 9.00,   cache_creation: 1.50  },
 };
 
+// https://developers.openai.com/api/docs/pricing — Standard, <=272K input,
+// USD/1M tokens; cache_creation is the 30m write rate. Long-context, Batch,
+// Fast and Ultrafast rates differ. Codex uses these only as estimates, not OAuth billing rates.
+const GPT_62_STANDARD_PRICING = {
+  "gpt-6.2-sol": { input: 2.00, output: 10.00, cached: 0.10, reasoning: 10.00, cache_creation: 2.50 },
+  "gpt-6.2-astra": { input: 8.00, output: 40.00, cached: 0.40, reasoning: 40.00, cache_creation: 10.00 },
+};
+
+// Codex Responses reports reasoning as part of its output total. Keep distinct
+// pricing objects so API rates and user overrides retain their existing math.
+const codexStandardEstimates = Object.fromEntries(
+  Object.entries(GPT_62_STANDARD_PRICING).map(([model, rates]) => [model, { ...rates }]),
+);
+const outputIncludesReasoning = new WeakSet(Object.values(codexStandardEstimates));
+
 /**
  * Provider-specific pricing overrides.
  * Only include entries where price DIFFERS from MODEL_PRICING.
  * Keyed by provider alias (cc, cx, gc, gh, ...) or provider id (openai, anthropic, ...).
  */
 export const PROVIDER_PRICING = {
-  // https://developers.openai.com/api/docs/pricing — Standard, <=272K input,
-  // USD/1M tokens; cache_creation is the 30m write rate. Long-context, Batch,
-  // Fast and Ultrafast rates differ. These are not Codex OAuth prices.
-  openai: {
-    "gpt-6.2-sol": { input: 2.00, output: 10.00, cached: 0.10, reasoning: 10.00, cache_creation: 2.50 },
-    "gpt-6.2-astra": { input: 8.00, output: 40.00, cached: 0.40, reasoning: 40.00, cache_creation: 10.00 },
-  },
+  openai: GPT_62_STANDARD_PRICING,
   // GitHub Copilot (gh) — explicit override, matches canonical gpt-5.3-codex rate
   gh: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
@@ -420,7 +429,7 @@ export function matchPattern(pattern, model) {
 
 /**
  * Resolve pricing for a model using the 4-step fallback chain:
- *   1. PROVIDER_PRICING[provider][model]
+ *   1. Provider-specific pricing (including Codex Standard reference estimates)
  *   2. free namespace (upstream bills $0)
  *   3. MODEL_PRICING[model]
  *   4. PATTERN_PRICING (glob match)
@@ -435,6 +444,15 @@ export function getPricingForModel(provider, model) {
   // 1. Provider-specific override
   if (provider && PROVIDER_PRICING[provider]?.[model]) {
     return PROVIDER_PRICING[provider][model];
+  }
+
+  if (provider === "codex" || provider === "cx") {
+    // Usage retains the thinking suffix even though the upstream model ID doesn't.
+    const thinkingSuffix = /^(.*)\([^()]+\)\s*$/.exec(model);
+    const referenceModel = thinkingSuffix ? thinkingSuffix[1].trim() : model;
+    if (Object.hasOwn(codexStandardEstimates, referenceModel)) {
+      return codexStandardEstimates[referenceModel];
+    }
   }
 
   // 2. Free namespaces bill $0 regardless of the model name behind them.
@@ -501,7 +519,7 @@ export function calculateCostFromTokens(tokens, pricing) {
   cost += outputTokens * (pricing.output / 1000000);
 
   const reasoningTokens = tokens.reasoning_tokens || 0;
-  if (reasoningTokens > 0) {
+  if (reasoningTokens > 0 && !outputIncludesReasoning.has(pricing)) {
     cost += reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000);
   }
 
