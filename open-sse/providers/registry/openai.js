@@ -36,6 +36,9 @@ export default {
     { id: "gpt-4o-realtime-preview-2024-12-17", name: "GPT-4o Realtime Preview (2024-12-17)", kind: "realtime" },
     { id: "gpt-4o-mini-realtime-preview", name: "GPT-4o Mini Realtime Preview", kind: "realtime" },
     { id: "gpt-5.5", name: "GPT-5.5" },
+    // Public OpenAI API models; availability on Codex OAuth is not verified.
+    { id: "gpt-6.2-sol", name: "GPT-6.2 Sol" },
+    { id: "gpt-6.2-astra", name: "GPT-6.2 Astra" },
     { id: "gpt-5.4", name: "GPT-5.4" },
     { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
     { id: "gpt-5.4-nano", name: "GPT-5.4 Nano" },
