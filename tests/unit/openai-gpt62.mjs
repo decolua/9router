@@ -27,13 +27,13 @@ for (const [id, name, input, output, cached, cacheCreation] of [
     assert.equal(model.name, name);
     assert.equal(isValidModel("openai", model.id), true);
     assert.deepEqual(await getModelInfoCore(`openai/${model.id}`), { provider: "openai", model: id });
-    assert.deepEqual(await getModelInfoCore(model.id), { provider: "openai", model: id });
+    assert.deepEqual(await getModelInfoCore(model.id), { provider: "codex", model: id });
     assert.equal(getModelUpstreamId("openai", model.id), id);
     assert.equal(getModelMeta("openai", model.id).responsesLite, undefined);
   });
 
-  test(`${id}: bare API ID preserves API inference`, async () => {
-    assert.deepEqual(await getModelInfoCore(id), { provider: "openai", model: id });
+  test(`${id}: bare ID follows Codex family inference`, async () => {
+    assert.deepEqual(await getModelInfoCore(id), { provider: "codex", model: id });
   });
 
   test(`${id}: API capabilities cannot disable required reasoning`, () => {
@@ -83,8 +83,8 @@ for (const id of ["gpt-6.2-sol", "gpt-6.2-astra"]) {
   const levels = getThinkingLevels("openai", catalogModel.id);
   for (const level of levels) {
     const model = `${catalogModel.id}(${level})`;
-    test(`${model}: picker-produced bare suffix preserves API routing and effort`, async () => {
-      assert.deepEqual(await getModelInfoCore(model), { provider: "openai", model });
+    test(`${model}: picker-produced bare suffix preserves Codex routing`, async () => {
+      assert.deepEqual(await getModelInfoCore(model), { provider: "codex", model });
       const body = { model };
       applyThinking("openai", model, body, "openai");
       assert.equal(body.reasoning_effort, level);
@@ -96,9 +96,8 @@ for (const id of ["gpt-6.2-sol", "gpt-6.2-astra"]) {
       });
     }
     for (const neighbor of ["gpt-6.1-sol", "gpt-6-astra", "gpt-6.2-terra", `${id}[1m]`, `${id}-preview`]) {
-      test(`${model}: exact API exception excludes neighbor ${neighbor}(${level})`, async () => {
-        // Only the base ID differs; the same legitimate suffix must not widen the exception.
-        assert.deepEqual(await getModelInfoCore(model), { provider: "openai", model });
+      test(`${model}: Codex family inference includes neighbor ${neighbor}(${level})`, async () => {
+        assert.deepEqual(await getModelInfoCore(model), { provider: "codex", model });
         const neighborModel = `${neighbor}(${level})`;
         assert.deepEqual(await getModelInfoCore(neighborModel), { provider: "codex", model: neighborModel });
       });
