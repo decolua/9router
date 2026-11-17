@@ -151,6 +151,18 @@ describe("opencodeFingerprint — request side", () => {
     expect(sent).toContain("DeferredToolPlaceholder");
   });
 
+  it("aliases exec_command, the common member of the Codex pair gate", () => {
+    // Upstream 429s the pair exec_command+write_stdin in <400 ms; single
+    // members pass. Codex CLI ships both on every request, so concealing
+    // exec_command clears the pair while write_stdin stays visible.
+    const body = { tools: chat(["exec_command", "write_stdin"]) };
+    const map = applyFingerprintTools(body, false);
+    const sent = namesOf(body.tools);
+    expect(sent.some((name) => /exec_command/i.test(name))).toBe(false);
+    expect(map.get("run_command")).toBe("exec_command");
+    expect(sent).toContain("write_stdin");
+  });
+
   it("restores the gated name on the response and aliases its history calls", () => {
     const body = {
       tools: chat(["terminal"]),

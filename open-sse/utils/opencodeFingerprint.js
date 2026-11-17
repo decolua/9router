@@ -36,7 +36,11 @@ export const OPENCODE_FINGERPRINT_TOOLS = ["read", "shell"];
 // members pass (decolua/9router#5690). Claude Code ships both on every
 // request, so concealing the common member (`ReportFindings`) through the
 // same alias path clears both pairs without touching the other names.
-export const GATED_TOOL_NAME_RE = /terminal|reportfindings/i;
+//
+// A fifth gate is the same shape for Codex: the *pair* `exec_command` +
+// `write_stdin` 429s in <400 ms while each member alone passes. Codex ships
+// both on every request, so concealing `exec_command` clears it.
+export const GATED_TOOL_NAME_RE = /terminal|reportfindings|exec_command/i;
 const GATED_TOOL_ALIAS = "run_command";
 
 // Fourth gate: name+schema fingerprint. /^Read$/ is case-sensitive on purpose.
