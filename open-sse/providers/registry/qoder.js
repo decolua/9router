@@ -13,6 +13,8 @@ export default {
     },
   },
   category: "oauth",
+  // Image generation runs on Cloud Agents and needs a PAT connection (see imageProviders/qoder.js).
+  serviceKinds: ["llm", "image"],
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
   authHint: "Personal Access Token (pt-...) từ https://qoder.com/account/integrations",
@@ -46,6 +48,8 @@ export default {
     // executor falls back to a static model_config (see constants.js).
     { id: "smodel", name: "Sonus" },
     { id: "cmodel", name: "Cantus" },
+    // Image generation (Cloud Agents ImageGen tool, PAT connections only)
+    { id: "imagegen", name: "Qoder ImageGen", kind: "image", imageGen: true, capabilities: ["text2img", "edit", "multiImage"] },
   ],
   oauth: {
     openApiBaseUrl: "https://openapi.qoder.sh",

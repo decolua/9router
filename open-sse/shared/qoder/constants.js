@@ -237,3 +237,35 @@ MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDA8iMH5c02LilrsERw9t6Pv5Nc
 6HRkPJ7S236FZz73In/KVuLnwI8JJ2CbuJap8kvheCCZpmAWpb/cPx/3Vr/J6I17
 XcW+ML9FoCI6AOvOzwIDAQAB
 -----END PUBLIC KEY-----`;
+
+// ── Cloud Agents API (image generation) ─────────────────────────────────────
+// Image generation runs on Qoder Cloud Agents (agent + ImageGen tool), a
+// different API from the COSY chat path. It authenticates with the raw PAT
+// (pt-...) only: job tokens (jt-...) and IDE login tokens are rejected with
+// 401 "invalid pt-token". Only the intl site serves it.
+export const QODER_CLOUD_API_BASE = "https://api.qoder.com/api/v1/cloud";
+export const QODER_PAT_PREFIX = "pt-";
+
+// Sizes the ImageGen tool accepts. Output is ~1 megapixel whatever the size
+// (e.g. 1792x1024 renders at about 1376x768).
+export const QODER_IMAGE_SIZES = Object.freeze([
+  "1024x1024", "1536x1024", "1024x1536", "768x1024", "1024x768",
+  "1024x1280", "1280x1024", "1024x1792", "1792x1024", "2560x1080",
+]);
+export const QODER_IMAGE_DEFAULT_SIZE = "1024x1024";
+
+export const QODER_IMAGE_CONFIG = Object.freeze({
+  environmentName: "9router",
+  agentName: "9router-imagegen",
+  // LLM that drives the ImageGen tool call; the image model itself is fixed upstream.
+  agentModel: "efficient",
+  agentTools: Object.freeze(["ImageGen", "DeliverArtifacts", "Read", "Glob"]),
+  agentSystem:
+    "You are an image generation backend. For each request call ImageGen exactly once with the given parameters, " +
+    "then deliver the result with DeliverArtifacts. Never ask questions. Reply with one short sentence.",
+  inputMountDir: "/data/inputs",
+  maxImagesPerRequest: 4,  // ImageGen returns one image per call; n>1 runs sequential sessions
+  maxInputImages: 3,       // ImageGen accepts up to 3 reference images for edits
+  pollIntervalMs: 2000,
+  timeoutMs: 180000,
+});
