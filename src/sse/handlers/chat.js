@@ -11,6 +11,7 @@ import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../service
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
+import { getProviderModels } from "open-sse/config/providerModels.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
@@ -26,12 +27,21 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
+function isCodexUltrafastModel(model) {
+  const baseId = String(model || "").replace(/\([^()]+\)\s*$/, "");
+  return getProviderModels("cx").some((entry) => entry.id === baseId && entry.ultrafast === true);
+}
+
+// Order: a client-supplied tier wins, then the per-account Ultrafast toggle (only on models
+// flagged `ultrafast` in the registry; others never get the tier), then Fast (account or global).
 export function applyCodexFastMode(body, provider, model, settings, credentials = null) {
-  if (
-    provider !== "codex" ||
-    (settings?.codexFastMode !== true && credentials?.providerSpecificData?.codexFastMode !== true) ||
-    body.service_tier
-  ) return body;
+  if (provider !== "codex" || body.service_tier) return body;
+
+  if (credentials?.providerSpecificData?.codexUltrafastMode === true && isCodexUltrafastModel(model)) {
+    return { ...body, service_tier: "ultrafast" };
+  }
+
+  if (settings?.codexFastMode !== true && credentials?.providerSpecificData?.codexFastMode !== true) return body;
 
   return { ...body, service_tier: "priority" };
 }

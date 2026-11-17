@@ -53,8 +53,10 @@ export default {
   },
   models: [
     // GPT 6.2 needs a Codex client identity >= 0.166.0 (the backend rejects older versions).
-    { id: "gpt-6.2-sol", name: "GPT 6.2 Sol", responsesLite: true, thinkingLevels: GPT_6_LITE_THINKING_LEVELS },
-    { id: "gpt-6.2-sol[1m]", name: "GPT 6.2 Sol (extended context)", upstreamModelId: "gpt-6.2-sol", responsesLite: true, thinkingLevels: GPT_6_LITE_THINKING_LEVELS },
+    // `ultrafast`: the backend offers service_tier=ultrafast for this model (gpt-6.2-astra lists
+    // only Fast on Pro accounts). Gates the per-connection Ultrafast toggle.
+    { id: "gpt-6.2-sol", name: "GPT 6.2 Sol", responsesLite: true, ultrafast: true, thinkingLevels: GPT_6_LITE_THINKING_LEVELS },
+    { id: "gpt-6.2-sol[1m]", name: "GPT 6.2 Sol (extended context)", upstreamModelId: "gpt-6.2-sol", responsesLite: true, ultrafast: true, thinkingLevels: GPT_6_LITE_THINKING_LEVELS },
     { id: "gpt-6.2-astra", name: "GPT 6.2 Astra" },
     { id: "gpt-6.2-astra[1m]", name: "GPT 6.2 Astra (extended context)", upstreamModelId: "gpt-6.2-astra" },
     { id: "gpt-6.1-sol", name: "GPT 6.1 Sol", responsesLite: true, thinkingLevels: GPT_6_LITE_THINKING_LEVELS },

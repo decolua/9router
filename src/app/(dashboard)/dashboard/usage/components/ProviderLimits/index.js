@@ -170,6 +170,7 @@ export default function ProviderLimits() {
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [fastModeId, setFastModeId] = useState(null);
+  const [ultrafastModeId, setUltrafastModeId] = useState(null);
   const [resettingLimitId, setResettingLimitId] = useState(null);
   const [resetConfirmState, setResetConfirmState] = useState(null);
   const [resetCreditsState, setResetCreditsState] = useState(null);
@@ -506,6 +507,34 @@ export default function ProviderLimits() {
         console.error("Error toggling fast mode:", error);
       } finally {
         setFastModeId(null);
+      }
+    },
+    [],
+  );
+
+  const handleToggleUltrafastMode = useCallback(
+    async (conn) => {
+      const next = !(conn.providerSpecificData?.codexUltrafastMode === true);
+      setUltrafastModeId(conn.id);
+      try {
+        const res = await fetch(`/api/providers/${conn.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ providerSpecificData: { codexUltrafastMode: next } }),
+        });
+        if (res.ok) {
+          setConnections((prev) =>
+            prev.map((c) =>
+              c.id === conn.id
+                ? { ...c, providerSpecificData: { ...(c.providerSpecificData || {}), codexUltrafastMode: next } }
+                : c,
+            ),
+          );
+        }
+      } catch (error) {
+        console.error("Error toggling ultrafast mode:", error);
+      } finally {
+        setUltrafastModeId(null);
       }
     },
     [],
@@ -1144,7 +1173,7 @@ export default function ProviderLimits() {
           const resetLabel = isCodex ? "Codex reset credit" : "Claude limit reset";
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
-          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit || fastModeId === conn.id;
+          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit || fastModeId === conn.id || ultrafastModeId === conn.id;
           const rawQuotas = quota?.quotas || [];
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
@@ -1301,6 +1330,27 @@ export default function ProviderLimits() {
                         >
                           <span className={`material-symbols-outlined text-[18px] ${fastModeId === conn.id ? "animate-spin" : ""}`}>
                             {fastModeId === conn.id ? "progress_activity" : "speed"}
+                          </span>
+                        </button>
+                      </Tooltip>
+                    )}
+                    {isCodex && (
+                      <Tooltip
+                        text={
+                          conn.providerSpecificData?.codexUltrafastMode === true
+                            ? "Ultrafast ON: GPT 6.2 Sol requests on this account use the ultrafast tier (6x usage). Other models are unaffected. Click to disable."
+                            : "Force ultrafast: GPT 6.2 Sol requests on this account use the ultrafast tier (6x usage). Other models are unaffected."
+                        }
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleToggleUltrafastMode(conn)}
+                          disabled={rowBusy}
+                          aria-label="Toggle ultrafast mode"
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${conn.providerSpecificData?.codexUltrafastMode === true ? "text-primary" : "text-text-muted"}`}
+                        >
+                          <span className={`material-symbols-outlined text-[18px] ${ultrafastModeId === conn.id ? "animate-spin" : ""}`}>
+                            {ultrafastModeId === conn.id ? "progress_activity" : "rocket_launch"}
                           </span>
                         </button>
                       </Tooltip>
