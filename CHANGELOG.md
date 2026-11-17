@@ -1,9 +1,12 @@
 # Unreleased
 
 ## Fixes
+- **Antigravity**: strip/rewrite Claude Code prompt fingerprints that trigger fake 429 responses (PR #5733); use the live per-account catalog and hide disabled/internal models in provider model discovery (PR #5734).
+- **Kimi Code**: recognize K3.1 Pro and Highspeed IDs with 1,048,576-token context metadata (PR #5722).
 - **Codex images**: resize individual inline and fetched images exceeding 30,000 32×32 patches before forwarding. Preserve aspect ratio and requested detail; images within the limit remain unchanged. Install Sharp directly for server and CLI image processing.
 
 ## Features
+- **Codex**: add GPT-6.2 Sol and Astra upstream IDs; explicit `cx/` or `codex/` prefixes select OAuth while bare IDs retain OpenAI API routing.
 - **OpenAI**: add GPT-6.2 Sol and Astra from PR #5737 with API-scoped capabilities/pricing and exact bare-ID routing, including thinking suffixes. Preserve explicit providers, aliases and neighboring Codex routes.
 - **Free-tier providers**: add Cohere chat, multimodal embeddings and transcription using evaluation API keys; add Pollinations chat, embeddings, images/edits, speech, transcription, decisions and realtime, with native video job routing when an eligible model is available. Populate supported models automatically from the live catalogs in provider pages, selectors and `/v1/models`; exclude deprecated/ineligible Cohere models and Pollinations paid-only models. Free-tier allowances, key permissions and account budgets still apply.
 - **Gemini 4 Hydrogen**: add `gemini-4-hydrogen` to the Gemini API provider, and to Antigravity as `gemini-4-hydrogen-xhigh|high|medium|low` plus a bare `gemini-4-hydrogen` that resolves to `-high` (Hydrogen's default level). Hydrogen serves a native `xhigh` thinking level: `xhigh`/`max`/`ultra` intents (or an `(xhigh)` suffix) reach the wire as `thinkingLevel: "xhigh"` instead of collapsing to `high`, and on Antigravity a client `reasoning_effort: "xhigh"`/`"max"` routes to the `-xhigh` tier. Only tier-preset entries whose upstream id carries `(xhigh)` can be promoted, so standalone ids such as `ws/gpt-5.4-xhigh` are never swapped in by a client setting. `none`/`minimal` still floor at `low` (Hydrogen 400s on MINIMAL). Declares 1M context, 64K per-request output and PDF/audio/video input; bills at $1.50/$7.50 with $0.075 cached reads; adds the tiers to the Antigravity quota list, the Antigravity IDE (MITM) slots and the CLI model menus.

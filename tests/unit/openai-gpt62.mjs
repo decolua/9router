@@ -62,10 +62,13 @@ for (const [id, name, input, output, cached, cacheCreation] of [
     assert.notDeepEqual(getPricingForModel("cx", id), expected);
   });
 
-  test(`${id}: no invented extended variant or OAuth catalog promise`, () => {
+  test(`${id}: explicit Codex selection forwards the upstream ID without changing bare routing`, async () => {
     assert.equal(isValidModel("openai", id), true); // Accepted neighbor.
     assert.equal(isValidModel("openai", `${id}[1m]`), false);
-    assert.equal(isValidModel("cx", id), false); // Same ID, unverified provider.
+    assert.equal(isValidModel("cx", id), true);
+    assert.equal(getModelUpstreamId("codex", id), id);
+    assert.deepEqual(await getModelInfoCore(`cx/${id}`), { provider: "codex", model: id });
+    assert.deepEqual(await getModelInfoCore(id), { provider: "openai", model: id });
     assert.equal(isValidModel("cx", `${id}[1m]`), false);
   });
 }
