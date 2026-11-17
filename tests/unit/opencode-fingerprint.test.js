@@ -137,6 +137,20 @@ describe("opencodeFingerprint — request side", () => {
     expect(sent).toContain("shell");
   });
 
+  it("aliases ReportFindings, the common member of the upstream pair gates (#5690)", () => {
+    // Upstream 429s the pairs ReportFindings+ScheduleWakeup and
+    // ReportFindings+DeferredToolPlaceholder; single members pass. Concealing
+    // ReportFindings on every request clears both pairs for Claude Code,
+    // which ships all three names at once.
+    const body = { tools: chat(["ReportFindings", "ScheduleWakeup", "DeferredToolPlaceholder"]) };
+    const map = applyFingerprintTools(body, false);
+    const sent = namesOf(body.tools);
+    expect(sent.some((name) => /reportfindings/i.test(name))).toBe(false);
+    expect(map.get("run_command")).toBe("ReportFindings");
+    expect(sent).toContain("ScheduleWakeup");
+    expect(sent).toContain("DeferredToolPlaceholder");
+  });
+
   it("restores the gated name on the response and aliases its history calls", () => {
     const body = {
       tools: chat(["terminal"]),
@@ -155,6 +169,34 @@ describe("opencodeFingerprint — request side", () => {
       map,
     );
     expect(restored.choices[0].message.tool_calls[0].function.name).toBe("terminal");
+  });
+
+  it("aliases Claude Code name+schema fingerprints (fourth gate)", () => {
+    const edit = { type: "function", function: { name: "Edit", description: "x", parameters: { type: "object", properties: { file_path: { type: "string" }, old_string: { type: "string" }, new_string: { type: "string" } } } } };
+    const read = { type: "function", function: { name: "Read", description: "x", parameters: { type: "object", properties: { file_path: { type: "string" } } } } };
+    const body = { tools: [edit, read] };
+    const map = applyFingerprintTools(body, false);
+
+    const sent = namesOf(body.tools);
+    expect(sent).toContain("file_edit");
+    expect(sent).toContain("file_read");
+    expect(map.get("file_edit")).toBe("Edit");
+    expect(map.get("file_read")).toBe("Read");
+    const sentEdit = body.tools.find((t) => t.function?.name === "file_edit");
+    expect(sentEdit.function.parameters.properties).toEqual(edit.function.parameters.properties);
+  });
+
+  it("does not gate near-miss name+schema combinations", () => {
+    const body = {
+      tools: [
+        { type: "function", name: "read", description: "x", parameters: { type: "object", properties: { file_path: { type: "string" } }, required: ["file_path"] } },
+        { type: "function", name: "Edit", description: "x", parameters: { type: "object", properties: { file_path: { type: "string" } }, required: ["file_path"] } },
+        { type: "function", name: "Read", description: "x", parameters: { type: "object", properties: { offset: { type: "integer" } }, required: [] } },
+      ],
+    };
+    const map = applyFingerprintTools(body, true);
+    expect(namesOf(body.tools)).toEqual(["read_client", "Edit", "Read", "read", "shell"]);
+    expect(map.get("read_client")).toBe("read");
   });
 
   it("never throws on malformed tools", () => {
