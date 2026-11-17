@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
-import { getModelsByProviderId } from "../../open-sse/config/providerModels.js";
+import { getModelsByProviderId, getModelUpstreamId, isValidModel } from "../../open-sse/config/providerModels.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getPricingForModel } from "../../open-sse/providers/pricing.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
@@ -11,6 +11,17 @@ const credentials = { connectionId: "fixture", accessToken: "fixture-token" };
 afterEach(() => vi.restoreAllMocks());
 
 describe("Codex GPT-6 Sol/Luna transport", () => {
+  it.each(["gpt-6.2-sol", "gpt-6.2-astra"])("lists %s without inventing Lite or extended variants", (id) => {
+    const models = getModelsByProviderId("codex");
+    expect(models.slice(0, 2).map(model => model.id)).toEqual(["gpt-6.2-sol", "gpt-6.2-astra"]);
+    expect(models.filter(model => model.id === id)).toHaveLength(1);
+    const model = models.find(model => model.id === id);
+    expect(model.responsesLite).toBeUndefined();
+    expect(model.thinkingLevels).toBeUndefined();
+    expect(getModelUpstreamId("cx", model.id)).toBe(id);
+    expect(isValidModel("cx", model.id)).toBe(true);
+    for (const rejected of [`${id}[1m]`, `${id}-preview`, "gpt-6.2-terra"]) expect(isValidModel("cx", rejected)).toBe(false);
+  });
   it.each(["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"])("lists %s with Codex capabilities", (model) => {
     const entry = getModelsByProviderId("codex").find((item) => item.id === model);
     expect(entry?.responsesLite).toBe(true);

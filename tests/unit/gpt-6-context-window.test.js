@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { getCapabilitiesForModel, setCatalogSource } from "../../open-sse/providers/capabilities.js";
 import { PROVIDER_ALIASES, build } from "../../src/lib/modelCatalog/sync.js";
+import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 
 // The gpt-6 family's API window is 1.05M. The pattern table published 272,000 for
 // it — Kiro's own truncation, copied into the global glob — so every other
@@ -11,6 +12,14 @@ const API_WINDOW = 1050000;
 const LEGACY_GPT5_WINDOW = 400000;
 
 describe("gpt-6 / gpt-5.4+ context windows", () => {
+  it.each([["gpt-6.2-sol", 500000], ["gpt-6.2-astra", 272000]])("keeps %s Codex context and suffixes separate from API", (id, contextWindow) => {
+    for (const provider of ["cx", "codex"]) {
+      const expected = { ...getCapabilitiesForModel(provider, "gpt-6-astra"), contextWindow };
+      expect(getCapabilitiesForModel(provider, id)).toEqual(expected);
+      for (const level of getThinkingLevels("codex", id)) expect(getCapabilitiesForModel(provider, `${id}(${level})`)).toEqual(expected);
+    }
+    expect(getCapabilitiesForModel("openai", id).contextWindow).toBe(API_WINDOW);
+  });
   it("reports the 1.05M API window for gpt-6 models on ordinary providers", () => {
     for (const [provider, model] of [
       ["github", "gpt-6-luna"],

@@ -28,9 +28,9 @@ export default {
     forceStream: true,
   },
   models: [
-    { id: "gpt-5.5", name: "GPT-5.5" },
     { id: "gpt-6.2-sol", name: "GPT-6.2 Sol" },
     { id: "gpt-6.2-astra", name: "GPT-6.2 Astra" },
+    { id: "gpt-5.5", name: "GPT-5.5" },
     { id: "gpt-5.4", name: "GPT-5.4" },
     { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
     { id: "gpt-5.4-nano", name: "GPT-5.4 Nano" },

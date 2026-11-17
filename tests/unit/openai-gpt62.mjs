@@ -7,6 +7,12 @@ import { getPricingForModel } from "../../open-sse/providers/pricing.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 
+for (const provider of ["openai", "cx"]) {
+  test(`${provider}: GPT-6.2 Sol is the default, followed by Astra`, () => {
+    assert.deepEqual(getProviderModels(provider).slice(0, 2).map(model => model.id), ["gpt-6.2-sol", "gpt-6.2-astra"]);
+  });
+}
+
 // OpenAI API docs: /api/docs/models/gpt-6.2-{sol,astra} and /api/docs/pricing.
 // Standard short-context prices, USD per million tokens; not Codex OAuth rates.
 for (const [id, name, input, output, cached, cacheCreation] of [

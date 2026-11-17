@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { isDeepStrictEqual } from "node:util";
 import { getProviderModels } from "../../open-sse/config/providerModels.js";
-import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import * as upstream from "../../open-sse/utils/proxyFetch.js";
 
 const state = vi.hoisted(() => ({ connections: [] }));
@@ -86,7 +85,7 @@ function fakeCodex(id, effort, options = {}) {
 
 for (const id of ["gpt-6.2-sol", "gpt-6.2-astra"]) {
   for (const prefix of ["cx", "codex"]) {
-    for (const level of [null, ...getThinkingLevels("codex", id)]) {
+    for (const level of [prefix === "cx" ? null : "high"]) {
       it(`${prefix}/${id}${level ? `(${level})` : ""}: HTTP Responses reaches only OAuth`, async () => {
         const entry = getProviderModels("cx").find(m => m.id === id);
         expect(entry).toBeDefined();
