@@ -24,6 +24,9 @@ function normalizeFormData(data = {}) {
     noProxy: data.noProxy || "",
     isActive: data.isActive !== false,
     strictProxy: data.strictProxy === true,
+    type: data.type || "http",
+    autoHop: data.autoHop !== false,
+    maxHops: Number(data.maxHops) > 0 ? Number(data.maxHops) : 3,
   };
 }
 
@@ -53,6 +56,8 @@ export default function ProxyPoolsPage() {
   const [healthProgress, setHealthProgress] = useState({ current: 0, total: 0 });
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
+  const [warpStatus, setWarpStatus] = useState(null);
+  const [hopping, setHopping] = useState(false);
   const relayMenuRef = useRef(null);
   const notify = useNotificationStore();
 
@@ -86,6 +91,47 @@ export default function ProxyPoolsPage() {
     fetchProxyPools();
   }, [fetchProxyPools]);
 
+  const hasWarpPool = useMemo(
+    () => proxyPools.some((p) => p.type === "warp"),
+    [proxyPools]
+  );
+
+  const fetchWarpStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/warp/status", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok) setWarpStatus(data.status || null);
+    } catch {
+      // engine endpoints are best-effort UI sugar
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasWarpPool) return;
+    fetchWarpStatus();
+    const timer = setInterval(fetchWarpStatus, 10000);
+    return () => clearInterval(timer);
+  }, [hasWarpPool, fetchWarpStatus]);
+
+  const handleHop = async () => {
+    setHopping(true);
+    try {
+      const res = await fetch("/api/warp/hop", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        notify.success(data.samePrefix ? "Hopped — Cloudflare returned the same block" : `New identity: ${data.ip}`);
+      } else {
+        notify.error(data.error || "Hop failed");
+      }
+      await fetchWarpStatus();
+    } catch (error) {
+      console.log("Error hopping WARP:", error);
+      notify.error("Hop failed");
+    } finally {
+      setHopping(false);
+    }
+  };
+
   const resetForm = () => {
     setEditingProxyPool(null);
     setFormData(normalizeFormData());
@@ -102,6 +148,20 @@ export default function ProxyPoolsPage() {
     setShowFormModal(true);
   };
 
+  const openWarpModal = () => {
+    resetForm();
+    setFormData((prev) => ({
+      ...prev,
+      name: "Cloudflare WARP",
+      proxyUrl: "http://127.0.0.1:42901",
+      strictProxy: true,
+      type: "warp",
+      autoHop: true,
+      maxHops: 3,
+    }));
+    setShowFormModal(true);
+  };
+
   const closeFormModal = () => {
     setShowFormModal(false);
     resetForm();
@@ -114,6 +174,9 @@ export default function ProxyPoolsPage() {
       noProxy: formData.noProxy.trim(),
       isActive: formData.isActive === true,
       strictProxy: formData.strictProxy === true,
+      type: formData.type || "http",
+      autoHop: formData.autoHop !== false,
+      maxHops: Number(formData.maxHops) > 0 ? Math.floor(Number(formData.maxHops)) : 3,
     };
 
     if (!payload.name || !payload.proxyUrl) return;
@@ -679,6 +742,9 @@ export default function ProxyPoolsPage() {
           <Button size="sm" variant="secondary" icon="upload" onClick={openBatchImportModal}>
             Batch Import
           </Button>
+          <Button size="sm" variant="secondary" icon="swap_horiz" onClick={openWarpModal}>
+            WARP
+          </Button>
           <Button size="sm" icon="add" onClick={openCreateModal}>Add Proxy Pool</Button>
         </div>
       </div>
@@ -775,6 +841,9 @@ export default function ProxyPoolsPage() {
                     {pool.type === "netlify" && (
                       <Badge variant="default" size="sm">netlify relay</Badge>
                     )}
+                    {pool.type === "warp" && (
+                      <Badge variant="warning" size="sm">warp hop</Badge>
+                    )}
                     <Badge variant="default" size="sm">
                       {pool.boundConnectionCount || 0} bound
                     </Badge>
@@ -783,6 +852,12 @@ export default function ProxyPoolsPage() {
                   {pool.noProxy ? (
                     <p className="text-xs text-text-muted truncate">No proxy: {pool.noProxy}</p>
                   ) : null}
+                  {pool.type === "warp" && warpStatus && (
+                    <p className="text-xs text-text-muted truncate">
+                      WARP: {warpStatus.running ? "running" : "stopped"} · egress {warpStatus.lastIp || "…"} · {warpStatus.hops} hops
+                      {warpStatus.lastError ? ` · ${warpStatus.lastError}` : ""}
+                    </p>
+                  )}
                   <p className="text-[11px] text-text-muted mt-1">
                     Last tested: {formatDateTime(pool.lastTestedAt)}
                     {pool.lastError ? ` · ${pool.lastError}` : ""}
@@ -797,6 +872,21 @@ export default function ProxyPoolsPage() {
                     onChange={() => handleToggleActive(pool)}
                     title={pool.isActive ? "Disable" : "Enable"}
                   />
+                  {pool.type === "warp" && (
+                    <button
+                      onClick={handleHop}
+                      className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
+                      title="Rotate IP now"
+                      disabled={hopping}
+                    >
+                      <span
+                        className="material-symbols-outlined text-[18px]"
+                        style={hopping ? { animation: "spin 1s linear infinite" } : undefined}
+                      >
+                        {hopping ? "progress_activity" : "swap_horiz"}
+                      </span>
+                    </button>
+                  )}
                   <button
                     onClick={() => handleTest(pool.id)}
                     className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
@@ -1142,6 +1232,31 @@ export default function ProxyPoolsPage() {
               disabled={saving}
             />
           </div>
+
+          {formData.type === "warp" && (
+            <>
+              <div className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-medium text-sm">Auto Hop</p>
+                  <p className="text-xs text-text-muted">
+                    When a request hits a rate limit, rotate the WARP identity (new IPv6 /64) and retry before falling back.
+                  </p>
+                </div>
+                <Toggle
+                  checked={formData.autoHop !== false}
+                  onChange={() => setFormData((prev) => ({ ...prev, autoHop: prev.autoHop === false }))}
+                  disabled={saving}
+                />
+              </div>
+              <Input
+                label="Max Hops (per request)"
+                value={String(formData.maxHops)}
+                onChange={(e) => setFormData((prev) => ({ ...prev, maxHops: e.target.value }))}
+                placeholder="3"
+                hint="How many identity rotations a single request may use. Needs scripts/warp-setup.sh on the host."
+              />
+            </>
+          )}
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button

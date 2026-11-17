@@ -38,8 +38,17 @@ function normalizeProxyPoolUpdate(body = {}) {
   }
 
   if (Object.prototype.hasOwnProperty.call(body, "type")) {
-    const validTypes = ["http", "vercel", "cloudflare", "deno", "netlify"];
+    const validTypes = ["http", "vercel", "cloudflare", "deno", "netlify", "warp"];
     updates.type = validTypes.includes(body?.type) ? body.type : "http";
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "autoHop")) {
+    updates.autoHop = body?.autoHop !== false;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "maxHops")) {
+    const maxHopsRaw = Number(body?.maxHops);
+    updates.maxHops = maxHopsRaw > 0 ? Math.floor(maxHopsRaw) : 3;
   }
 
   return { updates };

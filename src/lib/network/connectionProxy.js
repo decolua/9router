@@ -103,6 +103,20 @@ export async function resolveConnectionProxyConfig(
 
       if (isValidPool) {
         /**
+         * WARP pool: the URL points at the local wireproxy child managed by
+         * src/lib/warp. Boot it lazily on first use; failure falls through to
+         * the standard branch (strictProxy decides whether that leaks direct).
+         */
+        if (proxyPool.type === "warp") {
+          try {
+            const { ensureStarted } = await import("@/lib/warp");
+            await ensureStarted();
+          } catch (e) {
+            console.error(`[connectionProxy] WARP engine start failed: ${e?.message || e}`);
+          }
+        }
+
+        /**
          * Vercel/Cloudflare/Deno/Netlify relay proxies use base URL rewriting
          * instead of HTTP_PROXY environment variables.
          */
