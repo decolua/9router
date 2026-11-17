@@ -3,11 +3,12 @@ import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
 
 // Fetch with timeout wrapper
+const REQUEST_TIMEOUT_MESSAGE = "Request timeout";
 const fetchWithTimeout = (url, options, timeout = 10000) => {
   return Promise.race([
     fetch(url, options),
     new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("Request timeout")), timeout)
+      setTimeout(() => reject(new Error(REQUEST_TIMEOUT_MESSAGE)), timeout)
     )
   ]);
 };
@@ -26,13 +27,17 @@ const isValidUrl = (url) => {
 const getErrorMessage = (error) => {
   if (error.cause?.code === "ECONNREFUSED") return "Connection refused - provider node offline or unreachable";
   if (error.cause?.code === "ENOTFOUND") return "DNS lookup failed - invalid domain or network issue";
-  if (error.cause?.code === "ETIMEDOUT") return "Connection timeout - provider node too slow";
+  if (error.cause?.code === "ETIMEDOUT") return "Connection timed out - the node did not accept the connection (check the URL, firewall, or network latency)";
   if (error.message.includes("timeout")) return "Request timeout (>10s) - provider node not responding";
   if (error.cause?.code === "CERT_HAS_EXPIRED") return "SSL certificate expired";
   if (error.cause?.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") return "SSL certificate verification failed";
   if (error.cause?.code) return `Network error: ${error.cause.code}`;
   return "Network connection failed - check URL and network connectivity";
 };
+
+// True when fetch itself failed to reach the node (connect error, DNS, TLS, or our own timeout).
+const isProbeFailure = (error) =>
+  Boolean(error?.cause?.code) || error?.message === "fetch failed" || error?.message === REQUEST_TIMEOUT_MESSAGE;
 
 // Get status-specific error message for /models endpoint
 const getModelsErrorMessage = (status) => {
@@ -204,9 +209,9 @@ export async function POST(request) {
       code: error.cause?.code,
       userMessage: errorMessage
     });
-    return NextResponse.json({ 
-      valid: false,
-      error: errorMessage 
-    }, { status: 500 });
+    // A probe that could not reach the node is a validation result (the callers read
+    // `valid`/`error`), not a failure of this route, so it is not an HTTP 500 (#5721).
+    // Anything else (a bug, a malformed body) stays a 500 so it is not hidden from monitoring.
+    return NextResponse.json({ valid: false, error: errorMessage }, { status: isProbeFailure(error) ? 200 : 500 });
   }
 }
