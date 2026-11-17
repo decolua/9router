@@ -69,6 +69,30 @@ describe("/v1/models combo limits", () => {
     });
   });
 
+  it.each([
+    ["gpt-6.2-sol", 500000],
+    ["gpt-6.2-astra", 272000],
+  ])("publishes %s Codex limits at top level, nested and in mixed combos", async (modelId, contextWindow) => {
+    const models = await modelsWithCombo("codex", modelId, [
+      { name: "codex-seat", models: [`cx/${modelId}(high)`] },
+      { name: "mixed-seat", models: ["codex-seat", "openai/gpt-6.2-sol"] },
+      { name: "small-seat", models: ["mixed-seat", "cx/gpt-6-astra"] },
+    ]);
+    for (const id of [`cx/${modelId}`, "codex-seat", "mixed-seat"]) {
+      const entry = models.find(model => model.id === id);
+      expect(entry).toMatchObject({
+        context_length: contextWindow,
+        capabilities: { contextWindow, vision: true, reasoning: true, search: true, tools: true },
+      });
+    }
+    expect(models.find(model => model.id === "small-seat")).toMatchObject({
+      context_length: 272000,
+      capabilities: { contextWindow: 272000 },
+    });
+    expect(models.filter(model => model.id === `cx/${modelId}`)).toHaveLength(1);
+    expect(models.some(model => model.id === `cx/${modelId}[1m]`)).toBe(false);
+  });
+
   it("publishes Devin CLI's 200k limit for a dv combo seat", async () => {
     const models = await modelsWithCombo("devin-cli", "gpt-5.5-high", [
       { name: "devin-combo", models: ["dv/gpt-5.5-high"] },
