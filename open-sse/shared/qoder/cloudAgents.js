@@ -151,12 +151,13 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Poll the session's events until the turn ends. Resolves with the delivered
- * files, or throws with the tool/session error.
+ * files and the session's credit usage, or throws with the tool/session error.
  */
 export async function waitForArtifacts(pat, sessionId, { pollIntervalMs, timeoutMs } = {}) {
   const interval = pollIntervalMs ?? QODER_IMAGE_CONFIG.pollIntervalMs;
   const deadline = Date.now() + (timeoutMs ?? QODER_IMAGE_CONFIG.timeoutMs);
   const artifacts = [];
+  let credits = null;
   let toolError = null;
   let started = false;
   let afterId = null;
@@ -181,6 +182,11 @@ export async function waitForArtifacts(pat, sessionId, { pollIntervalMs, timeout
             toolError = (event.content || []).map((c) => c?.text || "").join(" ").trim() || "ImageGen failed";
           }
           break;
+        case "session.usage":
+          // cumulative for the session; the session only ever runs this one turn
+          credits = Number(event.total_credits);
+          if (!Number.isFinite(credits)) credits = null;
+          break;
         case "session.error": {
           const message = event.error?.message || "session error";
           throw new QoderCloudError(QUEUE_FULL.test(message) ? 429 : 502, `Qoder Cloud Agents: ${message}`, event.error?.type || null);
@@ -188,7 +194,7 @@ export async function waitForArtifacts(pat, sessionId, { pollIntervalMs, timeout
         case "session.status_idle":
         case "session.status_terminated":
           if (!started) break;
-          if (artifacts.length) return artifacts;
+          if (artifacts.length) return { artifacts, credits };
           if (toolError) throw new QoderCloudError(QUEUE_FULL.test(toolError) ? 429 : 502, `Qoder ImageGen: ${toolError.slice(0, 500)}`);
           throw new QoderCloudError(502, "Qoder ImageGen: the agent finished without delivering an image");
         default:

@@ -24,7 +24,8 @@ function fakeCloud({ turn } = {}) {
     { id: `${sid}_3`, type: "agent.tool_use", name: "ImageGen" },
     { id: `${sid}_4`, type: "agent.tool_result", is_error: false, content: [{ type: "text", text: "ok" }] },
     { id: `${sid}_5`, type: "agent.artifact_delivered", file_id: `out_${sid}`, original_filename: "img.png", content_type: "image/png" },
-    { id: `${sid}_6`, type: "session.status_idle", stop_reason: { type: "end_turn" } },
+    { id: `${sid}_6`, type: "session.usage", model_credits: 0.07, sandbox_runtime_credits: 0, total_credits: 0.07 },
+    { id: `${sid}_7`, type: "session.status_idle", stop_reason: { type: "end_turn" } },
   ];
   global.fetch = vi.fn(async (url, opts = {}) => {
     const u = new URL(String(url));
@@ -68,12 +69,13 @@ function fakeCloud({ turn } = {}) {
   return { calls, state };
 }
 
-function generate(body, credentials = { apiKey: "pt-test-token" }) {
+function generate(body, credentials = { apiKey: "pt-test-token" }, extra = {}) {
   return handleImageGenerationCore({
     body: { model: "qd/imagegen", ...body },
     modelInfo: { provider: "qoder", model: "imagegen" },
     credentials,
     log: null,
+    ...extra,
   });
 }
 
@@ -142,6 +144,28 @@ describe("Qoder image adapter", () => {
     expect(out.data).toHaveLength(2);
     expect(out.data[0].b64_json).toBe(PNG_BYTES.toString("base64"));
     expect(state.archived).toEqual(["sess_1", "sess_2"]);
+  });
+
+  it("reports one usage record per request with the summed Qoder credits", async () => {
+    fakeCloud();
+    const onUsage = vi.fn();
+    const result = await generate({ prompt: "two cats", n: 2 }, undefined, { onUsage });
+    expect(result.success).toBe(true);
+    expect(onUsage).toHaveBeenCalledTimes(1);
+    expect(onUsage).toHaveBeenCalledWith({ prompt_tokens: 0, completion_tokens: 0, qoder_credits: 0.14 });
+  });
+
+  it("does not report usage when generation fails", async () => {
+    fakeCloud({
+      turn: (sid) => [
+        { id: `${sid}_1`, type: "session.status_running" },
+        { id: `${sid}_2`, type: "session.status_idle", stop_reason: { type: "end_turn" } },
+      ],
+    });
+    const onUsage = vi.fn();
+    const result = await generate({ prompt: "x" }, undefined, { onUsage });
+    expect(result.success).toBe(false);
+    expect(onUsage).not.toHaveBeenCalled();
   });
 
   it("uploads, mounts and cleans up input images for edits", async () => {

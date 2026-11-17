@@ -56,7 +56,7 @@ export async function handleImageGenerationCore({
   if (adapter.useExecutor && adapter.executeViaExecutor) {
     try {
       log?.debug?.("IMAGE", `${provider.toUpperCase()} | ${model} | prompt="${body.prompt.slice(0, 50)}..." (executor)`);
-      const responseBody = await adapter.executeViaExecutor(model, body, credentials, log);
+      const responseBody = await adapter.executeViaExecutor(model, body, credentials, log, { onUsage });
       if (onRequestSuccess) await onRequestSuccess();
       const normalized = adapter.normalize(responseBody, body.prompt);
       const finalBody = (normalized.created && Array.isArray(normalized.data)) ? normalized : responseBody;

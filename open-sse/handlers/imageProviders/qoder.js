@@ -110,9 +110,9 @@ async function generateOne(pat, setupIds, { prompt, size, uploads }) {
       paths.push(path);
     }
     await sendUserMessage(pat, session.id, instruction(prompt, size, paths));
-    const artifacts = await waitForArtifacts(pat, session.id);
+    const { artifacts, credits } = await waitForArtifacts(pat, session.id);
     const image = artifacts.find((a) => String(a.contentType || "").startsWith("image/")) || artifacts[0];
-    return await fileContentUrl(pat, image.fileId);
+    return { url: await fileContentUrl(pat, image.fileId), credits };
   } finally {
     await archiveSession(pat, session.id);
   }
@@ -129,7 +129,7 @@ export default {
   // OAuth / job-token connections stay usable for chat but are skipped for images.
   canUseCredentials: (credentials) => qoderPatOf(credentials) !== null,
 
-  async executeViaExecutor(model, body, credentials, log) {
+  async executeViaExecutor(model, body, credentials, log, { onUsage } = {}) {
     const pat = qoderPatOf(credentials);
     if (!pat) throw new QoderCloudError(403, NOT_PAT_MESSAGE);
 
@@ -146,23 +146,30 @@ export default {
         uploads.push({ fileId: file.id, ext });
       }
 
-      const urls = [];
+      const results = [];
       for (let i = 0; i < n; i++) {
         log?.debug?.("IMAGE", `QODER | ${model} | ${size} | image ${i + 1}/${n}${uploads.length ? ` | ${uploads.length} input(s)` : ""}`);
         try {
-          urls.push(await generateOne(pat, setupIds, { prompt: body.prompt, size, uploads }));
+          results.push(await generateOne(pat, setupIds, { prompt: body.prompt, size, uploads }));
         } catch (error) {
           // Agent/environment archived upstream since we cached it: recreate once.
           if (error?.status !== 404 || i > 0) throw error;
           forgetImageSetup(pat);
           setupIds = await ensureImageSetup(pat);
-          urls.push(await generateOne(pat, setupIds, { prompt: body.prompt, size, uploads }));
+          results.push(await generateOne(pat, setupIds, { prompt: body.prompt, size, uploads }));
         }
       }
 
+      // Qoder bills in credits, not tokens: record the request (0 tokens) and keep the credits alongside.
+      if (onUsage) {
+        const credited = results.filter((r) => r.credits !== null);
+        const qoderCredits = credited.length ? Math.round(credited.reduce((sum, r) => sum + r.credits, 0) * 10000) / 10000 : undefined;
+        await onUsage({ prompt_tokens: 0, completion_tokens: 0, ...(qoderCredits !== undefined ? { qoder_credits: qoderCredits } : {}) });
+      }
+
       const data = body.response_format === "b64_json"
-        ? await Promise.all(urls.map(async (url) => ({ b64_json: await urlToBase64(url) })))
-        : urls.map((url) => ({ url }));
+        ? await Promise.all(results.map(async ({ url }) => ({ b64_json: await urlToBase64(url) })))
+        : results.map(({ url }) => ({ url }));
       return { created: nowSec(), data };
     } finally {
       for (const upload of uploads) await deleteFile(pat, upload.fileId);
