@@ -67,9 +67,20 @@ function patKey(pat) {
   return createHash("sha256").update(pat).digest("hex");
 }
 
+/** First non-archived item with this name, following the list cursor across pages. */
 async function findByName(pat, path, name) {
-  const page = await request(pat, "GET", `${path}?limit=100`);
-  return (page?.data || []).find((item) => item?.name === name && !item?.archived_at) || null;
+  let afterId = null;
+  for (let pageNo = 0; pageNo < QODER_IMAGE_CONFIG.maxListPages; pageNo++) {
+    const query = new URLSearchParams({ limit: String(QODER_IMAGE_CONFIG.listPageLimit) });
+    if (afterId) query.set("after_id", afterId);
+    const page = await request(pat, "GET", `${path}?${query}`);
+    const items = page?.data || [];
+    const match = items.find((item) => item?.name === name && !item?.archived_at);
+    if (match) return match;
+    afterId = page?.last_id || items.at(-1)?.id || null;
+    if (!page?.has_more || !afterId) return null;
+  }
+  return null;
 }
 
 async function setup(pat) {
@@ -107,10 +118,22 @@ export function forgetImageSetup(pat) {
   setupCache.delete(patKey(pat));
 }
 
-export function createSession(pat, { agentId, environmentId, title }) {
-  return request(pat, "POST", "/sessions", {
-    json: { agent: agentId, environment_id: environmentId, title },
-  });
+/**
+ * Create a session for the cached agent/environment. When either was archived or
+ * deleted upstream the error is flagged `setupMissing`, so the caller can rebuild
+ * the setup without re-running a generation that may already have cost credits.
+ */
+export async function createSession(pat, { agentId, environmentId, title }) {
+  try {
+    return await request(pat, "POST", "/sessions", {
+      json: { agent: agentId, environment_id: environmentId, title },
+    });
+  } catch (error) {
+    if (error?.status === 404 || (error?.status === 400 && /agent|environment/i.test(error.message))) {
+      error.setupMissing = true;
+    }
+    throw error;
+  }
 }
 
 export async function uploadFile(pat, { bytes, filename, mimeType }) {
@@ -191,8 +214,10 @@ export async function waitForArtifacts(pat, sessionId, { pollIntervalMs, timeout
           const message = event.error?.message || "session error";
           throw new QoderCloudError(QUEUE_FULL.test(message) ? 429 : 502, `Qoder Cloud Agents: ${message}`, event.error?.type || null);
         }
-        case "session.status_idle":
         case "session.status_terminated":
+          if (!artifacts.length) throw new QoderCloudError(502, `Qoder ImageGen: session terminated${toolError ? `: ${toolError.slice(0, 300)}` : ""}`);
+          return { artifacts, credits };
+        case "session.status_idle":
           if (!started) break;
           if (artifacts.length) return { artifacts, credits };
           if (toolError) throw new QoderCloudError(QUEUE_FULL.test(toolError) ? 429 : 502, `Qoder ImageGen: ${toolError.slice(0, 500)}`);

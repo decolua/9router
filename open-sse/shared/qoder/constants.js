@@ -256,16 +256,23 @@ export const QODER_IMAGE_DEFAULT_SIZE = "1024x1024";
 
 export const QODER_IMAGE_CONFIG = Object.freeze({
   environmentName: "9router",
-  agentName: "9router-imagegen",
+  // Versioned: bump when the agent definition below changes so stale agents are not reused.
+  agentName: "9router-imagegen-v2",
   // LLM that drives the ImageGen tool call; the image model itself is fixed upstream.
   agentModel: "efficient",
-  agentTools: Object.freeze(["ImageGen", "DeliverArtifacts", "Read", "Glob"]),
+  // Least privilege: ImageGen reads mounted input paths itself; no shell/file/web tools.
+  agentTools: Object.freeze(["ImageGen", "DeliverArtifacts"]),
   agentSystem:
     "You are an image generation backend. For each request call ImageGen exactly once with the given parameters, " +
     "then deliver the result with DeliverArtifacts. Never ask questions. Reply with one short sentence.",
   inputMountDir: "/data/inputs",
   maxImagesPerRequest: 4,  // ImageGen returns one image per call; n>1 runs sequential sessions
   maxInputImages: 3,       // ImageGen accepts up to 3 reference images for edits
+  maxInputImageBytes: 5 * 1024 * 1024, // Cloud Agents file upload limit
+  inputMimeTypes: Object.freeze(["image/png", "image/jpeg", "image/webp"]),
+  maxPromptLength: 4000,
+  listPageLimit: 100,
+  maxListPages: 20,
   pollIntervalMs: 2000,
   timeoutMs: 180000,
 });

@@ -63,11 +63,22 @@ function parseDataUri(value) {
   return m ? { mimeType: m[1].toLowerCase(), bytes: Buffer.from(m[2], "base64") } : null;
 }
 
+/** MIME type from magic bytes; the declared type of a data URI is not trusted. */
+function sniffImageType(bytes) {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 12 && bytes.subarray(0, 4).toString("latin1") === "RIFF" && bytes.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  return null;
+}
+
+const badRequest = (message) => new QoderCloudError(400, message);
+
 /** Reference images as bytes. URLs go through the SSRF-hardened fetcher; anything unreadable is a 400. */
 async function resolveInputImages(body) {
+  const cfg = QODER_IMAGE_CONFIG;
   const inputs = collectImageInputs(body);
-  if (inputs.length > QODER_IMAGE_CONFIG.maxInputImages) {
-    throw new QoderCloudError(400, `Qoder image edits accept at most ${QODER_IMAGE_CONFIG.maxInputImages} input images`);
+  if (inputs.length > cfg.maxInputImages) {
+    throw badRequest(`Qoder image edits accept at most ${cfg.maxInputImages} input images`);
   }
   const images = [];
   for (const input of inputs) {
@@ -80,8 +91,13 @@ async function resolveInputImages(body) {
     } else if (/^[A-Za-z0-9+/=\s]+$/.test(input) && input.length > 100) {
       image = { mimeType: "image/png", bytes: Buffer.from(input, "base64") };
     }
-    if (!image || !image.bytes.length) throw new QoderCloudError(400, "Could not read an input image (use a data URI, base64 or a public http(s) URL)");
-    images.push(image);
+    if (!image || !image.bytes.length) throw badRequest("Could not read an input image (use a data URI, base64 or a public http(s) URL)");
+    if (image.bytes.length > cfg.maxInputImageBytes) {
+      throw badRequest(`Input images must be at most ${Math.round(cfg.maxInputImageBytes / 1024 / 1024)} MB`);
+    }
+    const mimeType = sniffImageType(image.bytes);
+    if (!mimeType || !cfg.inputMimeTypes.includes(mimeType)) throw badRequest("Input images must be PNG, JPEG or WebP");
+    images.push({ bytes: image.bytes, mimeType });
   }
   return images;
 }
@@ -98,6 +114,22 @@ function instruction(prompt, size, paths) {
     "Prompt:",
     prompt,
   ].join("\n");
+}
+
+/** Validated prompt, image count and size; throws 400 on bad input before anything is billed. */
+function parseRequest(body) {
+  const cfg = QODER_IMAGE_CONFIG;
+  if (typeof body.prompt !== "string" || !body.prompt.trim()) throw badRequest("prompt must be a non-empty string");
+  const prompt = body.prompt.trim();
+  if (prompt.length > cfg.maxPromptLength) throw badRequest(`prompt must be at most ${cfg.maxPromptLength} characters`);
+  let n = 1;
+  if (body.n !== undefined && body.n !== null) {
+    n = Number(body.n);
+    if (!Number.isInteger(n) || n < 1 || n > cfg.maxImagesPerRequest) {
+      throw badRequest(`n must be an integer between 1 and ${cfg.maxImagesPerRequest} for Qoder`);
+    }
+  }
+  return { prompt, n, size: resolveQoderImageSize(body) };
 }
 
 async function generateOne(pat, setupIds, { prompt, size, uploads }) {
@@ -135,8 +167,7 @@ export default {
     const pat = qoderPatOf(credentials);
     if (!pat) throw new QoderCloudError(403, NOT_PAT_MESSAGE);
 
-    const size = resolveQoderImageSize(body);
-    const n = Math.min(Math.max(Number.parseInt(body.n, 10) || 1, 1), QODER_IMAGE_CONFIG.maxImagesPerRequest);
+    const { prompt, n, size } = parseRequest(body);
     const inputImages = await resolveInputImages(body);
 
     let setupIds = await ensureImageSetup(pat);
@@ -152,15 +183,20 @@ export default {
       for (let i = 0; i < n; i++) {
         log?.debug?.("IMAGE", `QODER | ${model} | ${size} | image ${i + 1}/${n}${uploads.length ? ` | ${uploads.length} input(s)` : ""}`);
         try {
-          results.push(await generateOne(pat, setupIds, { prompt: body.prompt, size, uploads }));
+          results.push(await generateOne(pat, setupIds, { prompt, size, uploads }));
         } catch (error) {
-          // Agent/environment archived upstream since we cached it: recreate once.
-          if (error?.status !== 404 || i > 0) throw error;
+          // The cached agent/environment was archived upstream (session creation failed,
+          // nothing was generated): rebuild the setup once and retry.
+          if (!error?.setupMissing) throw error;
           forgetImageSetup(pat);
           setupIds = await ensureImageSetup(pat);
-          results.push(await generateOne(pat, setupIds, { prompt: body.prompt, size, uploads }));
+          results.push(await generateOne(pat, setupIds, { prompt, size, uploads }));
         }
       }
+
+      const data = body.response_format === "b64_json"
+        ? await Promise.all(results.map(async ({ url }) => ({ b64_json: await urlToBase64(url) })))
+        : results.map(({ url }) => ({ url }));
 
       // Qoder bills in credits, not tokens: record the request (0 tokens) and keep the credits alongside.
       if (onUsage) {
@@ -168,10 +204,6 @@ export default {
         const qoderCredits = credited.length ? Math.round(credited.reduce((sum, r) => sum + r.credits, 0) * 10000) / 10000 : undefined;
         await onUsage({ prompt_tokens: 0, completion_tokens: 0, ...(qoderCredits !== undefined ? { qoder_credits: qoderCredits } : {}) });
       }
-
-      const data = body.response_format === "b64_json"
-        ? await Promise.all(results.map(async ({ url }) => ({ b64_json: await urlToBase64(url) })))
-        : results.map(({ url }) => ({ url }));
       return { created: nowSec(), data };
     } finally {
       for (const upload of uploads) await deleteFile(pat, upload.fileId);

@@ -15,9 +15,9 @@ const PNG_DATA_URI = `data:image/png;base64,${PNG_BYTES.toString("base64")}`;
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 /** Fake Cloud Agents API. `turn(sessionId, text)` returns the events of one turn. */
-function fakeCloud({ turn } = {}) {
+function fakeCloud({ turn, sessionFailures = [], contentStatus = 200, environmentPages = null } = {}) {
   const calls = [];
-  const state = { sessions: 0, files: 0, messages: {}, mounts: [], archived: [], deleted: [] };
+  const state = { sessions: 0, files: 0, messages: {}, mounts: [], archived: [], deleted: [], sessionAttempts: 0 };
   const defaultTurn = (sid) => [
     { id: `${sid}_1`, type: "user.message" },
     { id: `${sid}_2`, type: "session.status_running" },
@@ -35,10 +35,20 @@ function fakeCloud({ turn } = {}) {
     const path = u.pathname.replace(new URL(QODER_CLOUD_API_BASE).pathname, "");
     const body = typeof opts.body === "string" ? JSON.parse(opts.body) : null;
 
+    if (method === "GET" && path === "/environments" && environmentPages) {
+      const after = u.searchParams.get("after_id");
+      const index = after ? environmentPages.findIndex((p) => p.at(-1).id === after) + 1 : 0;
+      const page = environmentPages[index];
+      return json(200, { data: page, has_more: index < environmentPages.length - 1, last_id: page.at(-1).id });
+    }
     if (method === "GET" && (path === "/environments" || path === "/agents")) return json(200, { data: [], has_more: false });
     if (method === "POST" && path === "/environments") return json(200, { id: "env_1", name: body.name });
     if (method === "POST" && path === "/agents") return json(200, { id: "agent_1", name: body.name });
-    if (method === "POST" && path === "/sessions") return json(200, { id: `sess_${++state.sessions}`, status: "idle" });
+    if (method === "POST" && path === "/sessions") {
+      const failure = sessionFailures[state.sessionAttempts++];
+      if (failure) return json(failure, { type: "error", error: { type: "not_found_error", message: "agent not found" } });
+      return json(200, { id: `sess_${++state.sessions}`, status: "idle" });
+    }
     if (method === "POST" && path === "/files") return json(200, { id: `in_${++state.files}` });
     let m;
     if ((m = path.match(/^\/sessions\/([^/]+)\/resources$/)) && method === "POST") {
@@ -59,7 +69,10 @@ function fakeCloud({ turn } = {}) {
       state.archived.push(m[1]);
       return json(200, { id: m[1], status: "terminated" });
     }
-    if ((m = path.match(/^\/files\/([^/]+)\/content$/))) return json(200, { url: `https://files.example.com/${m[1]}.png` });
+    if ((m = path.match(/^\/files\/([^/]+)\/content$/))) {
+      if (contentStatus !== 200) return json(contentStatus, { type: "error", error: { type: "not_found_error", message: "file not found" } });
+      return json(200, { url: `https://files.example.com/${m[1]}.png` });
+    }
     if ((m = path.match(/^\/files\/([^/]+)$/)) && method === "DELETE") {
       state.deleted.push(m[1]);
       return json(200, { id: m[1], type: "file_deleted" });
@@ -221,5 +234,91 @@ describe("Qoder image adapter", () => {
     expect(result.success).toBe(false);
     expect(result.status).toBe(502);
     expect(result.error).toContain("without delivering an image");
+  });
+
+  it("rejects invalid input before calling Qoder", async () => {
+    const { calls } = fakeCloud();
+    const cases = [
+      [{ prompt: "x", n: 5 }, /n must be an integer between 1 and 4/],
+      [{ prompt: "x", n: 1.5 }, /n must be an integer/],
+      [{ prompt: { text: "x" } }, /prompt must be a non-empty string/],
+      [{ prompt: "x".repeat(4001) }, /at most 4000 characters/],
+      [{ prompt: "x", image: `data:image/png;base64,${Buffer.from("not an image at all").toString("base64")}` }, /PNG, JPEG or WebP/],
+      [{ prompt: "x", image: `data:image/png;base64,${Buffer.concat([PNG_BYTES, Buffer.alloc(5 * 1024 * 1024)]).toString("base64")}` }, /at most 5 MB/],
+    ];
+    for (const [body, message] of cases) {
+      const result = await generate(body);
+      expect(result.status, JSON.stringify(body).slice(0, 60)).toBe(400);
+      expect(result.error).toMatch(message);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("detects the real image type instead of trusting the declared one", async () => {
+    const { calls } = fakeCloud();
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
+    const result = await generate({ prompt: "x", image: `data:image/png;base64,${jpeg.toString("base64")}` });
+    expect(result.success).toBe(true);
+    const upload = calls.find((c) => c.method === "POST" && c.path.endsWith("/files"));
+    expect(upload.body.get("file").type).toBe("image/jpeg");
+    expect(upload.body.get("file").name).toBe("input-1.jpg");
+  });
+
+  it("rebuilds the cached setup once when the agent was archived upstream", async () => {
+    const { calls, state } = fakeCloud({ sessionFailures: [404] });
+    const result = await generate({ prompt: "x" });
+    expect(result.success).toBe(true);
+    expect(calls.filter((c) => c.method === "POST" && c.path.endsWith("/agents"))).toHaveLength(2);
+    expect(state.sessions).toBe(1);
+  });
+
+  it("does not regenerate (and bill again) when a later step returns 404", async () => {
+    const { state } = fakeCloud({ contentStatus: 404 });
+    const result = await generate({ prompt: "x" });
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(404);
+    expect(state.sessions).toBe(1);
+    expect(state.archived).toEqual(["sess_1"]);
+  });
+
+  it("fails fast when the session is terminated before it starts", async () => {
+    fakeCloud({ turn: (sid) => [{ id: `${sid}_1`, type: "session.status_terminated" }] });
+    const started = Date.now();
+    const result = await generate({ prompt: "x" });
+    expect(result.status).toBe(502);
+    expect(result.error).toContain("terminated");
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("finds an existing environment on a later list page instead of creating a duplicate", async () => {
+    const { calls } = fakeCloud({
+      environmentPages: [
+        [{ id: "env_a", name: "other" }, { id: "env_b", name: "another" }],
+        [{ id: "env_9r", name: "9router" }],
+      ],
+    });
+    const result = await generate({ prompt: "x" });
+    expect(result.success).toBe(true);
+    expect(calls.filter((c) => c.method === "POST" && c.path.endsWith("/environments"))).toHaveLength(0);
+    expect(calls.some((c) => c.path.includes("/environments?") && c.path.includes("after_id=env_b"))).toBe(true);
+  });
+
+  it("does not record usage when the response cannot be built", async () => {
+    fakeCloud();
+    const failingFetch = global.fetch;
+    global.fetch = vi.fn((url, opts) => (String(url).includes("files.example.com") ? Promise.resolve(new Response("gone", { status: 410 })) : failingFetch(url, opts)));
+    const onUsage = vi.fn();
+    const result = await generate({ prompt: "x", response_format: "b64_json" }, undefined, { onUsage });
+    expect(result.success).toBe(false);
+    expect(onUsage).not.toHaveBeenCalled();
+  });
+
+  it("gives the agent only the ImageGen and DeliverArtifacts tools", async () => {
+    const { calls } = fakeCloud();
+    await generate({ prompt: "x" });
+    const agentCall = calls.find((c) => c.method === "POST" && c.path.endsWith("/agents"));
+    const agent = JSON.parse(agentCall.body);
+    expect(agent.name).toBe("9router-imagegen-v2");
+    expect(agent.tools[0].enabled_tools).toEqual(["ImageGen", "DeliverArtifacts"]);
   });
 });
