@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { ANTIGRAVITY_IDE_DAILY_BASE_URL } from "../providers/shared.js";
 import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
@@ -153,11 +154,13 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0) {
+    // Image generation MUST use non-streaming generateContent on the daily cluster where image quota resides
+    if (isImageModel(model)) {
+      return `${ANTIGRAVITY_IDE_DAILY_BASE_URL}/v1internal:generateContent`;
+    }
     const baseUrls = this.getBaseUrls();
     const baseUrl = baseUrls[urlIndex] || baseUrls[0];
-    // Image generation MUST use non-streaming generateContent
-    const forceNonStream = isImageModel(model);
-    const action = (stream && !forceNonStream) ? "streamGenerateContent?alt=sse" : "generateContent";
+    const action = stream ? "streamGenerateContent?alt=sse" : "generateContent";
     return `${baseUrl}/v1internal:${action}`;
   }
 

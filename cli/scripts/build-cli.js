@@ -202,7 +202,8 @@ function buildCliPackage() {
   // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
   console.log("1️⃣  Building Next.js app...");
   try {
-    execSync("npm run build", {
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    execSync(`${npmCmd} run build`, {
       stdio: "inherit",
       cwd: appDir,
       env: {
