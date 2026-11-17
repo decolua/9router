@@ -1,4 +1,5 @@
 import { getProviderConnections, updateProviderConnection } from "@/lib/localDb.js";
+import { getNodeCustomHeaders } from "@/lib/providerNodeHeaders";
 import { getExecutor } from "open-sse/index.js";
 
 async function persistRefreshedCredentials(connection, newCredentials) {
@@ -56,7 +57,8 @@ export async function POST(request) {
       copilotToken: connection.providerSpecificData?.copilotToken,
       copilotTokenExpiresAt: connection.providerSpecificData?.copilotTokenExpiresAt,
       projectId: connection.projectId,
-      providerSpecificData: connection.providerSpecificData
+      providerSpecificData: connection.providerSpecificData,
+      customHeaders: await getNodeCustomHeaders(provider),
     };
 
     const executor = getExecutor(provider);

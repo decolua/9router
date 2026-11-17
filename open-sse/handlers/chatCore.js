@@ -10,6 +10,7 @@ import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModel
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { upstreamResponseHeaders } from "../utils/upstreamHeaders.js";
+import { maskCustomHeaderValues } from "../utils/customHeaders.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -414,7 +415,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (renamedToolNames?.size) {
       toolNameMap = new Map([...(toolNameMap || []), ...renamedToolNames]);
     }
-    reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+    // Custom node headers often carry gateway secrets — never log their raw values (#4008)
+    reqLogger.logTargetRequest(providerUrl, maskCustomHeaderValues(providerHeaders, credentials?.customHeaders), finalBody);
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
