@@ -18,54 +18,26 @@ const DEFAULT_TTS_RESPONSE_EXAMPLE = `// Audio will appear here after running.
   "audio": "//NExAANaAIIAUAAANNNNNNNN..." // base64 encoded MP3
 }`;
 
-function pcmToWavBlob(pcmArrayBuffer, sampleRate = 24000, numChannels = 1) {
-  const bytesPerSample = 2; // 16-bit
-  const blockAlign = numChannels * bytesPerSample;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = pcmArrayBuffer.byteLength;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-
-  function writeString(offset, string) {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  }
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM format
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true); // 16-bit
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  new Uint8Array(buffer, 44).set(new Uint8Array(pcmArrayBuffer));
-  return new Blob([buffer], { type: "audio/wav" });
-}
-
-export function TtsExampleCard({ providerId }) {
+export function TtsExampleCard({ providerId, catalogModels }) {
   const providerAlias = getProviderAlias(providerId);
+  const providerModels = catalogModels ?? getModelsByProviderId(providerId);
   const config = TTS_PROVIDER_CONFIG[providerId] || TTS_PROVIDER_CONFIG["edge-tts"];
   const formatOptions = config.formatOptions || [
     { value: "mp3", label: "MP3 (Binary)" },
+    { value: "wav", label: "WAV (Binary)" },
     { value: "json", label: "JSON (Base64)" },
   ];
 
   // Voice state
   const [selectedVoice, setSelectedVoice]     = useState(config.defaultVoiceId || "");
   const [selectedVoiceName, setSelectedVoiceName] = useState("");
+  const [customModels, setCustomModels] = useState([]);
   const [voiceId, setVoiceId]               = useState(config.defaultVoiceId || ""); // editable voice id (elevenlabs/config providers)
   // Voices shown below Voice row after language selected
   const [countryVoices, setCountryVoices]     = useState([]);
   const [selectedLang, setSelectedLang]       = useState("");
   const [selectedModel, setSelectedModel]     = useState(() => {
+    if (config.defaultModel) return config.defaultModel;
     const cfgModels = AI_PROVIDERS[providerId]?.ttsConfig?.models;
     if (cfgModels?.length) return cfgModels[0].id;
     if (config.hasModelSelector && config.modelKey) {
@@ -74,6 +46,12 @@ export function TtsExampleCard({ providerId }) {
     }
     return "";
   });
+
+  useEffect(() => {
+    if (providerId !== "pollinations" || !catalogModels) return;
+    const models = catalogModels.filter((m) => getModelKind(m) === "tts");
+    setSelectedModel((current) => models.some((m) => m.id === current) ? current : models[0]?.id || "");
+  }, [catalogModels, providerId]);
 
   // Form state
   const [input, setInput]               = useState("Hello, this is a text to speech test.");
@@ -104,6 +82,16 @@ export function TtsExampleCard({ providerId }) {
   const [connectionCount, setConnectionCount] = useState(0);
 
   useEffect(() => {
+    const load = () => fetch("/api/models/custom", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setCustomModels((d.models || []).filter((m) => m.providerAlias === providerAlias && getModelKind(m) === "tts")))
+      .catch(() => {});
+    load();
+    window.addEventListener("customModelChanged", load);
+    return () => window.removeEventListener("customModelChanged", load);
+  }, [providerId, providerAlias]);
+
+  useEffect(() => {
     setLocalEndpoint(window.location.origin);
     fetch("/api/keys")
       .then((r) => r.json())
@@ -120,6 +108,7 @@ export function TtsExampleCard({ providerId }) {
 
     // Re-initialize model and voice state when providerId changes
     const initialModel = (() => {
+      if (config.defaultModel) return config.defaultModel;
       const cfgModels = AI_PROVIDERS[providerId]?.ttsConfig?.models;
       if (cfgModels?.length) return cfgModels[0].id;
       if (config.hasModelSelector && config.modelKey) {
@@ -253,6 +242,7 @@ export function TtsExampleCard({ providerId }) {
       const voice = activeVoiceId.trim();
       return `${providerAlias}/${model}${voice && voice !== "default" ? `/${voice}` : ""}`;
     }
+    if (["openrouter", "codex", "pollinations"].includes(providerId) && selectedModel) return `${providerAlias}/${selectedModel}`;
     if (config.hasModelSelector && selectedModel && activeVoiceId) return `${providerAlias}/${selectedModel}/${activeVoiceId}`;
     if (config.hasModelSelector && selectedModel) return `${providerAlias}/${selectedModel}`;
     if (activeVoiceId) return `${providerAlias}/${activeVoiceId}`;
@@ -261,6 +251,9 @@ export function TtsExampleCard({ providerId }) {
 
   const ttsBody = (() => {
     const b = { model: modelFull, input };
+    if (providerId === "openrouter") b.voice = activeVoiceId || "alloy";
+    if (providerId === "codex" && activeVoiceId) b.voice = activeVoiceId;
+    if (providerId === "pollinations" && activeVoiceId) b.voice = activeVoiceId;
     if (config.hasLanguageHint && languageHint) b.language = languageHint;
     if (config.hasStyleInput && style.trim()) b.style = style.trim();
     if (responseFormat && responseFormat !== "json" && responseFormat !== "mp3") {
@@ -269,7 +262,7 @@ export function TtsExampleCard({ providerId }) {
     return b;
   })();
 
-  const outputExt = responseFormat === "pcm" ? "pcm" : (responseFormat === "wav" || providerId === "ollama-local") ? "wav" : "mp3";
+  const outputExt = (responseFormat === "wav" || providerId === "ollama-local") ? "wav" : "mp3";
   const curlSnippet = `curl -X POST ${endpoint}/v1/audio/speech${responseFormat === "json" ? "?response_format=json" : ""} \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}" \\
@@ -308,13 +301,6 @@ export function TtsExampleCard({ providerId }) {
         const objUrl = URL.createObjectURL(audioBlob);
         setAudioUrl(objUrl);
         setDownloadUrl(objUrl);
-      } else if (responseFormat === "pcm") {
-        const pcmBuffer = await res.arrayBuffer();
-        const pcmBlob = new Blob([pcmBuffer], { type: "audio/pcm" });
-        setDownloadUrl(URL.createObjectURL(pcmBlob));
-        // Wrap raw PCM buffer with WAV header so browser <audio> tag can play it
-        const wavBlob = pcmToWavBlob(pcmBuffer, 24000, 1);
-        setAudioUrl(URL.createObjectURL(wavBlob));
       } else {
         const blob = await res.blob();
         const objUrl = URL.createObjectURL(blob);
@@ -375,7 +361,7 @@ export function TtsExampleCard({ providerId }) {
               />
             </Row>
           )}
-          {providerId !== "selfhosted-tts" && config.hasModelSelector && (config.modelKey || getModelsByProviderId(providerId).some(m => getModelKind(m) === "tts")) && (
+          {providerId !== "selfhosted-tts" && config.hasModelSelector && (config.modelKey || providerModels.some(m => getModelKind(m) === "tts")) && (
             <Row label="Model">
               <select
                 value={selectedModel}
@@ -383,8 +369,8 @@ export function TtsExampleCard({ providerId }) {
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               >
                 {(() => {
-                  const ttsModels = getModelsByProviderId(providerId).filter(m => getModelKind(m) === "tts");
-                  return (ttsModels.length ? ttsModels : getModelsByProviderId(config.modelKey) || []).map((m) => (
+                  const ttsModels = providerModels.filter(m => getModelKind(m) === "tts");
+                  return [...(ttsModels.length ? ttsModels : getModelsByProviderId(config.modelKey) || []), ...customModels.filter((m) => !ttsModels.some((builtIn) => builtIn.id === m.id))].map((m) => (
                     <option key={m.id} value={m.id}>{m.name || m.id}</option>
                   ));
                 })()}

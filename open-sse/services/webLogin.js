@@ -1,15 +1,10 @@
-// Interactive web login capture for web-cookie providers.
-//
-// Opens a persistent HEADED Chrome window at the provider's login page using a
-// per-provider profile under <DATA_DIR>/browser-profiles/web-login/. The user
-// logs in by hand (and clears any Cloudflare challenge in that window); we
-// poll the context until every required token from webLoginConfig is present,
-// then serialize the whole cookie jar as a paste-equivalent credential.
-//
-// The profile persists, so a repeat login usually finds the session still
-// alive and resolves in one poll — and a warm profile keeps cf_clearance.
+// Persistent headed browser sessions shared by provider login and the browser workspace.
+// Provider logins poll configured credentials and close automatically; standalone
+// sessions stay open until Stop, browser close, or their fixed 30-minute timeout.
+// Both use the same profiles, launch path, profile locks, and capability transport.
 
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, lstatSync, realpathSync, renameSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { join } from "node:path";
 import { loadRuntimeDep } from "./lazyRuntime.js";
@@ -17,14 +12,54 @@ import { getWebLoginConfig } from "./webLoginConfig.js";
 import { getWritableDataDir } from "../utils/writableDataDir.js";
 import { pruneProfileCaches, formatBytes } from "./browserProfileCache.js";
 import { resolveSystemChromeExecutable } from "../executors/browserExecutableCheck.js";
+import { ensureVirtualDisplay } from "./virtualDisplay.js";
+import remoteLogin from "../../realtime/web-login-websocket.cjs";
 
 const POLL_INTERVAL_MS = 1500;
 const LOGIN_TIMEOUT_MS = 300000;
+const BROWSER_TIMEOUT_MS = 30 * 60 * 1000;
+const RESERVED_PROFILES = new Set(["web-login", "zcode-captcha"]);
+
+function profileError(message, status = 400) {
+  return Object.assign(new Error(message), { status });
+}
+
+function validateProfileName(name) {
+  if (typeof name !== "string" || !/^[A-Za-z0-9_-]{1,40}$/.test(name) || RESERVED_PROFILES.has(name)) {
+    throw profileError("Profile name must be 1–40 ASCII letters, numbers, underscores or hyphens, and not a reserved name");
+  }
+  return name;
+}
+
+function directoryExists(dir) {
+  try {
+    const stat = lstatSync(dir);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw profileError("Browser profile path must be a real directory", 409);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function profilesRoot() {
+  const base = realpathSync(getWritableDataDir());
+  const root = path.join(base, "browser-profiles");
+  if (!directoryExists(root)) mkdirSync(root);
+  const defaultDir = path.join(root, "default");
+  if (!directoryExists(defaultDir)) mkdirSync(defaultDir);
+  return root;
+}
 
 // Shared browser profiles: one Google login in a profile makes every
 // "Continue with Google" provider login a single click.
 function profileDir(profileName) {
-  return path.join(getWritableDataDir(), "browser-profiles", sanitizeProfileName(profileName));
+  const name = validateProfileName(profileName);
+  const root = profilesRoot();
+  const dir = path.resolve(root, name);
+  if (path.dirname(dir) !== root) throw profileError("Invalid browser profile path");
+  directoryExists(dir);
+  return dir;
 }
 
 function matchesDomain(cookieDomain, cookie) {
@@ -100,41 +135,99 @@ export async function harvest(context, config) {
   return { ready, cookieHeader, localStorageValues };
 }
 
-// providerId -> { status, startedAt, credential?, error? }
-const sessions = new Map();
-
-// One Chromium lock per profile dir: a second launch on the same persistent
-// profile fails, so refuse up front with an actionable message.
-const busyProfiles = new Map(); // profileName -> providerId
+// Shared with the unbundled custom server through Symbol.for, not module caches.
+const { registry, registerSession, attachContext, revokeSession } = remoteLogin;
+const { sessions, busyProfiles } = registry;
+const browserSessions = registry.browserSessions ||= new Map();
 
 export function getWebLoginStatus(providerId) {
   return sessions.get(providerId) || null;
 }
 
 /** Existing browser profiles the user can pick from (shared across providers). */
+export function listBrowserProfiles() {
+  const root = profilesRoot();
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^[A-Za-z0-9_-]{1,40}$/.test(entry.name) && !RESERVED_PROFILES.has(entry.name))
+    .map((entry) => ({ name: entry.name, busy: busyProfiles.has(entry.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function listWebLoginProfiles() {
-  const root = path.join(getWritableDataDir(), "browser-profiles");
-  try {
-    return readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && entry.name !== "web-login")
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
-  }
+  return listBrowserProfiles().map(({ name }) => name);
+}
+
+export function createBrowserProfile(name) {
+  const dir = profileDir(name);
+  if (directoryExists(dir)) throw profileError(`Profile "${name}" already exists`, 409);
+  mkdirSync(dir);
+  return { name, busy: false };
+}
+
+function mutableProfile(name) {
+  const dir = profileDir(name);
+  if (name === "default") throw profileError("The default profile cannot be renamed or deleted", 409);
+  if (busyProfiles.has(name)) throw profileError(`Profile "${name}" is already open`, 409);
+  if (!directoryExists(dir)) throw profileError("Profile not found", 404);
+  return dir;
+}
+
+export function renameBrowserProfile(name, newName) {
+  const dir = mutableProfile(name);
+  const destination = profileDir(newName);
+  if (busyProfiles.has(newName) || directoryExists(destination)) throw profileError(`Profile "${newName}" already exists or is open`, 409);
+  renameSync(dir, destination);
+  return { name: newName, busy: false };
+}
+
+export function deleteBrowserProfile(name) {
+  rmSync(mutableProfile(name), { recursive: true });
+  return true;
+}
+
+function browserSessionResponse(session) {
+  return {
+    id: session.id, profile: session.profile, status: session.status, error: session.error || null,
+    viewer: session.status === "running" && session.viewerToken ? { token: session.viewerToken } : null,
+  };
+}
+
+export function listBrowserSessions() {
+  return Array.from(browserSessions.values()).filter((session) => session.status === "running").map(browserSessionResponse);
+}
+
+export function getBrowserSession(id) {
+  const session = browserSessions.get(id);
+  return session ? browserSessionResponse(session) : null;
+}
+
+export async function startBrowserSession(profile, url) {
+  if (!remoteLogin.validNavigationUrl(url)) throw profileError("URL must be http(s), at most 4096 characters, with no username or password");
+  const dir = profileDir(profile);
+  if (!directoryExists(dir)) throw profileError("Profile not found", 404);
+  if (busyProfiles.has(profile)) throw profileError(`Profile "${profile}" is already open`, 409);
+  const session = { id: randomUUID(), kind: "standalone", profile, url, status: "running", startedAt: Date.now(), abort: new AbortController(), context: null };
+  browserSessions.set(session.id, session);
+  busyProfiles.set(profile, session);
+  registerSession(session);
+  session.timer = setTimeout(() => finishSession(session, "timeout", "Browser session reached its 30-minute limit"), BROWSER_TIMEOUT_MS);
+  session.timer.unref?.();
+  void runLogin(session, null).catch((error) => finishSession(session, "error", error?.message || String(error)));
+  return browserSessionResponse(session);
+}
+
+export function closeBrowserSession(id) {
+  const session = browserSessions.get(id);
+  if (!session || session.status !== "running") return false;
+  finishSession(session, "cancelled");
+  return true;
 }
 
 export function cancelWebLogin(providerId) {
   const session = sessions.get(providerId);
   if (!session || session.status !== "running") return false;
-  session.cancelled = true;
+  finishSession(session, "cancelled");
   return true;
-}
-
-/** "default" unless the user picked/created a named profile. */
-function sanitizeProfileName(name) {
-  const cleaned = String(name || "").trim().replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 40);
-  return cleaned || "default";
 }
 
 export async function startWebLogin(providerId, profileName = "default") {
@@ -142,22 +235,45 @@ export async function startWebLogin(providerId, profileName = "default") {
   if (!config) throw new Error(`No web-login config for provider "${providerId}"`);
   const existing = sessions.get(providerId);
   if (existing?.status === "running") return existing;
-  const profile = sanitizeProfileName(profileName);
+  const profile = validateProfileName(profileName);
+  profileDir(profile);
   if (busyProfiles.has(profile)) {
-    throw new Error(`Profile "${profile}" is already open for ${busyProfiles.get(profile)} — finish that login first or pick another profile`);
+    throw profileError(`Profile "${profile}" is already open — finish that browser session or pick another profile`, 409);
   }
 
-  const session = { providerId, profile, status: "running", startedAt: Date.now(), cancelled: false };
+  const session = { providerId, profile, status: "running", startedAt: Date.now(), abort: new AbortController(), context: null };
   sessions.set(providerId, session);
-  busyProfiles.set(profile, providerId);
-  // Fire-and-forget: callers poll getWebLoginStatus().
-  runLogin(session, config)
-    .catch((error) => {
-      session.status = "error";
-      session.error = error?.message || String(error);
-    })
-    .finally(() => busyProfiles.delete(profile));
+  busyProfiles.set(profile, session);
+  registerSession(session);
+  session.timer = setTimeout(() => finishSession(session, "timeout", "Login window timed out after 5 minutes — try again"), LOGIN_TIMEOUT_MS);
+  session.timer.unref?.();
+  // Return the capability before dependency loading or Chromium startup finishes.
+  void runLogin(session, config).catch((error) => finishSession(session, "error", error?.message || String(error)));
   return session;
+}
+
+function closeContext(session) {
+  if (session.context && !session.closing) session.closing = session.context.close().catch(() => {});
+  return session.closing;
+}
+
+function finishSession(session, status, error) {
+  if (session.status !== "running") return;
+  session.status = status;
+  if (error) session.error = error;
+  clearTimeout(session.timer);
+  revokeSession(session);
+  session.abort.abort();
+  void closeContext(session);
+}
+
+function waitForPoll(signal) {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); };
+    const timer = setTimeout(done, POLL_INTERVAL_MS);
+    signal.addEventListener("abort", done, { once: true });
+  });
 }
 
 // Chromium leaves Singleton* lock files when a launch is killed; a stale lock
@@ -168,51 +284,63 @@ function clearStaleSingletonLocks(dir) {
   }
 }
 
-async function launchLoginBrowser(chromium, dir, executablePath) {
+async function launchLoginBrowser(chromium, dir, executablePath, display) {
+  const options = {
+    headless: false,
+    executablePath,
+    viewport: { width: 1280, height: 800 },
+    deviceScaleFactor: 1,
+    timeout: 30000,
+    env: { ...process.env, ...(display ? { DISPLAY: display } : {}) },
+    args: ["--disable-blink-features=AutomationControlled"],
+  };
   try {
-    return await chromium.launchPersistentContext(dir, {
-      headless: false,
-      executablePath,
-      viewport: null,
-      args: ["--disable-blink-features=AutomationControlled"],
-    });
+    return await chromium.launchPersistentContext(dir, options);
   } catch (error) {
     if (!/ProcessSingleton|SingletonLock/i.test(String(error?.message || ""))) throw error;
     clearStaleSingletonLocks(dir);
-    return await chromium.launchPersistentContext(dir, {
-      headless: false,
-      executablePath,
-      viewport: null,
-      args: ["--disable-blink-features=AutomationControlled"],
-    });
+    return await chromium.launchPersistentContext(dir, options);
   }
 }
 
 async function runLogin(session, config) {
-  const { chromium } = await loadRuntimeDep("playwright-core");
-  const executablePath = resolveSystemChromeExecutable();
-  if (!executablePath) {
-    throw new Error("No Chrome/Chromium executable found — set CHROME_PATH or install Google Chrome");
-  }
-  const dir = profileDir(session.profile);
-  mkdirSync(dir, { recursive: true });
-
-  const context = await launchLoginBrowser(chromium, dir, executablePath);
-
+  let dir;
+  let onClose;
   try {
+    const { chromium } = await loadRuntimeDep("playwright-core");
+    if (session.status !== "running") return;
+    const executablePath = resolveSystemChromeExecutable();
+    if (!executablePath) throw new Error("No Chrome/Chromium executable found — set CHROME_PATH or install Google Chrome");
+    const display = await ensureVirtualDisplay();
+    if (session.status !== "running") return;
+    dir = profileDir(session.profile);
+    if (!directoryExists(dir)) mkdirSync(dir);
+    const context = await launchLoginBrowser(chromium, dir, executablePath, display);
+    session.context = context;
+    session.contextClosed = new Promise((resolve) => context.once("close", resolve));
+    // A cancelled/expired pending launch still owns its profile until this close finishes.
+    if (session.status !== "running") return;
+    onClose = () => finishSession(session, config ? "error" : "cancelled", config ? "Login browser closed before login completed" : undefined);
+    context.once("close", onClose);
+    attachContext(session, context);
     const page = context.pages()[0] || (await context.newPage());
-    await page.goto(config.loginUrl, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+    if (session.status !== "running") return;
+    // Navigation can stall on challenges: neither polling nor cancellation waits for it.
+    void page.goto(config ? config.loginUrl : session.url, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+    if (!config) {
+      await new Promise((resolve) => {
+        if (session.abort.signal.aborted) resolve();
+        else session.abort.signal.addEventListener("abort", resolve, { once: true });
+      });
+      return;
+    }
 
-    const deadline = Date.now() + LOGIN_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      if (session.cancelled) {
-        session.status = "cancelled";
-        return;
-      }
-      await page.waitForTimeout(POLL_INTERVAL_MS);
+    while (session.status === "running") {
+      await waitForPoll(session.abort.signal);
+      if (session.status !== "running") return;
       const found = await harvest(context, config);
+      if (session.status !== "running") return;
       if (!found.ready) continue;
-
       if (config.credentialFrom === "localStorageValue") {
         const source = config.tokenSources[0];
         let val = found.localStorageValues[source.name];
@@ -226,19 +354,19 @@ async function runLogin(session, config) {
       } else {
         session.credential = found.cookieHeader;
       }
-      session.status = "success";
-      return;
+      finishSession(session, "success");
     }
-    session.status = "timeout";
-    session.error = "Login window timed out after 5 minutes — try again";
   } finally {
-    await context.close().catch(() => {});
-    clearStaleSingletonLocks(dir);
-    // Chrome's caches balloon far past the session data we keep; drop them
-    // while the profile is closed and rebuilding is free.
-    const pruned = pruneProfileCaches(dir);
-    if (pruned.freedBytes > 0) {
-      console.log("[webLogin] pruned", formatBytes(pruned.freedBytes), "from profile", session.profile);
+    if (onClose) session.context.off("close", onClose);
+    await closeContext(session);
+    if (session.contextClosed) await session.contextClosed;
+    session.context = null;
+    if (dir) {
+      clearStaleSingletonLocks(dir);
+      const pruned = pruneProfileCaches(dir);
+      if (pruned.freedBytes > 0) console.log("[webLogin] pruned", formatBytes(pruned.freedBytes), "from profile", session.profile);
     }
+    if (busyProfiles.get(session.profile) === session) busyProfiles.delete(session.profile);
+    if (session.kind === "standalone") browserSessions.delete(session.id);
   }
 }

@@ -11,7 +11,9 @@ const DEFAULT_MODEL = "kokoro";
 const DEFAULT_VOICE = "af_heart";
 
 export default {
-  async synthesize(text, model, credentials, responseFormat = "mp3") {
+  supportsUpstreamFormat: true,
+  async synthesize(text, model, credentials, responseFormat = "mp3", { upstreamFormat } = {}) {
+    if (!upstreamFormat && responseFormat === "json") responseFormat = "mp3";
     // Accept either providerSpecificData.baseUrl (how the custom embedding and
     // STT providers carry it) or a bare credentials.baseUrl (how the OpenAI TTS
     // adapter does), so a connection configured either way works.

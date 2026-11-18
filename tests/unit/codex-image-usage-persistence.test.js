@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   handleImageGenerationCore: vi.fn(),
   saveRequestUsage: vi.fn(),
   clearAccountError: vi.fn(),
+  provider: "codex",
 }));
 
 vi.mock("../../src/sse/services/auth.js", () => ({
@@ -23,7 +24,7 @@ vi.mock("@/lib/localDb", () => ({
 }));
 
 vi.mock("../../src/sse/services/model.js", () => ({
-  getModelInfo: async () => ({ provider: "codex", model: "gpt-6-sol-image" }),
+  getModelInfo: async () => ({ provider: mocks.provider, model: "gpt-6-sol-image" }),
   getComboModels: async () => null,
 }));
 
@@ -65,6 +66,7 @@ describe("Codex image usage persistence", () => {
     vi.clearAllMocks();
     mocks.saveRequestUsage.mockResolvedValue(undefined);
     mocks.clearAccountError.mockResolvedValue(undefined);
+    mocks.provider = "codex";
   });
 
   it("persists exact provider-reported input/output tokens", async () => {
@@ -87,7 +89,7 @@ describe("Codex image usage persistence", () => {
     }));
 
     expect(mocks.saveRequestUsage).toHaveBeenCalledTimes(1);
-    expect(mocks.saveRequestUsage).toHaveBeenCalledWith({
+    expect(mocks.saveRequestUsage).toHaveBeenCalledWith(expect.objectContaining({
       provider: "codex",
       model: "gpt-6-sol-image",
       connectionId: "connection-a",
@@ -101,10 +103,10 @@ describe("Codex image usage persistence", () => {
         reasoning_tokens: 22,
       },
       status: "success",
-    });
+    }));
   });
 
-  it("does not persist fabricated usage when upstream usage is absent", async () => {
+  it("persists a zero-token inference without fabricating usage", async () => {
     mocks.handleImageGenerationCore.mockImplementation(async ({ onRequestSuccess }) => {
       await onRequestSuccess?.();
       return { success: true, response: Response.json({ data: [{ b64_json: "image" }] }) };
@@ -115,6 +117,61 @@ describe("Codex image usage persistence", () => {
       body: JSON.stringify({ model: "cx/gpt-6-sol-image", prompt: "draw a cat" }),
     }));
 
+    expect(mocks.saveRequestUsage).toHaveBeenCalledTimes(1);
+    expect(mocks.saveRequestUsage).toHaveBeenCalledWith(expect.objectContaining({
+      tokens: {}, status: "success", requestId: expect.any(String),
+      timestamp: expect.any(String), latencyMs: expect.any(Number),
+    }));
+  });
+
+  it("records upstream failures without persisting error payloads", async () => {
+    mocks.handleImageGenerationCore.mockResolvedValue({
+      success: false, status: 502, error: "secret base64 data", response: new Response("upstream", { status: 502 }),
+    });
+    mocks.clearAccountError.mockResolvedValue(undefined);
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+    markAccountUnavailable.mockResolvedValue({ shouldFallback: false });
+    const response = await handleImageGeneration(new Request("http://localhost/v1/images/generations", {
+      method: "POST", body: JSON.stringify({ model: "cx/gpt-6-sol-image", prompt: "draw" }),
+    }));
+    expect(await response.text()).toBe("upstream");
+    expect(mocks.saveRequestUsage).toHaveBeenCalledTimes(1);
+    expect(mocks.saveRequestUsage.mock.calls[0][0]).toEqual(expect.objectContaining({ tokens: {}, status: "error" }));
+    expect(JSON.stringify(mocks.saveRequestUsage.mock.calls)).not.toContain("secret base64 data");
+  });
+
+  it("waits for streaming completion and records only once", async () => {
+    let complete;
+    let reportUsage;
+    mocks.handleImageGenerationCore.mockImplementation(async ({ onRequestComplete, onUsage }) => {
+      complete = onRequestComplete;
+      reportUsage = onUsage;
+      return { success: true, usagePending: true, response: new Response("stream") };
+    });
+    await handleImageGeneration(new Request("http://localhost/v1/images/generations", {
+      method: "POST", body: JSON.stringify({ model: "cx/gpt-6-sol-image", prompt: "draw" }),
+    }));
     expect(mocks.saveRequestUsage).not.toHaveBeenCalled();
+    reportUsage({ prompt_tokens: 3, completion_tokens: 7, secret: "data:image/png;base64,payload" });
+    await complete(false);
+    await complete(true);
+    expect(mocks.saveRequestUsage).toHaveBeenCalledTimes(1);
+    expect(mocks.saveRequestUsage.mock.calls[0][0]).toEqual(expect.objectContaining({
+      tokens: { prompt_tokens: 3, completion_tokens: 7 }, status: "error",
+    }));
+  });
+
+  it("records no-auth image generation without a connection or invented tokens", async () => {
+    mocks.provider = "sdwebui";
+    mocks.handleImageGenerationCore.mockResolvedValue({
+      success: true, response: Response.json({ data: [{ b64_json: "image" }] }),
+    });
+    await handleImageGeneration(new Request("http://localhost/v1/images/generations", {
+      method: "POST", body: JSON.stringify({ model: "sdwebui/sdxl", prompt: "draw" }),
+    }));
+    expect(mocks.saveRequestUsage).toHaveBeenCalledTimes(1);
+    expect(mocks.saveRequestUsage.mock.calls[0][0]).toEqual(expect.objectContaining({
+      provider: "sdwebui", connectionId: undefined, tokens: {}, status: "success",
+    }));
   });
 });

@@ -6,12 +6,12 @@ import { stripModelContextMarker } from "../../open-sse/utils/modelMarkers.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 
 for (const id of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
-  const extended = `${id}[1m]`;
+  const extended = `${id}-1m`;
   assert.equal(codex.models.find((model) => model.id === extended)?.upstreamModelId, id);
   assert.equal(getModelUpstreamId("cx", extended), id);
   assert.equal(getCapabilitiesForModel("codex", extended).contextWindow, 872000);
   assert.equal(getCapabilitiesForModel("cx", extended).contextWindow, 872000);
-  assert.deepEqual(stripModelContextMarker(`cx/${extended}`), { model: `cx/${id}`, contextMarker: "1m" });
+  assert.deepEqual(stripModelContextMarker(`cx/${extended}`), { model: `cx/${extended}`, contextMarker: null });
 }
 const unsupported = "The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account.";
 assert.equal(checkFallbackError(400, unsupported, 0, "codex").shouldFallback, true);

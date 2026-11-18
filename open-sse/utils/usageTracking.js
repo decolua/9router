@@ -83,7 +83,7 @@ export function filterUsageForFormat(usage, targetFormat) {
       'estimated'
     ],
     [FORMATS.OPENAI_RESPONSES]: [
-      'input_tokens', 'output_tokens',
+      'input_tokens', 'output_tokens', 'total_tokens',
       'input_tokens_details', 'output_tokens_details',
       'estimated'
     ],
@@ -269,7 +269,8 @@ export function extractUsage(chunk) {
     return normalizeUsage({
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
-      cached_tokens: cachedTokens,
+      cached_tokens: cachedTokens ?? 0,
+      cache_creation_input_tokens: usage.input_tokens_details?.cache_creation_tokens,
       reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
       prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
     });
@@ -280,7 +281,7 @@ export function extractUsage(chunk) {
     return normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
-      cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
+      cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens ?? chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
       completion_tokens_details: chunk.usage.completion_tokens_details

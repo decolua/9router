@@ -134,6 +134,7 @@ function assertRequiredApiArtifacts(cliAppDir) {
   const requiredArtifacts = [
     "app/api/v1/chat/completions/route.js",
     "app/api/v1/messages/route.js",
+    "app/api/internal/realtime-credentials/route.js",
   ];
   const serverDir = path.join(cliAppDir, buildDistDirName, "server");
   const missingArtifacts = requiredArtifacts
@@ -245,6 +246,8 @@ function buildCliPackage() {
   const customServerSrc = path.join(appDir, "custom-server.js");
   if (fs.existsSync(customServerSrc)) {
     fs.copyFileSync(customServerSrc, path.join(cliAppDir, "custom-server.js"));
+    fs.cpSync(path.join(appDir, "realtime"), path.join(cliAppDir, "realtime"), { recursive: true });
+    copyRecursive(path.join(appDir, "node_modules", "ws"), path.join(cliAppDir, "node_modules", "ws"));
     console.log("✅ Copied custom-server.js\n");
   } else {
     console.error("❌ custom-server.js not found — without it no request can be proven local,");

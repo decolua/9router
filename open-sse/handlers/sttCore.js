@@ -4,6 +4,8 @@ import { transcribeGeminiLive } from "./geminiLiveStt.js";
 import { transcribeCodex } from "./codexStt.js";
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { extractUsage } from "../utils/usageTracking.js";
 
 // Next.js polyfills globalThis.FormData with a Web API implementation that lacks
 // internal undici symbols. When passed to fetch(), undici cannot serialize it as
@@ -113,7 +115,7 @@ async function transcribeNvidia(cfg, file, model, token) {
 }
 
 // Gemini: generateContent with inline_data audio + transcription prompt
-async function transcribeGemini(cfg, file, model, token, formData) {
+async function transcribeGemini(cfg, file, model, token, formData, onUsage) {
   const buf = await file.arrayBuffer();
   const b64 = Buffer.from(buf).toString("base64");
   const mime = resolveAudioContentType(file);
@@ -134,6 +136,7 @@ async function transcribeGemini(cfg, file, model, token, formData) {
   });
   if (!res.ok) return upstreamError(res);
   const data = await res.json();
+  onUsage?.(extractUsage(data));
   const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("") || "";
   return jsonResponse({ text });
 }
@@ -240,18 +243,36 @@ async function transcribeHuggingFace(cfg, file, model, token) {
 }
 
 // Default: OpenAI/Groq/Whisper-compatible multipart
-async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
+async function transcribeOpenAICompatible(cfg, file, model, token, formData, onUsage, signal, proxyOptions) {
   const fd = new FormData();
-  fd.append("file", file, file.name || "audio.wav");
+  if (cfg.format === "cohere-stt") {
+    const language = formData.get("language");
+    if (typeof language !== "string" || !language.trim()) return createErrorResult(400, "Cohere transcription requires language");
+    if (typeof file.arrayBuffer !== "function") return createErrorResult(400, "Invalid audio file");
+    if (file.size > 25 * 1024 * 1024) return createErrorResult(400, "Cohere audio files must not exceed 25MB");
+    if (!/\.(flac|mp3|mpeg|mpga|ogg|wav)$/i.test(file.name || "")) return createErrorResult(400, "Cohere supports FLAC, MP3, MPEG, MPGA, OGG and WAV audio");
+    if (formData.get("response_format") && formData.get("response_format") !== "json") return createErrorResult(400, "Cohere transcription supports only json response_format");
+    if (formData.get("prompt")) return createErrorResult(400, "Cohere transcription does not support prompt");
+  }
   fd.append("model", model);
   for (const k of ["language", "prompt", "response_format", "temperature"]) {
     const v = formData.get(k);
     if (v !== null && v !== undefined && v !== "") fd.append(k, v);
   }
-  const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
+  fd.append("file", file, file.name || "audio.wav");
+  const options = { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd, signal };
+  const res = cfg.format === "cohere-stt" || cfg.format === "pollinations-stt"
+    ? await proxyAwareFetch(cfg.baseUrl, options, proxyOptions)
+    : await fetch(cfg.baseUrl, options);
   if (!res.ok) return upstreamError(res);
   const ct = res.headers.get("content-type") || "application/json";
   const txt = await res.text();
+  if (onUsage && ct.includes("json")) {
+    try {
+      const data = JSON.parse(txt);
+      onUsage(extractUsage(data) || data.usage);
+    } catch {}
+  }
   return { success: true, response: new Response(txt, { status: 200, headers: { "Content-Type": ct, "Access-Control-Allow-Origin": "*" } }) };
 }
 
@@ -284,7 +305,7 @@ function resolveModelTransport(provider, model) {
  * it in the app layer; built-ins fall back to the registry entry marker).
  * @returns {Promise<{success, response, status?, error?}>}
  */
-export async function handleSttCore({ provider, model, formData, credentials, sttConfig, transport, signal, proxyOptions }) {
+export async function handleSttCore({ provider, model, formData, credentials, sttConfig, transport, signal, proxyOptions, onUsage }) {
   const file = formData.get("file");
   if (!file) return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
@@ -293,7 +314,7 @@ export async function handleSttCore({ provider, model, formData, credentials, st
 
   // OAuth transcription uses a fixed ChatGPT endpoint; never honor connection URL overrides.
   if (provider === "codex" && cfg.format === "codex-transcribe") {
-    return transcribeCodex({ formData, credentials, signal, proxyOptions });
+    return transcribeCodex({ formData, credentials, signal, proxyOptions, onUsage });
   }
 
   // Per-connection endpoint override. Registry entries carry a fixed baseUrl,
@@ -302,7 +323,7 @@ export async function handleSttCore({ provider, model, formData, credentials, st
   // sets it, so cloud providers are untouched. Mirrors the custom embedding
   // providers, which already resolve baseUrl the same way.
   const overrideUrl = credentials?.providerSpecificData?.baseUrl;
-  if (overrideUrl) cfg = { ...cfg, baseUrl: String(overrideUrl).replace(/\/+$/, "") };
+  if (overrideUrl && provider !== "openrouter") cfg = { ...cfg, baseUrl: String(overrideUrl).replace(/\/+$/, "") };
 
   const token = cfg.authType === "none" ? null : (credentials?.apiKey || credentials?.accessToken);
   if (cfg.authType !== "none" && !token) {
@@ -311,12 +332,34 @@ export async function handleSttCore({ provider, model, formData, credentials, st
 
   // Format-switch extension: an explicit caller marker wins over the registry
   // marker; with neither, the provider-default sttConfig.format applies.
-  const marker = (typeof transport === "string" && transport.trim()) ? transport.trim() : resolveModelTransport(provider, model);
+  const marker = provider === "openrouter" ? null : (typeof transport === "string" && transport.trim()) ? transport.trim() : resolveModelTransport(provider, model);
 
   try {
     switch (marker || cfg.format) {
+      case "openrouter-audio": {
+        const fmt = String(formData.get("response_format") || "json").toLowerCase();
+        if (!["json", "text"].includes(fmt)) return createErrorResult(400, "OpenRouter STT supports only json and text response formats");
+        if (typeof file.arrayBuffer !== "function") return createErrorResult(400, "Invalid audio file");
+        const mime = resolveAudioContentType(file).split(";")[0];
+        const format = ({ "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/x-wav": "wav", "audio/wave": "wav" })[mime] || (mime.startsWith("audio/") ? mime.slice(6) : "");
+        if (!/^[a-z0-9]+$/.test(format)) return createErrorResult(400, "Unsupported audio format");
+        const language = formData.get("language");
+        const prompt = formData.get("prompt");
+        const instruction = `Transcribe the audio verbatim. Return only the transcript.${typeof language === "string" && language.trim() ? ` Language: ${language.trim()}.` : ""}${typeof prompt === "string" && prompt.trim() ? ` Context: ${prompt.trim()}` : ""}`;
+        const res = await proxyAwareFetch(cfg.baseUrl, {
+          method: "POST", signal,
+          headers: { ...buildAuthHeaders(cfg, token), "Content-Type": "application/json" },
+          body: JSON.stringify({ model, messages: [{ role: "user", content: [{ type: "text", text: instruction }, { type: "input_audio", input_audio: { data: Buffer.from(await file.arrayBuffer()).toString("base64"), format } }] }] }),
+        }, proxyOptions);
+        if (!res.ok) return upstreamError(res);
+        const data = await res.json();
+        onUsage?.(extractUsage(data));
+        const text = data?.choices?.[0]?.message?.content;
+        if (typeof text !== "string") return createErrorResult(502, "OpenRouter returned no transcript");
+        return fmt === "text" ? textResponse(text) : jsonResponse({ text });
+      }
       case "gemini-live": {
-        const live = await transcribeGeminiLive({ cfg, file, model, token, formData, mimeType: resolveAudioContentType(file) });
+        const live = await transcribeGeminiLive({ cfg, file, model, token, formData, mimeType: resolveAudioContentType(file), onUsage });
         // response_format parity with the OpenAI-compatible transport: default
         // envelope stays {text}; verbose_json adds segments mapped from the
         // Live API's incremental inputTranscription deltas. Those frames carry
@@ -336,9 +379,9 @@ export async function handleSttCore({ provider, model, formData, credentials, st
       case "assemblyai":      return await transcribeAssemblyAI(cfg, file, model, token);
       case "nvidia-asr":      return await transcribeNvidia(cfg, file, model, token);
       case "huggingface-asr": return await transcribeHuggingFace(cfg, file, model, token);
-      case "gemini-stt":      return await transcribeGemini(cfg, file, model, token, formData);
+      case "gemini-stt":      return await transcribeGemini(cfg, file, model, token, formData, onUsage);
       case "elevenlabs-stt":  return await transcribeElevenLabs(cfg, file, model, token, formData);
-      default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData);
+      default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData, onUsage, signal, proxyOptions);
     }
   } catch (err) {
     return createErrorResult(err.status || HTTP_STATUS.BAD_GATEWAY, err.message || "STT request failed");

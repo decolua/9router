@@ -11,11 +11,16 @@ import { proxyAwareFetch } from "../../open-sse/utils/proxyFetch.js";
 import glmOauthProvider from "../../src/lib/oauth/providers/glm.js";
 import { getProvider } from "../../src/lib/oauth/providers";
 import { PROVIDERS as TRANSPORTS, PROVIDER_OAUTH } from "../../open-sse/providers/index.js";
+import { resolveTransport } from "../../open-sse/services/provider.js";
 import { USAGE_SUPPORTED_PROVIDERS } from "../../src/shared/constants/providers.js";
 import { getUsageForProvider } from "../../open-sse/services/usage.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
+import { GlmExecutor } from "../../open-sse/executors/glm.js";
+import { applyZcodeHeaders, __test__ as zcodeHeaderTest } from "../../src/lib/zcode/headers.js";
+import { injectZcodeSystemPrompt } from "../../src/lib/zcode/systemPrompt.js";
 
 const ANTHROPIC_URL = "https://api.z.ai/api/anthropic/v1/messages";
+const ZCODE_PLAN_URL = "https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages";
 const PLAN_KEY = "key123.secret456";
 
 function jsonResponse(body, status = 200) {
@@ -37,6 +42,14 @@ describe("glm registry entry (dual-auth)", () => {
     // no zcode gateway/hook leftovers
     expect(TRANSPORTS.zcode).toBeUndefined();
     expect(PROVIDER_OAUTH.zcode).toBeUndefined();
+  });
+
+  it("declares selectable ZCode plans while keeping hidden card modes out of the UI", () => {
+    expect(TRANSPORTS.glm.defaultPlan).toBe("individual-coding-plan");
+    expect(TRANSPORTS.glm.plans["start-plan"].baseUrl).toBe(ZCODE_PLAN_URL);
+    expect(TRANSPORTS.glm.plans["start-plan"].supportedModels).toContain("glm-5.3");
+    expect(TRANSPORTS.glm.plans["off-peak"].hidden).toBe(true);
+    expect(TRANSPORTS.glm.plans.highspeed.hidden).toBe(true);
   });
 
   it("declares the ZCode CLI polling OAuth endpoints (no refresh grant)", () => {
@@ -100,7 +113,10 @@ describe("glm OAuth flow (ZCode CLI poll protocol)", () => {
                 {
                   organizationId: "org-1",
                   organizationName: "默认机构",
-                  projects: [{ projectId: "p-1", projectName: "默认项目", projectType: "1" }],
+                  projects: [
+                    { projectId: "p-1", projectName: "默认项目", projectType: "1" },
+                    { projectId: "p-team", projectName: "Team", projectType: "2" },
+                  ],
                 },
               ],
             },
@@ -110,10 +126,16 @@ describe("glm OAuth flow (ZCode CLI poll protocol)", () => {
           return jsonResponse({ code: 200, data: [] });
         }
         if (u.pathname.endsWith("/api_keys")) {
-          return jsonResponse({ code: 200, data: { apiKey: "key123", name: "zcode-api-key" } });
+          return jsonResponse({
+            code: 200,
+            data: { apiKey: u.pathname.includes("p-team") ? "teamkey" : "key123", name: "zcode-api-key" },
+          });
         }
-        if (u.pathname.endsWith("/copy/key123")) {
-          return jsonResponse({ code: 200, data: { secretKey: "secret456" } });
+        if (u.pathname.endsWith("/copy/key123") || u.pathname.endsWith("/copy/teamkey")) {
+          return jsonResponse({
+            code: 200,
+            data: { secretKey: u.pathname.endsWith("teamkey") ? "teamsecret" : "secret456" },
+          });
         }
         return jsonResponse({ code: 500, msg: `unexpected ${url}` }, 500);
       }),
@@ -150,12 +172,15 @@ describe("glm OAuth flow (ZCode CLI poll protocol)", () => {
     expect(result.ok).toBe(true);
     expect(result.data.access_token).toBe(PLAN_KEY);
     expect(result.data._zcodeJwtToken).toBe("zcode-jwt");
+    expect(result.data._individualCodingPlanApiKey).toBe(PLAN_KEY);
+    expect(result.data._teamCodingPlanApiKey).toBe("teamkey.teamsecret");
 
     // derivation chain: business login → customer info → api_keys create → copy
     const urls = calls.map((c) => c.url);
     expect(urls).toContain("https://api.z.ai/api/auth/z/login");
     expect(urls).toContain("https://api.z.ai/api/biz/customer/getCustomerInfo");
     expect(urls).toContain("https://api.z.ai/api/biz/v1/organization/org-1/projects/p-1/api_keys");
+    expect(urls).toContain("https://api.z.ai/api/biz/v1/organization/org-1/projects/p-team/api_keys");
     expect(urls).toContain(
       "https://api.z.ai/api/biz/v1/organization/org-1/projects/p-1/api_keys/copy/key123",
     );
@@ -166,6 +191,8 @@ describe("glm OAuth flow (ZCode CLI poll protocol)", () => {
       access_token: PLAN_KEY,
       _zcodeJwtToken: "zcode-jwt",
       _zaiBusinessToken: "zai-business-jwt",
+      _individualCodingPlanApiKey: PLAN_KEY,
+      _teamCodingPlanApiKey: "teamkey.teamsecret",
       _zaiRefreshToken: "zai-refresh-token",
       _zcodeUser: { user_id: "u-1", name: "Feavy", email: "feavy@example.com" },
     });
@@ -176,10 +203,13 @@ describe("glm OAuth flow (ZCode CLI poll protocol)", () => {
     expect(tokens.displayName).toBe("Feavy");
     expect(tokens.providerSpecificData).toMatchObject({
       authMethod: "cli_poll",
+      plan: "individual-coding-plan",
       username: "Feavy",
       userId: "u-1",
       zcodeJwtToken: "zcode-jwt",
       zaiBusinessToken: "zai-business-jwt",
+      individualCodingPlanApiKey: PLAN_KEY,
+      teamCodingPlanApiKey: "teamkey.teamsecret",
       zaiRefreshToken: "zai-refresh-token",
     });
   });
@@ -198,6 +228,100 @@ describe("glm executor + usage (dual-auth credentials)", () => {
     const headers = executor.buildHeaders(creds, true, ANTHROPIC_URL, "glm-5.3", {});
     expect(headers["x-api-key"]).toBe(PLAN_KEY);
     expect(headers["Authorization"]).toBeUndefined();
+  });
+
+  it("routes Start Plan through ZCode with the official JWT", () => {
+    const executor = new DefaultExecutor("glm");
+    const creds = {
+      accessToken: PLAN_KEY,
+      providerSpecificData: { plan: "start-plan", zcodeJwtToken: "zcode-jwt" },
+    };
+
+    expect(executor.buildUrl("glm-5.2", true, 0, creds)).toBe(ZCODE_PLAN_URL);
+    expect(executor.buildUrl("glm-5.2(max)", true, 0, creds)).toBe(ZCODE_PLAN_URL);
+    const headers = executor.buildHeaders(creds, true, ZCODE_PLAN_URL, "glm-5.2", {});
+    expect(headers.Authorization).toBe("Bearer zcode-jwt");
+    expect(headers["x-api-key"]).toBeUndefined();
+    expect(resolveTransport("glm", "openai", creds)).toBeNull();
+    expect(resolveTransport("glm", "claude", creds)?.baseUrl).toBe(ZCODE_PLAN_URL);
+  });
+
+  it("uses the specialized executor for Start Plan processing", () => {
+    expect(new GlmExecutor()).toBeInstanceOf(DefaultExecutor);
+  });
+
+  it("adds the ZCode fingerprint and strips Claude API headers", () => {
+    zcodeHeaderTest.sessions.clear();
+    const headers = applyZcodeHeaders({
+      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "claude-code-20250219",
+      "x-api-key": "wrong-key",
+    }, {
+      connectionId: "glm-1",
+      providerSpecificData: { zcodeJwtToken: "zcode-jwt" },
+    }, "captcha-token");
+
+    expect(headers.Authorization).toBe("Bearer zcode-jwt");
+    expect(headers["User-Agent"]).toMatch(/^ZCode\//);
+    expect(headers["X-ZCode-App-Version"]).toBeTruthy();
+    expect(headers["X-ZCode-Agent"]).toBe("glm");
+    expect(headers["X-Aliyun-Captcha-Verify-Param"]).toBe("captcha-token");
+    expect(headers["x-session-id"]).toBeTruthy();
+    expect(headers["Anthropic-Version"]).toBeUndefined();
+    expect(headers["Anthropic-Beta"]).toBeUndefined();
+    expect(headers["x-api-key"]).toBeUndefined();
+  });
+
+  it("maps GLM-5.3 and replaces Claude Code identity for Start Plan", () => {
+    const executor = new GlmExecutor();
+    const result = executor.transformRequest("glm-5.3", {
+      model: "glm-5.3",
+      system: [{ type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    }, false, {
+      providerSpecificData: { plan: "start-plan", zcodeJwtToken: "zcode-jwt" },
+    });
+
+    expect(result.model).toBe("GLM-5.3");
+    expect(JSON.stringify(result.system)).toContain("You are ZCode");
+    expect(JSON.stringify(result.system)).not.toContain("Claude Code");
+  });
+
+  it("keeps ZCode system injection idempotent", () => {
+    const first = injectZcodeSystemPrompt({ model: "GLM-5.3", system: [] }, "GLM-5.3");
+    expect(injectZcodeSystemPrompt(first, "GLM-5.3").system).toEqual(first.system);
+  });
+
+  it("switches between the individual and team Coding Plan keys", () => {
+    const executor = new DefaultExecutor("glm");
+    const base = {
+      authType: "oauth",
+      accessToken: PLAN_KEY,
+      providerSpecificData: {
+        individualCodingPlanApiKey: PLAN_KEY,
+        teamCodingPlanApiKey: "teamkey.teamsecret",
+      },
+    };
+    const individual = {
+      ...base,
+      providerSpecificData: { ...base.providerSpecificData, plan: "individual-coding-plan" },
+    };
+    const team = {
+      ...base,
+      providerSpecificData: { ...base.providerSpecificData, plan: "team-coding-plan" },
+    };
+
+    expect(executor.buildHeaders(individual, true, ANTHROPIC_URL, "glm-5.3", {})["x-api-key"]).toBe(PLAN_KEY);
+    expect(executor.buildHeaders(team, true, ANTHROPIC_URL, "glm-5.3", {})["x-api-key"]).toBe("teamkey.teamsecret");
+  });
+
+  it("accepts GLM-5.3 on Start Plan and rejects missing ZCode JWTs", () => {
+    const executor = new DefaultExecutor("glm");
+    expect(executor.buildUrl("glm-5.3", true, 0, {
+      providerSpecificData: { plan: "start-plan", zcodeJwtToken: "zcode-jwt" },
+    })).toBe(ZCODE_PLAN_URL);
+    expect(() => executor.buildHeaders({ providerSpecificData: { plan: "start-plan" } }, true, ZCODE_PLAN_URL, "glm-5.2", {}))
+      .toThrow(/requires zcodeJwtToken/);
   });
 
   it("never schedules a token refresh (no refresh grant upstream)", async () => {
@@ -230,6 +354,23 @@ describe("glm executor + usage (dual-auth credentials)", () => {
     expect(proxyAwareFetch).toHaveBeenCalledWith(
       "https://api.z.ai/api/monitor/usage/quota/limit",
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: `Bearer ${PLAN_KEY}` }) }),
+      null,
+    );
+  });
+
+  it("fetches quota with the selected team plan key", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({ data: { level: "TEAM", limits: [] } }));
+
+    const usage = await getUsageForProvider({
+      provider: "glm",
+      accessToken: PLAN_KEY,
+      providerSpecificData: { plan: "team-coding-plan", teamCodingPlanApiKey: "teamkey.teamsecret" },
+    });
+
+    expect(usage.plan).toBe("Team");
+    expect(proxyAwareFetch).toHaveBeenCalledWith(
+      "https://api.z.ai/api/monitor/usage/quota/limit",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer teamkey.teamsecret" }) }),
       null,
     );
   });

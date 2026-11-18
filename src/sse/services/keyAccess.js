@@ -1,10 +1,7 @@
 // Per-API-key access control for the /v1/* inference keys.
 //
-// Two modes per key: UNRESTRICTED (default — exactly today's behaviour) or
-// RESTRICTED, where the key may call ONLY the combos and models in its allow
-// list. No wildcards, no deny mode. Matching is exact and case-insensitive, on
-// RESOLVED identities, so every spelling that routes to the same target is
-// treated the same and no spelling can route somewhere the list does not name:
+// Restricted keys may call listed combos, models, or all models of a listed
+// provider (`provider/*`). Matching uses resolved identities, case-insensitively:
 //
 //   * a request that routes as a combo (getComboModels — the lookup routing
 //     itself uses) is allowed iff that combo's name is listed;
@@ -23,6 +20,7 @@
 // The check runs before any credential lookup, so a denied request never
 // touches a provider account.
 import { getApiKeyByKey } from "@/lib/db/repos/apiKeysRepo.js";
+import { getKeyModelGroups } from "@/lib/db/repos/keyModelGroupsRepo.js";
 import { getCombos } from "@/lib/db/repos/combosRepo.js";
 import { getModelInfo, getComboModels } from "./model.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
@@ -80,6 +78,37 @@ export async function getKeyAccessContext(request) {
   };
 }
 
+const groupPrefix = /^@group\//i;
+const groupReference = /^@group\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+/** Resolve linked groups once for this access check; group members are never expanded recursively. */
+export async function expandKeyAccessAllow(allow) {
+  const entries = Array.isArray(allow) ? allow : [];
+  let groups;
+  const expanded = [];
+  for (const entry of entries) {
+    if (typeof entry !== "string" || !entry) continue;
+    if (!groupPrefix.test(entry)) {
+      expanded.push(entry);
+      continue;
+    }
+    const match = groupReference.exec(entry);
+    if (!match) continue;
+    if (!groups) {
+      groups = new Map((await getKeyModelGroups())
+        .filter((group) => typeof group?.id === "string")
+        .map((group) => [lower(group.id), group]));
+    }
+    const members = groups.get(lower(match[1]))?.allow;
+    if (Array.isArray(members)) {
+      for (const member of members) {
+        if (typeof member === "string" && member && !groupPrefix.test(member)) expanded.push(member);
+      }
+    }
+  }
+  return expanded;
+}
+
 // Resolve the allow list once per request: combo names, resolved model ids,
 // and resolved provider ids (for provider-as-model kinds).
 async function getAllowSets(ctx) {
@@ -88,17 +117,23 @@ async function getAllowSets(ctx) {
   const combos = new Set();
   const models = new Set();
   const providers = new Set();
-  for (const entry of ctx.allow) {
+  const modelProviders = new Set();
+  for (const entry of await expandKeyAccessAllow(ctx.allow)) {
     const key = lower(entry);
     if (comboNames.has(key)) {
       combos.add(key);
+      continue;
+    }
+    if (entry.endsWith("/*")) {
+      const info = await getModelInfo(entry);
+      if (info?.provider && info.model === "*") modelProviders.add(lower(info.provider));
       continue;
     }
     const info = await getModelInfo(entry);
     if (info?.provider && info.model) models.add(canonicalModel(info.provider, info.model));
     if (!entry.includes("/")) providers.add(lower(resolveProviderId(entry)));
   }
-  ctx._sets = { combos, models, providers };
+  ctx._sets = { combos, models, providers, modelProviders };
   return ctx._sets;
 }
 
@@ -107,7 +142,7 @@ async function isModelStringAllowed(ctx, requested) {
   const info = await getModelInfo(requested);
   // provider null ⇔ an existing combo with no members (routes nowhere).
   if (!info?.provider) return sets.combos.has(lower(requested));
-  return sets.models.has(canonicalModel(info.provider, info.model));
+  return sets.modelProviders.has(lower(info.provider)) || sets.models.has(canonicalModel(info.provider, info.model));
 }
 
 export function keyAccessDeniedResponse(ctx, requested) {
@@ -142,7 +177,7 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
-  return sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
+  return sets.modelProviders.has(lower(provider)) || sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
 }
 
 /**
@@ -155,7 +190,7 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
   const sets = await getAllowSets(ctx);
   const allowed = comboModels
     ? sets.combos.has(lower(requested))
-    : sets.providers.has(lower(resolveProviderId(requested)));
+    : sets.providers.has(lower(resolveProviderId(requested))) || sets.modelProviders.has(lower(resolveProviderId(requested)));
   return allowed ? null : keyAccessDeniedResponse(ctx, requested);
 }
 
@@ -190,10 +225,10 @@ export async function filterModelsListForKey(ctx, list) {
     const info = await getModelInfo(entry.id);
     if (!info?.provider) continue;
     if (KEY_ACCESS_PROVIDER_AS_MODEL_KINDS.includes(entry.kind)) {
-      if (sets.providers.has(lower(info.provider))) out.push(entry);
+      if (sets.providers.has(lower(info.provider)) || sets.modelProviders.has(lower(info.provider))) out.push(entry);
       continue;
     }
-    if (sets.models.has(canonicalModel(info.provider, info.model))) out.push(entry);
+    if (sets.modelProviders.has(lower(info.provider)) || sets.models.has(canonicalModel(info.provider, info.model))) out.push(entry);
   }
   return out;
 }

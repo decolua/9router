@@ -25,6 +25,32 @@ describe("handleImageGenerationCore", () => {
     vi.useRealTimers();
   });
 
+  it("reports actual OpenAI image usage without changing the response", async () => {
+    const payload = { created: 1, data: [{ b64_json: "aW1hZ2U=" }], usage: { input_tokens: 12, output_tokens: 34, total_tokens: 46 } };
+    global.fetch.mockResolvedValueOnce(Response.json(payload));
+    const onUsage = vi.fn();
+    const result = await handleImageGenerationCore({
+      body: { prompt: "a cat" }, modelInfo: { provider: "openai", model: "gpt-image-1" },
+      credentials: { apiKey: "provider-secret" }, onUsage,
+    });
+    expect(await result.response.json()).toEqual(payload);
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ prompt_tokens: 12, completion_tokens: 34 }));
+  });
+
+  it("reports Gemini usage before image response normalization", async () => {
+    global.fetch.mockResolvedValueOnce(Response.json({
+      candidates: [{ content: { parts: [{ inlineData: { data: "aW1hZ2U=" } }] } }],
+      usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 9, totalTokenCount: 14 },
+    }));
+    const onUsage = vi.fn();
+    const result = await handleImageGenerationCore({
+      body: { prompt: "a cat" }, modelInfo: { provider: "gemini", model: "gemini-image-preview" },
+      credentials: { apiKey: "provider-secret" }, onUsage,
+    });
+    expect(result.success).toBe(true);
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ prompt_tokens: 5, completion_tokens: 9 }));
+  });
+
   it("validates required prompt field", async () => {
     const result = await handleImageGenerationCore({
       body: { model: "openai/dall-e-3" },

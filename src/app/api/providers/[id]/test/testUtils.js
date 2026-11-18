@@ -157,6 +157,7 @@ const OAUTH_TEST_CONFIG = {
     extraHeaders: { "x-api-version": "1.0.0" },
     refreshable: false,
   },
+  glm: { tokenExists: true },
   nous: {
     url: NOUS_CHAT_COMPLETIONS_URL,
     method: "POST",
@@ -651,8 +652,8 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "anthropic": {
         const res = await fetchWithConnectionProxy("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2026-10-21", "content-type": "application/json" },
+          body: JSON.stringify({ model: "claude-haiku-5-5", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
         const valid = res.status !== 401;
         return { valid, error: valid ? null : "Invalid API key" };
@@ -781,8 +782,13 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "cohere": {
-        const res = await fetchWithConnectionProxy("https://api.cohere.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        const res = await fetchWithConnectionProxy(PROVIDERS.cohere.validateUrl, { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "pollinations": {
+        const { validatePollinationsKey } = await import("open-sse/services/pollinationsModels.js");
+        await validatePollinationsKey(connection, { proxyOptions: effectiveProxy });
+        return { valid: true, error: null };
       }
       case "nebius": {
         const res = await fetchWithConnectionProxy("https://api.studio.nebius.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);

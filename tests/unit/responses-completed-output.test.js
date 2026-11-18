@@ -4,9 +4,7 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 import { initState } from "../../open-sse/translator/index.js";
 import { openaiToOpenAIResponsesResponse } from "../../open-sse/translator/response/openai-responses.js";
 
-// targetFormat === OPENAI is the direct openai -> openai-responses route, which is
-// the only one where flush() reaches this translator (see the flushReachesUs note
-// above the finish_reason branch).
+// Direct Chat streams wait for a usage trailer before completing.
 function newState() {
   return { ...initState(FORMATS.OPENAI_RESPONSES), targetFormat: FORMATS.OPENAI };
 }

@@ -52,6 +52,11 @@ export const SEARXNG_URL = envUrl("SEARXNG_URL", "http://localhost:8888/search")
 // slow reasoning models aren't aborted mid-stream. Env: STREAM_STALL_TIMEOUT_MS.
 export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 360 * 1000);
 
+// Opt-in: retries can duplicate upstream work and interrupt slow reasoning.
+export const CODEX_EARLY_RETRY = process.env.CODEX_EARLY_RETRY === "true";
+export const CODEX_EARLY_RETRY_TIMEOUT_MS = envMs("CODEX_EARLY_RETRY_TIMEOUT_MS", 10000);
+export const CODEX_EARLY_RETRY_ATTEMPTS = 2;
+
 // Time-to-first-token timeout (prompt prefill). Env: STREAM_FIRST_CHUNK_TIMEOUT_MS.
 export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200 * 1000);
 

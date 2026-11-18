@@ -20,6 +20,15 @@ export default {
   // account to auto-mint a coding-plan key.
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
+  hasProviderSpecificData: true,
+  plans: [
+    { id: "individual-coding-plan", label: "Individual Coding Plan", authModes: ["oauth", "apikey"] },
+    { id: "team-coding-plan", label: "Team Coding Plan", authModes: ["oauth", "apikey"] },
+    { id: "start-plan", label: "Start Plan", authModes: ["oauth"] },
+  ],
+  defaultPlan: "individual-coding-plan",
+  // ponytail: off-peak/highspeed stay hidden because ZCode marks these card
+  // modes hidden; expose them if ZCode promotes them to public plan choices.
   // OAuth = ZCode CLI polling flow (apps/zcode-cli cli-oauth.ts) — no PKCE, no
   // local callback: init mints a one-off poll token, the browser authorize_url
   // is server-generated, and poll/ready carries the tokens. The Z.AI OAuth
@@ -45,6 +54,37 @@ export default {
     },
     usage: {
       url: "https://api.z.ai/api/monitor/usage/quota/limit",
+    },
+    plans: {
+      "individual-coding-plan": {
+        tokenField: "individualCodingPlanApiKey",
+      },
+      "team-coding-plan": {
+        tokenField: "teamCodingPlanApiKey",
+      },
+      "start-plan": {
+        baseUrl: "https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages",
+        format: "claude",
+        headers: {},
+        auth: { combined: true, header: "Authorization", scheme: "bearer", tokenField: "zcodeJwtToken" },
+        supportedModels: ["glm-5.3", "glm-5.3-flash", "glm-5.2", "glm-5-turbo"],
+      },
+      "off-peak": {
+        baseUrl: "https://zcode.z.ai/api/v1/off-peak/anthropic/v1/messages",
+        format: "claude",
+        headers: {},
+        auth: { combined: true, header: "Authorization", scheme: "bearer", tokenField: "zcodeJwtToken" },
+        supportedModels: ["glm-5.3", "glm-5.3-flash"],
+        hidden: true,
+      },
+      highspeed: {
+        baseUrl: "https://zcode.z.ai/api/v1/highspeed/anthropic/v1/messages",
+        format: "claude",
+        headers: {},
+        auth: { combined: true, header: "Authorization", scheme: "bearer", tokenField: "zcodeJwtToken" },
+        supportedModels: ["glm-5.3", "glm-5.3-flash"],
+        hidden: true,
+      },
     },
   },
   // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.

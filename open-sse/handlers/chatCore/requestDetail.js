@@ -2,23 +2,9 @@ import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usa
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
 
-const OPTIONAL_PARAMS = [
-  "temperature", "top_p", "top_k",
-  "max_tokens", "max_completion_tokens",
-  "thinking", "reasoning", "enable_thinking",
-  "presence_penalty", "frequency_penalty",
-  "seed", "stop", "tools", "tool_choice",
-  "response_format", "prediction", "store", "metadata",
-  "n", "logprobs", "top_logprobs", "logit_bias",
-  "user", "parallel_tool_calls"
-];
 
 export function extractRequestConfig(body, stream) {
-  const config = { messages: body.messages || [], model: body.model, stream };
-  for (const param of OPTIONAL_PARAMS) {
-    if (body[param] !== undefined) config[param] = body[param];
-  }
-  return config;
+  return { ...body, stream };
 }
 
 export function extractUsageFromResponse(responseBody) {
@@ -34,9 +20,9 @@ export function extractUsageFromResponse(responseBody) {
     return {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
-      cached_tokens: responseBody.usage.cached_tokens ?? responseBody.usage.input_tokens_details?.cached_tokens,
+      cached_tokens: responseBody.usage.cached_tokens ?? responseBody.usage.input_tokens_details?.cached_tokens ?? (responseBody.usage.input_tokens_details ? 0 : undefined),
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens ?? responseBody.usage.input_tokens_details?.cache_creation_tokens
     };
   }
 
@@ -45,7 +31,8 @@ export function extractUsageFromResponse(responseBody) {
     return {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
-      cached_tokens: responseBody.usage.cached_tokens ?? responseBody.usage.prompt_tokens_details?.cached_tokens,
+      cached_tokens: responseBody.usage.cached_tokens ?? responseBody.usage.prompt_tokens_details?.cached_tokens ?? responseBody.usage.prompt_cache_hit_tokens ?? 0,
+      cache_creation_input_tokens: responseBody.usage.prompt_tokens_details?.cache_creation_tokens,
       reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
     };
   }
@@ -84,6 +71,8 @@ export function buildRequestDetail(base, overrides = {}) {
     provider: base.provider || "unknown",
     model: base.model || "unknown",
     connectionId: base.connectionId || undefined,
+    promptRetentionContext: base.promptRetentionContext,
+    apiKey: base.apiKey,
     timestamp: new Date().toISOString(),
     latency: base.latency || { ttft: 0, total: 0 },
     tokens: base.tokens || { prompt_tokens: 0, completion_tokens: 0 },

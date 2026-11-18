@@ -4,6 +4,8 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
+import { getCodexQuotaSnapshot, refreshCodexQuotas, selectCodexQuotaConnection } from "./codexQuota.js";
+import { getCodexQuotaPriority } from "@/shared/utils/codexQuota";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -32,6 +34,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
   const requestedModel = options?.requestedModel || model;
+  const providerId = resolveProviderId(provider);
+  const codexSettings = providerId === "codex" ? await getSettings() : null;
+  const quotaWeighted = codexSettings?.providerStrategies?.codex?.fallbackStrategy === "quota-weighted";
+  if (quotaWeighted) {
+    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    // Keep upstream I/O outside the selection mutex so other providers are not stalled.
+    await refreshCodexQuotas(connections.filter(c => {
+      const enabled = c.providerSpecificData?.enabledModels;
+      return !excludeSet.has(c.id) && !isModelLockActive(c, model) &&
+        !(Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel));
+    }));
+  }
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -39,9 +53,6 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
   try {
     await currentMutex;
-
-    // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
-    const providerId = resolveProviderId(provider);
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
@@ -82,11 +93,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Antigravity quota cache is lazy: only populated after that account returns 409/429.
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
+    const codexQuota = new Map(quotaWeighted ? connections.map(c => [c.id,
+      getCodexQuotaPriority(getCodexQuotaSnapshot(c), c.providerSpecificData?.codexQuota, model),
+    ]) : []);
 
     // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (codexQuota.get(c.id)?.blocked) return false;
       const enabled = c.providerSpecificData?.enabledModels;
       if (providerId === "codex" && Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) return false;
       // Antigravity: skip if live quota exhausted for this model
@@ -115,7 +130,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (availableConnections.length === 0) {
       // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
       const lockedConns = connections.filter(c => isModelLockActive(c, model));
-      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
+      const expiries = quotaWeighted ? [] : lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
+      if (quotaWeighted) {
+        for (const c of connections) {
+          if (excludeSet.has(c.id)) continue;
+          const enabled = c.providerSpecificData?.enabledModels;
+          if (Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) continue;
+          const quota = codexQuota.get(c.id);
+          const lockAt = Date.parse(c[`modelLock_${model}`] || c.modelLock___all);
+          const retryAt = Math.max(quota?.retryAt || 0, Number.isFinite(lockAt) ? lockAt : 0);
+          if (retryAt > Date.now()) expiries.push(new Date(retryAt).toISOString());
+        }
+      }
       if (isAntigravity && model && antigravityQuotaCache) {
         connections.forEach((c) => {
           const connQuotas = antigravityQuotaCache.get(c.id);
@@ -140,7 +166,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    const settings = await getSettings();
+    const settings = codexSettings || await getSettings();
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
@@ -155,6 +181,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
     if (connection) {
       // skip strategy
+    } else if (quotaWeighted) {
+      connection = selectCodexQuotaConnection(availableConnections, model);
     } else if (strategy === "round-robin") {
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 

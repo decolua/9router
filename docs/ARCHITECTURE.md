@@ -1,3 +1,7 @@
+# Codex initial-output retry
+
+Set `CODEX_EARLY_RETRY=true` on the server to retry a Codex stream up to twice if no output starts within 10 seconds. Set `CODEX_EARLY_RETRY_TIMEOUT_MS` to change the deadline. Disabled by default: retries repeat upstream work and may interrupt slow reasoning. Requests with hosted tools are excluded; retries do not apply after output starts.
+
 # 9Router Architecture
 
 _Last updated: 2026-02-06_

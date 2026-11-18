@@ -86,7 +86,14 @@ export function filterToOpenAIFormat(body, opts = {}) {
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     body.tools = body.tools.map(tool => {
       // Already OpenAI format
-      if (tool.type === OPENAI_BLOCK.FUNCTION && tool.function) return tool;
+      if (tool.type === OPENAI_BLOCK.FUNCTION && tool.function) {
+        // Strict upstreams (serde-based) 400 with
+        // "missing field `parameters`" when function.parameters is absent.
+        if (!tool.function.parameters) {
+          tool.function.parameters = { type: "object", properties: {} };
+        }
+        return tool;
+      }
       
       // Claude format: {name, description, input_schema}
       if (tool.name && (tool.input_schema || tool.description)) {

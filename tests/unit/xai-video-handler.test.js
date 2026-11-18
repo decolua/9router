@@ -24,6 +24,8 @@ const tokenMocks = vi.hoisted(() => ({
   checkAndRefreshToken: vi.fn(async (_p, creds) => creds),
   updateProviderCredentials: vi.fn(async () => {}),
 }));
+const usageMocks = vi.hoisted(() => ({ saveRequestUsage: vi.fn(async () => {}) }));
+vi.mock("@/lib/usageDb.js", () => usageMocks);
 
 vi.mock("@/sse/services/auth.js", () => authMocks);
 vi.mock("@/sse/services/tokenRefresh.js", () => tokenMocks);
@@ -64,6 +66,7 @@ beforeEach(() => {
   authMocks.markAccountUnavailable.mockClear();
   authMocks.clearAccountError.mockClear();
   tokenMocks.checkAndRefreshToken.mockClear();
+  usageMocks.saveRequestUsage.mockClear();
 });
 
 afterEach(() => {
@@ -145,6 +148,8 @@ describe("handleVideoCreate", () => {
     expect(authMocks.markAccountUnavailable).toHaveBeenCalledWith(
       "conn-1", 401, expect.any(String), "xai", null
     );
+    expect(usageMocks.saveRequestUsage).toHaveBeenCalledTimes(2);
+    expect(usageMocks.saveRequestUsage.mock.calls.map(([entry]) => entry.status)).toEqual(["error", "success"]);
   });
 
   it("does NOT rotate accounts on a 500 creation error (job may exist upstream)", async () => {
@@ -156,6 +161,29 @@ describe("handleVideoCreate", () => {
     expect(res.status).toBe(500);
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(authMocks.getProviderCredentials).toHaveBeenCalledTimes(1);
+  });
+
+  it("records creation usage and failures once per account, never poll requests", async () => {
+    authMocks.getProviderCredentials.mockResolvedValue(account({ refreshToken: null }));
+    const payload = { request_id: "r1", usage: { input_tokens: 4, output_tokens: 8 } };
+    global.fetch.mockResolvedValueOnce(jsonResponse(payload));
+    const res = await handleVideoCreate(makeRequest({ model: "xai/grok-imagine-video", prompt: "x" }), "generations");
+    expect(await res.json()).toEqual(payload);
+    expect(usageMocks.saveRequestUsage).toHaveBeenCalledTimes(1);
+    expect(usageMocks.saveRequestUsage.mock.calls[0][0]).toEqual(expect.objectContaining({
+      provider: "xai", model: "grok-imagine-video", connectionId: "conn-1",
+      endpoint: "/v1/videos/generations", status: "success",
+      tokens: expect.objectContaining({ prompt_tokens: 4, completion_tokens: 8 }),
+      requestId: expect.any(String), latencyMs: expect.any(Number),
+    }));
+    global.fetch.mockResolvedValueOnce(jsonResponse({ status: "completed" }));
+    await handleVideoGet(new Request("http://localhost/v1/videos/r1"), "r1");
+    expect(usageMocks.saveRequestUsage).toHaveBeenCalledTimes(1);
+    global.fetch.mockResolvedValueOnce(jsonResponse({ error: "secret payload" }, 500));
+    await handleVideoCreate(makeRequest({ prompt: "x" }), "generations");
+    expect(usageMocks.saveRequestUsage).toHaveBeenCalledTimes(2);
+    expect(usageMocks.saveRequestUsage.mock.calls[1][0]).toEqual(expect.objectContaining({ tokens: {}, status: "error" }));
+    expect(JSON.stringify(usageMocks.saveRequestUsage.mock.calls)).not.toContain("secret payload");
   });
 
   it("forwards multipart bodies byte-exact with default xai provider", async () => {

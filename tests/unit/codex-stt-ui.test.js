@@ -9,5 +9,5 @@ it("documents OAuth reuse, ffmpeg limits and does not offer unsupported response
   expect(page).toContain('href={`/dashboard/providers/${id}`}');
   const example = readFileSync(new URL("src/app/(dashboard)/dashboard/media-providers/[kind]/[id]/components/SttExampleCard.js", root), "utf8");
   expect(example).toContain('selectedModelObj?.responseFormats');
-  expect(readFileSync(new URL("Dockerfile", root), "utf8").split("AS runner")[1]).toContain("su-exec ffmpeg");
+  expect(readFileSync(new URL("Dockerfile", root), "utf8").split("AS runner")[1]).toMatch(/(?:su-exec|gosu) ffmpeg/);
 });

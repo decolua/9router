@@ -6,6 +6,7 @@ import {
   deleteProviderConnection,
 } from "@/models";
 import { toProviderConnectionResponse, usesAwsCredentialForm } from "@/lib/providerConnectionResponse";
+import { validateCodexQuota } from "@/shared/utils/codexQuota";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -98,6 +99,11 @@ export async function PUT(request, { params }) {
     const existing = await getProviderConnectionById(id);
     if (!existing) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    }
+
+    if (existing.provider === "codex") {
+      const error = validateCodexQuota(providerSpecificData?.codexQuota);
+      if (error) return NextResponse.json({ error }, { status: 400 });
     }
 
     const proxyConfig = normalizeProxyConfig(body);

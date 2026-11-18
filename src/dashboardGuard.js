@@ -3,6 +3,7 @@ import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { isRealtimeInternalRequest } from "@/lib/realtime/internal";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -35,7 +36,9 @@ const PUBLIC_API_PATHS = [
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
 // Keep root-level rewrites here too: middleware runs before Next.js rewrites.
-const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex", "/responses"];
+// /api/quota is a dashboard journey but also accepts 9Router API keys (its
+// route handler picks output mode per the key's quotaAccess setting).
+const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex", "/responses", "/api/quota"];
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -92,6 +95,9 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/stop",
   "/api/headroom/proxy",
 ];
+
+const LOOPBACK_CALLBACK_PATHS = ["/api/zcode/captcha"];
+const REALTIME_CREDENTIALS_PATH = "/api/internal/realtime-credentials";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
@@ -211,6 +217,13 @@ export const __test__ = {
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
+  // Browser automation callbacks carry no dashboard cookie. Accept only when
+  // custom-server proves the TCP peer and browser Origin are both loopback.
+  if (LOOPBACK_CALLBACK_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    if (isLocalRequest(request)) return NextResponse.next();
+    return NextResponse.json({ error: "Local only: loopback callback required" }, { status: 403 });
+  }
+
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
     if (!(await canAccessLocalOnlyRoute(request))) {
@@ -228,6 +241,10 @@ export async function proxy(request) {
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+  }
+
+  if (pathname === REALTIME_CREDENTIALS_PATH && isRealtimeInternalRequest(request)) {
+    return NextResponse.next();
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.

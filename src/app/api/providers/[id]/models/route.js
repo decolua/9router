@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
@@ -16,8 +17,38 @@ import { resolveClineModels, resolveClinepassModels } from "open-sse/services/cl
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
+import { resolveCohereModels } from "open-sse/services/cohereModels.js";
+import { resolvePollinationsModels } from "open-sse/services/pollinationsModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
+const MODEL_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
+const modelListCache = globalThis._providerModelListCache ||= new Map();
+
+export function clearProviderModelListCache() {
+  modelListCache.clear();
+}
+
+async function cachedModelList(connection, load) {
+  const key = connection.id;
+  const version = connection.updatedAt || "";
+  const cached = modelListCache.get(key);
+  if (cached && cached.version === version && cached.expiresAt > Date.now()) {
+    const response = await cached.response;
+    if (!response.ok) modelListCache.delete(key);
+    return response.clone();
+  }
+
+  const response = Promise.resolve().then(load);
+  modelListCache.set(key, { version, expiresAt: Date.now() + MODEL_LIST_CACHE_TTL_MS, response });
+  try {
+    const resolved = await response;
+    if (!resolved.ok) modelListCache.delete(key);
+    return resolved.clone();
+  } catch (error) {
+    modelListCache.delete(key);
+    throw error;
+  }
+}
 
 // Model discovery must identify as the same Codex CLI version as inference.
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
@@ -226,13 +257,28 @@ const PROVIDER_MODELS_CONFIG = {
     })
   },
   antigravity: {
-    url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
+    // Live per-account catalog; Google requires the Hub client fingerprint.
+    url: "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "antigravity/hub/2.24.0 darwin/arm64",
+      "X-Client-Name": "antigravity",
+      "X-Client-Version": "2.24.0",
+    },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     body: {},
-    parseResponse: (data) => data.models || []
+    parseResponse: (data) => Object.entries(data?.models || {})
+      .filter(([id, info]) => !info?.isInternal && !id.includes("-disabled") && !id.startsWith("tab_"))
+      .map(([id, info]) => ({
+        id,
+        name: info?.displayName || id,
+        contextLength: info?.maxTokens,
+        maxOutputTokens: info?.maxOutputTokens,
+        isVL: !!info?.supportsImages,
+        isReasoning: !!info?.supportsThinking,
+      }))
   },
   github: {
     url: "https://api.githubcopilot.com/models",
@@ -283,7 +329,7 @@ const PROVIDER_MODELS_CONFIG = {
     url: "https://api.anthropic.com/v1/models",
     method: "GET",
     headers: {
-      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Version": "2026-10-21",
       "Content-Type": "application/json"
     },
     authHeader: "x-api-key",
@@ -327,7 +373,16 @@ const PROVIDER_MODELS_CONFIG = {
   together: createOpenAIModelsConfig("https://api.together.xyz/v1/models"),
   fireworks: createOpenAIModelsConfig("https://api.fireworks.ai/inference/v1/models"),
   cerebras: createOpenAIModelsConfig("https://api.cerebras.ai/v1/models"),
-  cohere: createOpenAIModelsConfig("https://api.cohere.ai/v1/models"),
+  cohere: {
+    customResolver: async (connection) => resolveCohereModels(connection, {
+      proxyOptions: await resolveConnectionProxyConfig(connection.providerSpecificData || {}),
+    }),
+  },
+  pollinations: {
+    customResolver: async (connection) => resolvePollinationsModels(connection, {
+      proxyOptions: await resolveConnectionProxyConfig(connection.providerSpecificData || {}),
+    }),
+  },
   nebius: createOpenAIModelsConfig("https://api.studio.nebius.ai/v1/models"),
   siliconflow: createOpenAIModelsConfig("https://api.siliconflow.com/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),
@@ -556,21 +611,56 @@ const PROVIDER_MODELS_CONFIG = {
       const data = await response.json();
       return { models: parseOpenAIStyleModels(data) };
     }
+  },
+  "cloudflare-ai": {
+    customResolver: async (connection) => {
+      const accountId = connection.providerSpecificData?.accountId;
+      if (!accountId) return { error: "Missing Cloudflare Account ID", status: 400 };
+      const token = connection.apiKey || connection.accessToken;
+      if (!token) return { error: "No API token found", status: 401 };
+      try {
+        const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+        const raw = [];
+        let pages = 1;
+        for (let page = 1; page <= pages; page++) {
+          const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/models/search?page=${page}&per_page=100`;
+          const response = await proxyAwareFetch(url, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            signal: AbortSignal.timeout(10000),
+          }, proxy);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          if (data.success === false || data.errors?.length) throw new Error("Cloudflare returned an API error");
+          raw.push(...(Array.isArray(data.result) ? data.result : Array.isArray(data) ? data : []));
+          const info = data.result_info;
+          pages = Number(info?.total_pages) || Math.ceil(Number(info?.total_count || 0) / Number(info?.per_page || 100)) || 1;
+          if (pages > 20) throw new Error("Cloudflare catalog exceeds 20 pages");
+        }
+        const staticKinds = new Map(getStaticProviderModels("cloudflare-ai").map(model => [model.id, model.kind || "llm"]));
+        const skip = /bge-|embedding|plamo-embedding|aura-|melotts|whisper|nova-|deepgram\/flux|pipecat|smart-turn|resnet|distilbert|m2m100|indictrans|llama-guard|reranker|image-classif|speech|asr/i;
+        const images = /flux|stable-diffusion|dreamshaper|sdxl|phoenix|lucid|sd-v|imagen/i;
+        const models = new Map();
+        for (const model of raw) {
+          // Cloudflare's internal UUID is not an inference ID; older responses put the routing ID in `id`.
+          const id = [model?.name, model?.id].find(value => typeof value === "string" && /^@(cf|hf)\//.test(value));
+          if (!id || skip.test(id) || ["systemone", "embedding", "tts", "stt"].includes(staticKinds.get(id))) continue;
+          const task = model.task?.name || model.type || "";
+          if (/embedding|speech|classification|translation|rerank|audio|text.to.speech/i.test(task)) continue;
+          const isImage = staticKinds.get(id) === "image" || images.test(id) || /image.generation|text.to.image/i.test(task);
+          const name = typeof model.name === "string" && model.name && model.name !== id ? model.name : id.split("/").pop().replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+          models.set(id, { id, name, kind: isImage ? "image" : "llm", description: typeof model.description === "string" ? model.description : "" });
+        }
+        if (models.size) return { models: [...models.values()] };
+        throw new Error("Cloudflare returned no supported chat/image models");
+      } catch (error) {
+        return { models: getStaticProviderModels("cloudflare-ai"), warning: `Failed to fetch Cloudflare models (${error.message}); using static catalog.` };
+      }
+    },
   }
 };
 
-/**
- * GET /api/providers/[id]/models - Get models list from provider
- */
-export async function GET(request, { params }) {
-  try {
-    const { id } = await params;
-    const connection = await getProviderConnectionById(id);
-
-    if (!connection) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
-    }
-
+async function fetchProviderModels(connection) {
     if (isOpenAICompatibleProvider(connection.provider)) {
       const baseUrl = connection.providerSpecificData?.baseUrl;
       if (!baseUrl) {
@@ -663,6 +753,7 @@ export async function GET(request, { params }) {
         provider: connection.provider,
         connectionId: connection.id,
         models: result.models,
+        ...(result.suggestedModels ? { suggestedModels: result.suggestedModels } : {}),
         ...(result.warning ? { warning: result.warning } : {})
       });
     }
@@ -714,8 +805,27 @@ export async function GET(request, { params }) {
       connectionId: connection.id,
       models
     });
+}
+
+/**
+ * GET /api/providers/[id]/models - Get models list from provider
+ */
+export async function GET(request, { params }) {
+  try {
+    const { id } = await params;
+    const connection = await getProviderConnectionById(id);
+
+    if (!connection && id === "pollinations") {
+      return NextResponse.json({ provider: id, ...await resolvePollinationsModels() });
+    }
+
+    if (!connection) {
+      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    }
+
+    return await cachedModelList(connection, () => fetchProviderModels(connection));
   } catch (error) {
     console.log("Error fetching provider models:", error);
-    return NextResponse.json({ error: "Failed to fetch models" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Failed to fetch models" }, { status: error.status || 500 });
   }
 }

@@ -75,11 +75,7 @@ export function createSSEStream(options = {}) {
 
   const state = mode === STREAM_MODE.TRANSLATE
     ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model, sessionId: credentials?._clientSessionId || null,
-        // Which upstream format this stream came from. A response translator can be
-        // reached either directly (target === its registered source) or as the second
-        // hop of a pivot, and on the terminal null chunk the pivot drops it — so a
-        // translator that defers closing events until flush needs to know which case
-        // it is in. Absent/undefined means "unknown", i.e. do not defer.
+        // Only direct Chat streams defer completion to wait for a usage trailer.
         targetFormat }
     : null;
 
@@ -149,6 +145,12 @@ export function createSSEStream(options = {}) {
   };
 
   return new TransformStream({
+    // Client went away mid-stream: flush() never runs on a cancelled readable, so
+    // finalize now — otherwise the retained payload keeps the "[Streaming in
+    // progress...]" placeholder and the usage line never lands.
+    cancel(reason) {
+      finalizeStream();
+    },
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -340,8 +342,8 @@ export function createSSEStream(options = {}) {
           // A direct Chat-to-Responses translation can defer response.completed
           // while waiting for a usage trailer. [DONE] ends that opportunity even
           // if the upstream keeps the HTTP connection open, so finish now.
-          if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES &&
-              state.completionPending && !state.completedSent) {
+            if (targetFormat === FORMATS.OPENAI && ((sourceFormat === FORMATS.OPENAI_RESPONSES &&
+              state.completionPending && !state.completedSent) || (sourceFormat === FORMATS.CLAUDE && state.claudeCompletionPending))) {
             flushPendingCompletion(controller);
           }
 
@@ -421,6 +423,10 @@ export function createSSEStream(options = {}) {
 
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        if (state.claudeCompletionSent && completionFlushTimer) {
+          clearTimeout(completionFlushTimer);
+          completionFlushTimer = null;
+        }
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -440,11 +446,11 @@ export function createSSEStream(options = {}) {
 
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
+            if (sourceFormat !== FORMATS.CLAUDE && state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
               state.usage = estimated;
-            } else if (state.finishReason && isFinishChunk && state.usage) {
+            } else if (sourceFormat !== FORMATS.CLAUDE && state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
               item.usage = filterUsageForFormat(buffered, sourceFormat);
@@ -460,8 +466,8 @@ export function createSSEStream(options = {}) {
         // The completion deferral can outlive the upstream: a broken chat upstream
         // may stall after finish_reason with no usage trailer and no [DONE], holding
         // the connection open. Bound the wait so the client still gets a terminal event.
-        if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES &&
-            state?.completionPending && !state?.completedSent && !completionFlushTimer) {
+        if (targetFormat === FORMATS.OPENAI && ((sourceFormat === FORMATS.OPENAI_RESPONSES &&
+          state?.completionPending && !state?.completedSent) || (sourceFormat === FORMATS.CLAUDE && state?.claudeCompletionPending)) && !completionFlushTimer) {
           completionFlushTimer = setTimeout(() => {
             completionFlushTimer = null;
             if (state?.completedSent) return;

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -20,24 +21,38 @@ import { saveRequestUsage } from "@/lib/usageDb.js";
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui", "veoaifree-web"]);
 
-function recordImageRequestUsage({ provider, model, connectionId, apiKey, endpoint, usage }) {
-  if (!usage || typeof usage !== "object") return;
-  const promptTokens = usage.prompt_tokens;
-  const completionTokens = usage.completion_tokens;
-  if (!Number.isSafeInteger(promptTokens) || promptTokens < 0 ||
-      !Number.isSafeInteger(completionTokens) || completionTokens < 0) {
-    return;
+async function runImageGeneration(options, { provider, model, connectionId, apiKey, endpoint }) {
+  const startedAt = Date.now();
+  const requestId = randomUUID();
+  const tokens = {};
+  let recorded = false;
+  const complete = async (success) => {
+    if (recorded) return;
+    recorded = true;
+    await saveRequestUsage({
+      provider, model, connectionId: connectionId || undefined,
+      apiKey: apiKey || undefined, endpoint: endpoint || null,
+      requestId, timestamp: new Date(startedAt).toISOString(),
+      latencyMs: Date.now() - startedAt, tokens: { ...tokens }, status: success ? "success" : "error",
+    }).catch(() => {});
+  };
+  try {
+    const result = await handleImageGenerationCore({
+      ...options,
+      onUsage: (usage) => {
+        if (!usage || usage.estimated === true) return;
+        for (const key of ["prompt_tokens", "completion_tokens", "input_tokens", "output_tokens", "total_tokens", "cached_tokens", "reasoning_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]) {
+          if (Number.isSafeInteger(usage[key]) && usage[key] >= 0) tokens[key] = usage[key];
+        }
+      },
+      onRequestComplete: complete,
+    });
+    if (!result.usagePending) await complete(result.success);
+    return result;
+  } catch (error) {
+    await complete(false);
+    throw error;
   }
-
-  saveRequestUsage({
-    provider,
-    model,
-    connectionId: connectionId || undefined,
-    apiKey: apiKey || undefined,
-    endpoint: endpoint || null,
-    tokens: usage,
-    status: "success",
-  }).catch(() => {});
 }
 
 /**
@@ -102,12 +117,12 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
-    const result = await handleImageGenerationCore({
+    const result = await runImageGeneration({
       body,
       modelInfo: { provider, model },
       credentials: null,
       binaryOutput,
-    });
+    }, { provider, model, apiKey, endpoint });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Image generation failed");
   }
@@ -145,7 +160,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       continue;
     }
 
-    const result = await handleImageGenerationCore({
+    const result = await runImageGeneration({
       body,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
@@ -159,16 +174,6 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
           testStatus: "active"
         });
       },
-      onUsage: (usage) => {
-        recordImageRequestUsage({
-          provider,
-          model,
-          connectionId: credentials.connectionId,
-          apiKey,
-          endpoint,
-          usage,
-        });
-      },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
         // Cookies that rotate on use (Clerk `__client`) are mutated in place by
@@ -177,7 +182,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
           await updateProviderCredentials(credentials.connectionId, { apiKey: refreshedCredentials.apiKey });
         }
       }
-    });
+    }, { provider, model, connectionId: credentials.connectionId, apiKey, endpoint });
 
     if (result.success) return result.response;
 

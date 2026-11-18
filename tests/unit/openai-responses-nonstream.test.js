@@ -9,6 +9,8 @@ vi.mock("@/lib/usageDb.js", () => ({
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
 const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
+const { convertResponsesStreamToJson } = await import("../../open-sse/transformer/streamToJsonConverter.js");
+const { filterUsageForFormat } = await import("../../open-sse/utils/usageTracking.js");
 
 // A chat.completion body as returned by a chat-native upstream (e.g. op-ericding)
 const CHAT_TOOL_BODY = {
@@ -29,6 +31,20 @@ const CHAT_TOOL_BODY = {
 };
 
 describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)", () => {
+  it("preserves cache usage across response formats", async () => {
+    const claude = { content: [{ type: "text", text: "hi" }], usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 6, cache_creation_input_tokens: 2 } };
+    const chat = translateNonStreamingResponse(claude, FORMATS.CLAUDE, FORMATS.OPENAI);
+    expect(chat.usage).toMatchObject({ prompt_tokens: 18, prompt_tokens_details: { cached_tokens: 6, cache_creation_tokens: 2 } });
+    const responses = translateNonStreamingResponse(claude, FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES);
+    expect(responses.usage.input_tokens_details).toEqual({ cached_tokens: 6, cache_creation_tokens: 2 });
+    expect(translateNonStreamingResponse(chat, FORMATS.OPENAI, FORMATS.CLAUDE).usage).toMatchObject(claude.usage);
+    const gemini = { candidates: [{ content: { parts: [{ text: "hi" }] } }], usageMetadata: { promptTokenCount: 18, candidatesTokenCount: 4, totalTokenCount: 22, cachedContentTokenCount: 6 } };
+    expect(translateNonStreamingResponse(gemini, FORMATS.GEMINI, FORMATS.OPENAI_RESPONSES).usage.input_tokens_details.cached_tokens).toBe(6);
+    expect(filterUsageForFormat(responses.usage, FORMATS.OPENAI_RESPONSES)).toEqual(responses.usage);
+    const event = `event: response.completed\ndata: ${JSON.stringify({ response: { usage: responses.usage } })}\n\n`;
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(event)); controller.close(); } });
+    expect((await convertResponsesStreamToJson(stream)).usage).toEqual(responses.usage);
+  });
   it("translates chat.completion tool_calls into Responses function_call output", () => {
     // translateNonStreamingResponse(body, targetFormat=PROVIDER format, sourceFormat=CLIENT format)
     const out = translateNonStreamingResponse(CHAT_TOOL_BODY, FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES);

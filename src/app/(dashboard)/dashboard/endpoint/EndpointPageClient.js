@@ -19,13 +19,22 @@ import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
 import KeyAccessControls from "./components/KeyAccessControls";
+import QuotaAccessControls from "./components/QuotaAccessControls";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
+  const [promptRetentionStatus, setPromptRetentionStatus] = useState({});
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  // Rename flow: which key's name editor is open + its draft value.
+  const [renamingKeyId, setRenamingKeyId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  // Recent prompt-retention consent changes (ENABLED/DISABLED/revoked).
+  const [retentionEvents, setRetentionEvents] = useState([]);
+  const [showRetentionLog, setShowRetentionLog] = useState(false);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -249,9 +258,10 @@ export default function APIPageClient({ machineId }) {
   const fetchData = async () => {
     try {
       const fetchKeys = async () => {
-        const res = await fetch("/api/keys");
+        const res = await fetch("/api/keys?retentionEvents=1");
         if (!res.ok) return [];
         const data = await res.json();
+        setRetentionEvents(Array.isArray(data.retentionEvents) ? data.retentionEvents : []);
         return data.keys || [];
       };
 
@@ -652,6 +662,7 @@ export default function APIPageClient({ machineId }) {
               next.delete(id);
               return next;
             });
+            fetchData();
           }
         } catch (error) {
           console.log("Error deleting key:", error);
@@ -669,9 +680,64 @@ export default function APIPageClient({ machineId }) {
       });
       if (res.ok) {
         setKeys(prev => prev.map(k => k.id === id ? { ...k, isActive } : k));
+        // Pausing a key revokes its retained prompts — refresh the consent log.
+        if (!isActive) fetchData();
       }
     } catch (error) {
       console.log("Error toggling key:", error);
+    }
+  };
+
+  const startRenameKey = (key) => {
+    setRenamingKeyId(key.id);
+    setRenameValue(key.name || "");
+  };
+
+  const cancelRenameKey = () => {
+    setRenamingKeyId(null);
+    setRenameValue("");
+  };
+
+  const handleRenameKey = async (id) => {
+    const name = renameValue.trim();
+    if (!name) return;
+    setRenameSaving(true);
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.key) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, name: data.key.name } : k));
+        cancelRenameKey();
+      } else {
+        setConfirmState({ title: "Rename Failed", message: data.error || `Failed to rename key (${res.status})`, onConfirm: () => setConfirmState(null), cancelText: "" });
+      }
+    } catch (error) {
+      setConfirmState({ title: "Rename Failed", message: error.message || "Failed to rename key", onConfirm: () => setConfirmState(null), cancelText: "" });
+    } finally {
+      setRenameSaving(false);
+    }
+  };
+
+  // Save a key's quota-view mode (full | anonymized) for /api/quota.
+  const handleUpdateQuotaAccess = async (id, quotaAccess) => {
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quotaAccess }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.key) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, quotaAccess: data.key.quotaAccess } : k));
+      } else {
+        console.log("Error updating key quota access:", data.error || res.status);
+      }
+    } catch (error) {
+      console.log("Error updating key quota access:", error);
     }
   };
 
@@ -686,11 +752,35 @@ export default function APIPageClient({ machineId }) {
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.key) {
         setKeys(prev => prev.map(k => k.id === id ? { ...k, access: data.key.access } : k));
-      } else {
-        console.log("Error updating key access:", data.error || res.status);
+        return null;
       }
+      return data.error || `Failed to update key (${res.status})`;
     } catch (error) {
-      console.log("Error updating key access:", error);
+      return error.message || "Failed to update key access";
+    }
+  };
+
+  const handleUpdatePromptRetention = async (id, promptRetentionEnabled) => {
+    setPromptRetentionStatus(prev => ({ ...prev, [id]: { saving: true, error: null } }));
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ promptRetentionEnabled }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || typeof data.key?.promptRetentionEnabled !== "boolean") {
+        throw new Error(data.error || "Failed to update prompt retention");
+      }
+      setKeys(prev => prev.map(key => key.id === id
+        ? { ...key, promptRetentionEnabled: data.key.promptRetentionEnabled }
+        : key));
+      setPromptRetentionStatus(prev => ({ ...prev, [id]: { saving: false, error: null } }));
+    } catch (error) {
+      setPromptRetentionStatus(prev => ({
+        ...prev,
+        [id]: { saving: false, error: error.message || "Failed to update prompt retention" },
+      }));
     }
   };
 
@@ -1025,7 +1115,40 @@ export default function APIPageClient({ machineId }) {
                 className={`group flex items-start justify-between gap-3 py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                  {/* Name + inline rename */}
+                  {renamingKeyId === key.id ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleRenameKey(key.id);
+                          if (e.key === "Escape") cancelRenameKey();
+                        }}
+                        autoFocus
+                        placeholder="Key name"
+                        inputClassName="!py-1 !text-sm"
+                        className="max-w-xs"
+                      />
+                      <Button size="sm" onClick={() => handleRenameKey(key.id)} disabled={!renameValue.trim() || renameSaving} loading={renameSaving}>
+                        Save
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={cancelRenameKey} disabled={renameSaving}>
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className="text-sm font-medium truncate">{key.name}</p>
+                      <button
+                        onClick={() => startRenameKey(key)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all opacity-60 hover:opacity-100"
+                        title="Rename key"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">edit</span>
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-1 min-w-0 flex-wrap">
                     <code className="text-xs text-text-muted font-mono break-all min-w-0">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
@@ -1056,6 +1179,31 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  <div className="mt-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={key.promptRetentionEnabled === true}
+                        disabled={promptRetentionStatus[key.id]?.saving === true}
+                        onChange={(event) => handleUpdatePromptRetention(key.id, event.target.checked)}
+                        aria-describedby={`prompt-retention-description-${key.id}`}
+                        className="accent-primary"
+                      />
+                      Retain prompts for debugging
+                      {promptRetentionStatus[key.id]?.saving && <span className="text-xs text-text-muted" role="status">Saving…</span>}
+                    </label>
+                    <p id={`prompt-retention-description-${key.id}`} className="text-xs text-text-muted mt-1">
+                      For this key only, prompts and request/response debugging data are held in memory for up to one hour,
+                      cleared on restart or when disabled, and visible to signed-in dashboard users in Usage request details. This data may contain sensitive information.
+                    </p>
+                    {promptRetentionStatus[key.id]?.error && (
+                      <p role="alert" className="text-xs text-red-500 mt-1">{promptRetentionStatus[key.id].error}</p>
+                    )}
+                  </div>
+                  <QuotaAccessControls
+                    apiKey={key}
+                    onChange={(quotaAccess) => handleUpdateQuotaAccess(key.id, quotaAccess)}
+                  />
                   <KeyAccessControls
                     apiKey={key}
                     onChange={(access) => handleUpdateKeyAccess(key.id, access)}
@@ -1098,6 +1246,35 @@ export default function APIPageClient({ machineId }) {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Prompt retention consent activity */}
+        {retentionEvents.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-border">
+            <button
+              onClick={() => setShowRetentionLog(prev => !prev)}
+              className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-main transition-colors"
+            >
+              <span className={`material-symbols-outlined text-[16px] transition-transform ${showRetentionLog ? "rotate-90" : ""}`}>chevron_right</span>
+              Prompt retention activity
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-surface-2 text-text-muted">{retentionEvents.length}</span>
+            </button>
+            {showRetentionLog && (
+              <ul className="mt-2 flex flex-col gap-1 max-h-48 overflow-y-auto">
+                {retentionEvents.map((event, i) => (
+                  <li key={`${event.at}-${event.keyId}-${i}`} className="text-xs text-text-muted flex items-center gap-2 flex-wrap">
+                    <span className={`font-medium ${event.enabled ? "text-green-600 dark:text-green-400" : "text-orange-500"}`}>
+                      {event.enabled ? "Enabled" : "Disabled"}
+                    </span>
+                    <span className="text-text-main">{event.keyName || event.keyId}</span>
+                    {event.maskedKey && <code className="font-mono">{event.maskedKey}</code>}
+                    {event.source && <span className="px-1.5 py-0.5 rounded bg-surface-2 text-[10px]">{event.source}</span>}
+                    <span>{new Date(event.at).toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </Card>

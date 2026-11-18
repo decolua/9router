@@ -4,6 +4,8 @@
 // without notice. Keep upstream-specific constants in this module so that a
 // site update is a one-file fix.
 
+import { toPlaywrightCookies } from "../../utils/webCookieAuth.js";
+
 const SITE = "https://muse.ai";
 const NEW_THREAD_URL = `${SITE}/thread/new`;
 const SESSION_API = `${SITE}/api/session`;
@@ -88,16 +90,7 @@ export function missingSessionCookies(pairs) {
 
 /** Playwright addCookies() shape for the .muse.ai domain. */
 export function toMuseCookies(header) {
-  return parseCookiePairs(header).map(({ name, value }) => ({
-    name,
-    value,
-    domain: ".muse.ai",
-    path: "/",
-    secure: true,
-    httpOnly: false,
-    sameSite: "Lax",
-    expires: -1,
-  }));
+  return toPlaywrightCookies(header, ".muse.ai");
 }
 
 function readSetCookies(response) {

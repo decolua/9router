@@ -1,3 +1,66 @@
+# v0.5.120-beta.14 (2026-11-17)
+
+## Fixes
+- **GPT-6.2 pricing**: share rates across OpenAI API and Codex. Per million tokens (input/cached read/cache write/output): Sol $2/$0.10/$2.50/$10; Astra $8/$0.40/$10/$40. Reasoning uses the output rate.
+- **Antigravity**: strip/rewrite Claude Code prompt fingerprints that trigger fake 429 responses (PR #5733); use the live per-account catalog and hide disabled/internal models in provider model discovery (PR #5734).
+- **Kimi Code**: recognize K3.1 Pro and Highspeed IDs with 1,048,576-token context metadata (PR #5722).
+- **Codex images**: resize individual inline and fetched images exceeding 30,000 32×32 patches before forwarding. Preserve aspect ratio and requested detail; images within the limit remain unchanged. Install Sharp directly for server and CLI image processing.
+
+## Features
+- **Codex**: add GPT-6.2 Sol and Astra upstream IDs; explicit `cx/` or `codex/` prefixes select OAuth while bare IDs retain OpenAI API routing.
+- **OpenAI**: add GPT-6.2 Sol and Astra from PR #5737 with API-scoped capabilities/pricing and exact bare-ID routing, including thinking suffixes. Preserve explicit providers, aliases and neighboring Codex routes.
+- **Free-tier providers**: add Cohere chat, multimodal embeddings and transcription using evaluation API keys; add Pollinations chat, embeddings, images/edits, speech, transcription, decisions and realtime, with native video job routing when an eligible model is available. Populate supported models automatically from the live catalogs in provider pages, selectors and `/v1/models`; exclude deprecated/ineligible Cohere models and Pollinations paid-only models. Free-tier allowances, key permissions and account budgets still apply.
+- **Gemini 4 Hydrogen**: add `gemini-4-hydrogen` to the Gemini API provider, and to Antigravity as `gemini-4-hydrogen-xhigh|high|medium|low` plus a bare `gemini-4-hydrogen` that resolves to `-high` (Hydrogen's default level). Hydrogen serves a native `xhigh` thinking level: `xhigh`/`max`/`ultra` intents (or an `(xhigh)` suffix) reach the wire as `thinkingLevel: "xhigh"` instead of collapsing to `high`, and on Antigravity a client `reasoning_effort: "xhigh"`/`"max"` routes to the `-xhigh` tier. Only tier-preset entries whose upstream id carries `(xhigh)` can be promoted, so standalone ids such as `ws/gpt-5.4-xhigh` are never swapped in by a client setting. `none`/`minimal` still floor at `low` (Hydrogen 400s on MINIMAL). Declares 1M context, 64K per-request output and PDF/audio/video input; bills at $1.50/$7.50 with $0.075 cached reads; adds the tiers to the Antigravity quota list, the Antigravity IDE (MITM) slots and the CLI model menus.
+- **Gemini 4 Hydrogen**: long decode — a `max_tokens` above 64K now runs Google's `CONTINUATION` hops inside the gateway (Gemini API: top-level `continuationToken`; Antigravity: `request.continuationToken`), streaming and non-streaming, so the client sees one continuous turn with usage summed across hops. A failed later hop ends the turn as `MAX_TOKENS`. Antigravity keeps Hydrogen's requested output budget instead of capping it at 64,000; other models stay capped.
+
+## Fixes
+- **Pollinations pricing**: automatically list only explicitly zero-priced models; Quest-eligible or unknown-price models are opt-in suggestions, never automatically enabled.
+- **Pollinations**: recognize currency-only Pollen pricing as charge-free, so `stealth/glyph-cluster` appears automatically; missing pricing and nonzero charges remain suggestions.
+- **Model discovery**: load Pollinations' public catalog without requiring a saved connection, populate Cohere/Pollinations media model cards from live discovery, preserve successful empty catalogs and display discovery failures.
+- **Thinking**: map an `ultra` effort to `high` on Gemini level-based models without an `xhigh` tier, instead of letting it fall through to the lowest level.
+- **Antigravity**: reword six more fingerprinted Hermes Agent prompt strings in `ANTIGRAVITY_PROMPT_REWRITES` (`Be direct: match the length of your reply…`, `…is your authoritative reference`, `Hermes delivers their message…`, `# Hermes runtime environment` and its end marker, `# Google model operational directives`). Antigravity answers any one of them with a detail-free 429 `RESOURCE_EXHAUSTED` on every model, which looked like an exhausted quota. The rewrites keep the meaning and leave identifiers such as `skill_view(name='hermes-agent')` and the docs URL intact.
+- **Antigravity**: classify that bare `RESOURCE_EXHAUSTED` 429 (generic "Resource has been exhausted (e.g. check quota)." with no `details`) as a request-scoped 400 explaining that the prompt was rejected, instead of retrying it, refreshing quota and locking the model on the account. Real quota 429s, which carry `ErrorInfo`/`RetryInfo`, are handled as before.
+- **Antigravity**: reword OpenClaw's opening identity line (`You are a personal assistant running inside OpenClaw.` → `…that runs inside OpenClaw.`), which triggers the same detail-free 429 rejection on every model.
+
+
+## Fixes
+- **Usage**: prompt-retention captures no longer break on large Anthropic `/v1/messages` requests. Retained payloads use a dedicated cap (`OBSERVABILITY_RETENTION_MAX_JSON_SIZE`, default 10MB) instead of the 5KB disk-observability limit, so Original/Client/Translated views stay renderable for real Claude Code bodies, and a client disconnect mid-stream now finalizes the capture instead of leaving the response placeholder empty forever.
+- **Usage**: Original and Client views now show the system prompt. Anthropic `/v1/messages` carries it in a top-level `system` field (string or content-block array) that the message extractor ignored; it is prepended as the first system-role message, along with Responses `instructions` and Gemini `systemInstruction`. OpenAI-wire bodies (system already inside `messages[]`) are unchanged.
+
+## Features
+- **Dashboard**: hide the 9Remote and 9English sidebar promo buttons via environment — `NINEROUTER_HIDE_PROMOS=true` hides both, `NINEROUTER_HIDE_9REMOTE=true` / `NINEROUTER_HIDE_9ENGLISH=true` hide one; the flags surface through `/api/settings`.
+- **Endpoint**: restructure the API keys management list — key names gain an inline rename editor (edit icon, Enter saves, Escape cancels; `PUT /api/keys/[id]` accepts a validated name) and delete refreshes the list and consent panel in place.
+- **Usage**: log prompt-retention consent changes with attribution (key name + masked key, never the raw key) — dashboard toggles, key creation, pause/delete revocations, database imports, and server restarts all land in a 200-entry activity ring shown as a collapsible panel on the API Endpoint page and mirrored to the server log as `[PromptRetention]` lines.
+
+- Add per-API-key opt-in chat prompt/request/response debugging retention, disabled for new and existing keys. Captures stay in process memory for at most one hour, bounded by observability record/JSON limits, and appear in Usage request details only for signed-in dashboard users. Enable “Retain prompts for debugging” on the API Endpoint page, or send `promptRetentionEnabled: true` when creating/updating a key. Enabling a key is sufficient; global observability/logging flags never grant consent.
+- Disabling retention, pausing/deleting a key, importing keys, or restarting clears captured payloads; in-flight requests cannot restore data after revocation. Disk request details now hold metadata only; startup strips legacy request-detail payloads. Automatic unbounded `logs/` request dumps are removed. Previously created log files, external backups, and copies already downloaded by dashboard users are not erased.
+
+# v0.5.120-beta.4 (2026-11-11)
+
+## Upstream
+- Rebase third-party and local changes onto decolua/9router `54a88d04` (v0.5.119), preserving upstream transport, live model discovery, thinking-level metadata, and stream sentinel fixes. Replace the superseded v0.5.117-beta.6 release commit.
+
+## Features
+- Log in to web-cookie providers inside Docker through an embedded Chromium viewer, backed by Xvfb and DevTools screencasting with mouse, keyboard, paste, and popup-tab controls. Viewer capabilities expire when login finishes or is cancelled.
+- Add a Browser workspace for independent, resumable browser sessions and persisted profile creation, renaming, and deletion, with an accessible icon toolbar, popup tabs, an address bar, and viewport-fitted streaming.
+- Manage linked API-key model groups and grant individual models, combos, or all models of a provider via `provider/*`.
+- Configure per-model upstream TTS codecs, PCM sample rates and channels; convert PCM to WAV or MP3 instead of returning raw PCM.
+- Add experimental Codex speech synthesis, MP3 and base64 MP3 output, provider realtime websocket routing, and realtime model categories.
+- Support custom OpenRouter speech models and display account credits, applicable budgets, and daily request limits.
+- Expose supported reasoning effort metadata alongside upstream `thinking_levels`.
+
+## Fixes
+- Upgrade direct Anthropic API-key requests to API version 2026-10-21, remove retired sampling parameters and Claude Code beta headers, and refresh the model catalog and key probes. Non-default sampling settings no longer affect these requests.
+- Record TTS, STT, image/video generation, embeddings, and System One decisions (including smart-router evaluations) in usage even when no token counts are returned; retain account/API-key attribution and failed attempts without counting video status polling as generation.
+- Fix Muse Web browser startup and session refresh rejecting `__Host-` cookies with “Invalid cookie fields” by preserving their host-only domain.
+- Display the realtime websocket endpoint, retry stalled initial Codex streams, and handle realtime turn completion.
+- Use the correct Codex speech tester defaults and supported voices.
+- Support OpenRouter models requiring the dedicated speech endpoint.
+- Use client-compatible `-1m` suffixes for Codex extended-context models.
+- Resolve Antigravity search model aliases and default to Gemini 3.8 Flash.
+- Preserve reported cache token usage across response conversions and streaming diagnostics.
+- Update OpenRouter smoke checks to mock the proxy transport boundary now that upstream fetch uses its own undici instance.
+
 # v0.5.119 (2026-11-11)
 
 ## Features
@@ -78,6 +141,11 @@
 - **Nace Drex**: add the `nace` provider to the System One lane with `drex`, `drex-v2.0` and `drex-max`
 - **CommandCode**: align request headers with the official CLI 1.88.0 through a shared `commandCodeHeaders` service
 - **Codex**: add `gpt-6.1-terra` (responses-lite lane, GPT-6-Lite thinking levels)
+- **Codex**: add opt-in quota-weighted account balancing with custom 5h and weekly usage ceilings or usage-to-priority rules; the worse window determines traffic weight alongside account priority, with separate Spark quotas, cached account-bound usage reads, and reset-aware fallback
+- **Combos**: add the `sticky-fallback` strategy — after the original first model fails and traffic moves to a later member, keep starting there to keep its upstream prompt cache warm; repeated failures on the parked member (`comboStickyRoundRobinLimit`) rotate back to the original first model, and unused positions expire after 2h / on combo or settings change
+
+## Notes
+- **Quota balancing**: preserves strict-proxy policy; cached readings and in-flight requests make ceilings best-effort, and quota API outages fail open after stale readings expire
 
 ## Fixes
 - **NVIDIA NIM**: normalize assistant `reasoning` aliases to `reasoning_content` before forwarding, avoiding NIM's duplicate-field 400 when clients send both.
@@ -88,6 +156,8 @@
 - **Providers**: keep full `LLM|id|secret` (Muse) key strings opaque in bulk-add instead of splitting on the first pipe into name/key, auto-naming them LLM 1, LLM 2, …
 - **DeepSeek**: replace the vendored PoW hash implementation with a noble-hashes keccak port (DeepSeekHashV1, SHA3-256 with round 0 skipped), shrinking `deepseek-pow-hash.js` by ~430 lines
 - **GitHub Copilot**: apply Claude 5.5 thinking rules to Copilot's dotted model ids (`claude-opus-5.5*`, `claude-sonnet-5.5`) and make `claude-haiku-5.5` adaptive-only on its Anthropic-native shim, whose budget-shaped thinking comes back 400
+- **OpenAI translator**: default missing `function.parameters` to an empty object schema so strict upstreams no longer 400 with "missing field \`parameters\`" (#5222)
+- **Responses streaming**: assign sequential output indices across reasoning, messages, and tool calls, and preserve terminal flushing through Gemini/Antigravity translation so Codex Desktop no longer rejects duplicate indices or misses `response.completed` when upstream omits a finish marker
 
 # v0.5.111 (2026-10-26)
 
@@ -125,8 +195,6 @@
 - **STT**: add Codex OAuth transcription provider (`cx/transcribe`), reusing existing Codex OAuth chat connections with 24 kHz PCM16 WAV conversion and bounded private temp files (#5074)
 
 ## Fixes
-- **CodeBuddy**: send the plugin's request/conversation id headers (`X-Request-ID`, `X-Conversation-ID`, `X-Conversation-Request-ID`, `X-Conversation-Message-ID`) on CN and intl chat requests — without them the gateway's channel check rejects every call with `400 / 11128 "request illegal"`
-- **CodeBuddy**: align the `#5024` backoff tests with the current request-scoped contract — `checkFallbackError` reports `requestScoped: true` for unclassified 4xx, and a combo now advances past a malformed CodeBuddy body instead of stopping on the first member
 - **Combos**: advance past request-scoped 4xx rejections (validation, unsupported parameter, context overflow) instead of terminating combo (#5057)
 - **Combos**: fall through to next member when streaming response returns HTTP 200 but produces zero content frames (#ca7b540)
 - **Combos**: try next model when provider returns HTTP 400 for insufficient credits or balance too low (#4713)

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ZCode verification</title>
+  <script src="https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js"></script>
+  <style>
+    body { font: 16px system-ui; margin: 0; min-height: 100vh; display: grid; place-items: center; color: #eee; background: #111827; }
+    main { width: min(28rem, calc(100% - 2rem)); padding: 2rem; border: 1px solid #374151; border-radius: 1rem; background: #1f2937; }
+    #captcha { min-height: 6rem; display: grid; place-items: center; }
+    #trigger { display: none; }
+    .error { color: #fca5a5; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ZCode security verification</h1>
+  <p id="status">Loading verification…</p>
+  <div id="captcha"></div>
+  <button id="trigger" type="button"></button>
+</main>
+<script>
+  const interactive = new URLSearchParams(location.search).get("mode") === "interactive";
+  const status = document.getElementById("status");
+
+  async function post(path, body) {
+    if (typeof window.__zcodePost === "function") return window.__zcodePost(path, body || null);
+    const response = await fetch(`/api/zcode/captcha/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!response.ok) throw new Error(await response.text());
+  }
+
+  async function requestInteractive() {
+    if (interactive) return;
+    await post("needs-interactive").catch(() => {});
+  }
+
+  async function init() {
+    try {
+      const response = await fetch("/api/zcode/captcha/config");
+      if (!response.ok) throw new Error("Unable to load captcha configuration");
+      const config = await response.json();
+      if (!config.enabled) throw new Error("Captcha is disabled upstream");
+      if (typeof window.initAliyunCaptcha !== "function") throw new Error("Alibaba captcha SDK did not load");
+      window.initAliyunCaptcha({
+        SceneId: config.sceneId,
+        mode: "popup",
+        region: config.region,
+        prefix: config.prefix,
+        element: "#captcha",
+        button: "#trigger",
+        captchaLogoImg: "",
+        showErrorTip: false,
+        getInstance(instance) {
+          window.__captcha = instance;
+          status.textContent = interactive ? "Complete the puzzle to continue." : "Running security verification…";
+          if (interactive && typeof instance.show === "function") instance.show();
+          else if (!interactive && typeof instance.startTracelessVerification === "function") instance.startTracelessVerification();
+          else if (typeof instance.show === "function") instance.show();
+          else document.getElementById("trigger").click();
+        },
+        async success(verifyParam) {
+          await post("submit", { verifyParam });
+          status.textContent = "Verification complete. The request will continue automatically.";
+        },
+        async fail() { status.textContent = "Opening manual verification…"; await requestInteractive(); },
+        async onError() { status.textContent = "Opening manual verification…"; await requestInteractive(); },
+      });
+    } catch (error) {
+      status.className = "error";
+      status.textContent = error.message;
+      await requestInteractive();
+    }
+  }
+
+  window.__resetCaptcha = async () => {
+    try { window.__captcha?.destroy?.(); } catch {}
+    document.getElementById("captcha").replaceChildren();
+    await init();
+  };
+  init();
+</script>
+</body>
+</html>

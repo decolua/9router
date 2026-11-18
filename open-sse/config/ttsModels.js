@@ -101,6 +101,9 @@ const PHONON_DEFAULT_VOICE = [
 
 // ── TTS Config (config-driven, single source of truth) ─────────────────────
 export const TTS_MODELS_CONFIG = {
+  codex: {
+    voices: { speech: ["cove", "arbor", "breeze", "ember", "juniper", "maple", "sol", "spruce", "vale"].map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1), type: "tts" })) },
+  },
   openai: {
     models: [
       { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },

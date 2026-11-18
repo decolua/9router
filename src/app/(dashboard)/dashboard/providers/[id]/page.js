@@ -26,18 +26,14 @@ import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
 import CustomConfigCard from "./CustomConfigCard";
 import AutoPingScheduleModal from "./AutoPingScheduleModal";
 import WebLoginButton, { WEB_LOGIN_PROVIDERS } from "../components/WebLoginButton.js";
-import MinimaxLeaseButton from "../components/MinimaxLeaseButton.js";
 import { getScheduleSlotLabels } from "@/shared/services/quotaPingSchedule";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
-const MCODE_LEASE_PROVIDERS = new Set(["minimax-code", "minimax-code-global"]);
-
 // Providers whose registry list is only an offline fallback: the dashboard
 // renders the live per-connection catalog from GET /api/providers/[id]/models
 // when one resolves, and falls back to the static rows otherwise.
-const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode"]);
-
+const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode", "cohere", "pollinations", "antigravity"]);
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
   codex: "codexAutoPing",
@@ -79,12 +75,12 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [strategyError, setStrategyError] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {}, schedules: {} });
   const [scheduleConnection, setScheduleConnection] = useState(null);
   const [suggestedModels, setSuggestedModels] = useState([]);
-  const [liveModels, setLiveModels] = useState([]);
-  // Live-catalog fetch warning/error (surfaced for zed only; cursor behavior unchanged).
+  const [liveModels, setLiveModels] = useState(null);
   const [liveModelsError, setLiveModelsError] = useState(null);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
@@ -168,7 +164,7 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = LIVE_MODEL_CATALOG_PROVIDERS.has(providerId) && liveModels.length > 0
+  const models = LIVE_MODEL_CATALOG_PROVIDERS.has(providerId) && liveModels !== null
     ? liveModels
     : applyQoderModelNames(staticModels, customModels, getProviderAlias(providerId));
   const providerAlias = getProviderAlias(providerId);
@@ -388,8 +384,10 @@ export default function ProviderDetailPage() {
 
   const saveProviderStrategy = async (strategy, stickyLimit) => {
     try {
+      setStrategyError("");
       const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      if (!settingsRes.ok) throw new Error("Could not load provider strategies");
+      const settingsData = await settingsRes.json();
       const current = settingsData.providerStrategies || {};
 
       // Build override: null strategy means remove override, use global
@@ -406,12 +404,15 @@ export default function ProviderDetailPage() {
         updated[providerId] = override;
       }
 
-      await fetch("/api/settings", {
+      const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerStrategies: updated }),
       });
+      if (!res.ok) throw new Error("Could not save provider strategy");
+      setProviderStrategy(strategy);
     } catch (error) {
+      setStrategyError(error.message);
       console.log("Error saving provider strategy:", error);
     }
   };
@@ -486,10 +487,7 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
-  // Live per-connection catalogs (cursor, zed): the static registry carries
-  // no usable list, so resolve from the active connection. Fires only when
-  // the provider id or connection list changes — no polling, no loop.
-  // Cursor path is statement-identical to before; zed adds error surfacing.
+  // Resolve account catalogs when connected; Pollinations also has a public catalog.
   useEffect(() => {
     const isLiveCatalog = LIVE_MODEL_CATALOG_PROVIDERS.has(providerId);
     if (!isLiveCatalog) {
@@ -498,32 +496,34 @@ export default function ProviderDetailPage() {
     }
 
     const connection = connections.find((item) => item.isActive !== false);
-    if (!connection?.id) {
-      setLiveModels([]);
-      if (providerId === "zed") setLiveModelsError(null);
+    if (!connection?.id && providerId !== "pollinations") {
+      setLiveModels(null);
+      setLiveModelsError(null);
       return;
     }
 
     let cancelled = false;
-    if (providerId === "zed") setLiveModelsError(null);
-    fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" })
+    setLiveModels(null);
+    setLiveModelsError(null);
+    fetch(`/api/providers/${connection?.id || providerId}/models`, { cache: "no-store" })
       .then(async (res) => ({ ok: res.ok, data: await res.json().catch(() => null) }))
       .then(({ ok, data }) => {
         if (cancelled) return;
-        if (ok && Array.isArray(data?.models) && data.models.length > 0) {
+        if (ok && Array.isArray(data?.models) && (data.models.length > 0 || ["cohere", "pollinations"].includes(providerId))) {
           setLiveModels(data.models);
-          if (providerId === "zed" && data?.warning) setLiveModelsError(data.warning);
+          if (providerId === "pollinations") setSuggestedModels((data.suggestedModels || []).filter((model) => model.kind === "llm"));
+          if (data?.warning) setLiveModelsError(data.warning);
           return;
         }
-        if (providerId === "zed") {
-          setLiveModels([]);
-          setLiveModelsError(data?.warning || data?.error || "Zed returned no live models.");
+        if (["zed", "cohere", "pollinations"].includes(providerId)) {
+          setLiveModels(null);
+          setLiveModelsError(data?.warning || data?.error || "Failed to load the model catalog.");
         }
       })
       .catch(() => {
-        if (!cancelled && providerId === "zed") {
-          setLiveModels([]);
-          setLiveModelsError("Failed to reach the Zed model catalog.");
+        if (!cancelled && ["zed", "cohere", "pollinations"].includes(providerId)) {
+          setLiveModels(null);
+          setLiveModelsError("Failed to reach the model catalog.");
         }
       });
 
@@ -907,12 +907,17 @@ export default function ProviderDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Could not save connection");
+      }
       if (res.ok) {
         await fetchConnections();
         setShowEditModal(false);
       }
     } catch (error) {
       console.log("Error updating connection:", error);
+      throw error;
     }
   };
 
@@ -1329,7 +1334,7 @@ export default function ProviderDetailPage() {
           if (notAdded.length === 0) return null;
           return (
             <div className="w-full mt-2">
-              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+              <p className="text-xs text-text-muted mb-2">{providerId === "pollinations" ? "Quest-eligible suggestions — consume Pollen; add explicitly:" : "Suggested free models (≥200k context):"}</p>
               <div className="flex flex-wrap gap-2">
                 {notAdded.map((m) => (
                   <button
@@ -1601,11 +1606,24 @@ export default function ProviderDetailPage() {
               )}
               {/* Round Robin toggle */}
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-text-muted font-medium">Round Robin</span>
-                <Toggle
-                  checked={providerStrategy === "round-robin"}
-                  onChange={handleRoundRobinToggle}
-                />
+                {providerId === "codex" ? (
+                  <Select
+                    aria-label="Codex account balancing"
+                    value={providerStrategy || "global"}
+                    onChange={e => saveProviderStrategy(e.target.value === "global" ? null : e.target.value, providerStickyLimit)}
+                    options={[
+                      { value: "global", label: "Use global strategy" },
+                      { value: "fill-first", label: "Fill first" },
+                      { value: "round-robin", label: "Round robin" },
+                      { value: "quota-weighted", label: "Quota-weighted" },
+                    ]}
+                  />
+                ) : (
+                  <>
+                    <span className="text-xs text-text-muted font-medium">Round Robin</span>
+                    <Toggle checked={providerStrategy === "round-robin"} onChange={handleRoundRobinToggle} />
+                  </>
+                )}
                 {providerStrategy === "round-robin" && (
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-text-muted">Sticky:</span>
@@ -1622,6 +1640,11 @@ export default function ProviderDetailPage() {
               </div>
             </div>
           </div>
+
+          {strategyError && <p role="alert" className="mb-3 text-sm text-red-500">{strategyError}</p>}
+          {providerId === "codex" && providerStrategy === "quota-weighted" && (
+            <p className="mb-4 text-xs text-text-muted">Edit each connection to configure 5h and weekly usage ceilings or usage-to-priority rules. Routing uses the worse window; unknown quota is used only when no measured account is available.</p>
+          )}
 
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1652,9 +1675,6 @@ export default function ProviderDetailPage() {
                   <>
                     {!isCompatible && WEB_LOGIN_PROVIDERS.has(providerId) && (
                       <WebLoginButton providerId={providerId} onConnected={fetchConnections} />
-                    )}
-                    {!isCompatible && MCODE_LEASE_PROVIDERS.has(providerId) && (
-                      <MinimaxLeaseButton providerId={providerId} onConnected={fetchConnections} />
                     )}
                     {!isCompatible && providerId === "iflow" && (
                       <Button size="sm" icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
@@ -1718,9 +1738,6 @@ export default function ProviderDetailPage() {
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {WEB_LOGIN_PROVIDERS.has(providerId) && (
                     <WebLoginButton providerId={providerId} onConnected={fetchConnections} />
-                  )}
-                  {MCODE_LEASE_PROVIDERS.has(providerId) && (
-                    <MinimaxLeaseButton providerId={providerId} onConnected={fetchConnections} />
                   )}
                   {providerId === "iflow" && (
                     <Button
@@ -1796,7 +1813,7 @@ export default function ProviderDetailPage() {
       )}
 
       {/* Per-provider user overrides (custom headers / connect timeout) */}
-      <CustomConfigCard providerId={providerId} />
+      <CustomConfigCard providerId={providerId} showEmpty={isCompatible} />
 
       {/* Models */}
       <Card>
@@ -1869,7 +1886,7 @@ export default function ProviderDetailPage() {
             })()}
           </div>
         )}
-        {providerId === "zed" && !!liveModelsError && (
+        {!!liveModelsError && (
           <p className="text-xs text-red-500 mb-3 break-words">{liveModelsError}</p>
         )}
         {renderModelsSection()}

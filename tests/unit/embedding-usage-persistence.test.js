@@ -11,7 +11,7 @@ vi.mock("../../src/sse/services/auth.js", () => ({
     connectionId: "connection-a",
     connectionName: "Provider A",
   }),
-  markAccountUnavailable: vi.fn(),
+  markAccountUnavailable: async () => ({ shouldFallback: false }),
   clearAccountError: vi.fn(),
   extractApiKey: () => "client-key",
   isValidApiKey: vi.fn(),
@@ -74,7 +74,7 @@ describe("embedding usage persistence", () => {
     { prompt_tokens: 12, total_tokens: 13 },
     { prompt_tokens: 12, completion_tokens: 1, total_tokens: 12 },
     { prompt_tokens: 12, total_tokens: 12, estimated: true },
-  ])("does not record inexact usage %#", async (usage) => {
+  ])("counts requests without inventing tokens for inexact usage %#", async (usage) => {
     mocks.handleEmbeddingsCore.mockResolvedValue({
       success: true,
       usage,
@@ -86,6 +86,17 @@ describe("embedding usage persistence", () => {
       body: JSON.stringify({ model: "openai/text-embedding-3-small", input: "hello" }),
     }));
 
-    expect(mocks.saveRequestUsage).not.toHaveBeenCalled();
+    expect(mocks.saveRequestUsage).toHaveBeenCalledWith(expect.objectContaining({
+      endpoint: "/v1/embeddings", status: "success", tokens: {},
+    }));
+  });
+  it("records a failed inference without changing its response", async () => {
+    const response = Response.json({ error: "unavailable" }, { status: 503 });
+    mocks.handleEmbeddingsCore.mockResolvedValue({ success: false, status: 503, error: "unavailable", response });
+    const result = await handleEmbeddings(new Request("http://localhost/v1/embeddings", {
+      method: "POST", body: JSON.stringify({ model: "openai/text-embedding-3-small", input: "hello" }),
+    }));
+    expect(result).toBe(response);
+    expect(mocks.saveRequestUsage).toHaveBeenCalledWith(expect.objectContaining({ status: "503", tokens: {} }));
   });
 });

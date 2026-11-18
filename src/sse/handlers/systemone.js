@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -114,33 +115,28 @@ export async function handleSystemone(request) {
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleSystemoneCore({
-      body,
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      log,
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-      }
-    });
-
-    if (result.success) {
-      if (result.usage) {
-        saveRequestUsage({
-          provider,
-          model,
-          connectionId: credentials.connectionId,
-          apiKey,
-          endpoint: url.pathname,
-          tokens: {
-            ...result.usage,
-            total_tokens: result.usage.prompt_tokens + result.usage.completion_tokens,
-          },
-          status: "success",
-        }).catch(() => {});
-      }
-      return result.response;
+    const startedAt = Date.now();
+    let result;
+    try {
+      result = await handleSystemoneCore({
+        body,
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        log,
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        }
+      });
+    } finally {
+      await saveRequestUsage({
+        requestId: randomUUID(), provider, model,
+        connectionId: credentials.connectionId, apiKey, endpoint: url.pathname,
+        timestamp: new Date(startedAt).toISOString(), latencyMs: Date.now() - startedAt,
+        tokens: result?.usage || {},
+        status: result?.success ? "success" : String(result?.status || 502),
+      });
     }
+    if (result.success) return result.response;
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 

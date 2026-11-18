@@ -3,6 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { buildCommandCodeHeaders } from "../shared/commandCodeHeaders.js";
 import { commandCodeToOpenAIResponse } from "../translator/response/commandcode-to-openai.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
+import { commandCodeThreadId, isCommandCodeThreadId } from "../utils/commandCodeSession.js";
 
 /**
  * CommandCodeExecutor — talks to https://api.commandcode.ai/alpha/generate
@@ -34,7 +35,8 @@ export class CommandCodeExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true, url, model, transformedBody) {
     return buildCommandCodeHeaders({
       apiKey: credentials?.apiKey || credentials?.accessToken,
-      sessionId: transformedBody?.threadId,
+      sessionId: isCommandCodeThreadId(transformedBody?.threadId)
+        ? transformedBody.threadId : commandCodeThreadId(transformedBody),
       accept: stream ? "text/event-stream" : null,
     });
   }

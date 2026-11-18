@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.5.119",
+  "version": "0.5.120-beta.14",
   "description": "9Router web dashboard",
   "private": true,
   "engines": {
@@ -45,17 +45,19 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.7.0",
+    "sharp": "^0.35.5",
     "socks-proxy-agent": "^8.0.5",
     "sql.js": "^1.14.1",
     "undici": "^7.30.2",
     "uuid": "^13.0.0",
+    "werift": "^0.26.0",
+    "ws": "^8.18.0",
     "zustand": "^5.0.10"
   },
   "optionalDependencies": {
     "@aws-sdk/credential-providers": "^3.1135.0",
     "ajv": "^8.17.1",
-    "better-sqlite3": "^12.6.2",
-    "ws": "^8.18.0"
+    "better-sqlite3": "^12.6.2"
   },
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "comment_aws_sdk_credential_providers": "kept in optionalDependencies (npm still installs these by default) and imported lazily in shared/awsCredentials.js — only AWS Bedrock connections using profile/SSO mode need it; static accessKeyId/secretAccessKey connections never load it",
@@ -67,6 +69,7 @@
     "playwright-core": "^1.62.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^4",
+    "vitest": "^5.0.5",
     "wreq-js": "^3.2.0"
   },
   "overrides": {

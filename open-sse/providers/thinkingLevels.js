@@ -4,6 +4,7 @@ import { getCapabilitiesForModel } from "./capabilities.js";
 import { matchPattern } from "./pricing.js";
 import { resolveKiroEffortPath } from "../config/kiroConstants.js";
 import { getProviderModels } from "../config/providerModels.js";
+import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 
 // Shared level sets (deduped) — verified against provider docs + wire in thinkingUnified.applyFormat.
 const L = {
@@ -41,7 +42,11 @@ const CLAUDE_NO_XHIGH = ["none", "low", "medium", "high", "max"];
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
-  // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
+  { provider: "cohere", pattern: "*", levels: ["none", "high"] },
+  // Gemini 4 Hydrogen adds "xhigh" on top of low/medium/high (default high); "minimal" is
+  // still a 400 ("Thinking level MINIMAL is not supported"). Must precede the family entry.
+  { pattern: "*gemini-4-hydrogen*", levels: ["low", "medium", "high", "xhigh"] },
+  // Gemini 4 (Carbon/Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
   { pattern: "*claude*4.6*", levels: CLAUDE_NO_XHIGH },
   { pattern: "*claude*4-6*", levels: CLAUDE_NO_XHIGH },
@@ -109,6 +114,7 @@ const isOpenAICompatibleNode = (provider) => String(provider || "").startsWith("
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
 export function getThinkingLevels(provider, model) {
   if (provider === "kiro" && resolveKiroEffortPath(model) === null) return null;
+  if (provider === "grok-cli") return supportsGrokCliReasoningEffort(String(model || "").replace(/\([^()]+\)\s*$/, "")) ? ["low", "medium", "high", "xhigh"] : null;
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
   const baseId = String(model || "").replace(/\([^()]+\)\s*$/, "");

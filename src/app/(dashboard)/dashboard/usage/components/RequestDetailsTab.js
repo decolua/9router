@@ -8,6 +8,7 @@ import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 import { getInputTokens, getOutputTokens, getCachedTokens, getCacheCreationTokens } from "./tokenDisplay";
+import PromptChatView from "./PromptChatView";
 
 let providerNameCache = null;
 let providerNodesCache = null;
@@ -331,11 +332,16 @@ export default function RequestDetailsTab() {
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         title="Request Details"
-        width="lg"
+        width="xxl"
       >
         {selectedDetail && (
           <div className="space-y-6">
             <div className="grid min-w-0 grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+              <p className="text-xs text-text-muted sm:col-span-2">
+                {selectedDetail.promptRetentionExpiresAt
+                  ? `Debug payload expires ${new Date(selectedDetail.promptRetentionExpiresAt).toLocaleString()}; cleared earlier on restart or when retention is disabled.`
+                  : "Prompt data is not retained, has expired, or requires dashboard sign-in. Enable retention explicitly for this API key in API Endpoint."}
+              </p>
               <div>
                 <span className="text-text-muted">ID:</span>{" "}
                 <span className="break-all font-mono text-text-main">{selectedDetail.id}</span>
@@ -395,6 +401,15 @@ export default function RequestDetailsTab() {
                   {getOutputTokens(selectedDetail.tokens).toLocaleString()}
                 </span>
               </div>
+              {selectedDetail.requestedByKey && (
+                <div>
+                  <span className="text-text-muted">Requested by key:</span>{" "}
+                  <span className="text-text-main font-medium">
+                    {selectedDetail.requestedByKey.name || "Unnamed key"}{" "}
+                    <span className="font-mono text-xs text-text-muted">{selectedDetail.requestedByKey.maskedKey}</span>
+                  </span>
+                </div>
+              )}
             </div>
 
             {selectedDetail.pxpipe && (
@@ -440,14 +455,10 @@ export default function RequestDetailsTab() {
             )}
 
             <div className="space-y-4">
-              <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {JSON.stringify(selectedDetail.request, null, 2)}
-                </pre>
-              </CollapsibleSection>
+              <PromptChatView request={selectedDetail.request} translatedRequest={selectedDetail.providerRequest} originalRequest={selectedDetail.originalRequest} />
 
               {selectedDetail.providerRequest && (
-                <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
+                <CollapsibleSection title="1. Provider Request (Translated)" icon="translate">
                   <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
                     {JSON.stringify(selectedDetail.providerRequest, null, 2)}
                   </pre>
@@ -455,7 +466,7 @@ export default function RequestDetailsTab() {
               )}
 
               {selectedDetail.providerResponse && (
-                <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
+                <CollapsibleSection title="2. Provider Response (Raw)" icon="data_object">
                   <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
                     {typeof selectedDetail.providerResponse === 'object'
                       ? JSON.stringify(selectedDetail.providerResponse, null, 2)
@@ -465,7 +476,7 @@ export default function RequestDetailsTab() {
                 </CollapsibleSection>
               )}
               
-              <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
+              <CollapsibleSection title="3. Client Response (Final)" defaultOpen={true} icon="output">
                 {selectedDetail.response?.thinking && (
                   <div className="mb-4">
                     <h4 className="font-semibold text-text-main mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">

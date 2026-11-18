@@ -4,6 +4,11 @@ import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { startWebLogin, getWebLoginStatus, cancelWebLogin, listWebLoginProfiles } from "open-sse/services/webLogin.js";
 import { getWebLoginConfig, listWebLoginProviders } from "open-sse/services/webLoginConfig.js";
 import { fetchWebIdentity } from "open-sse/services/webIdentity.js";
+import remoteLogin from "../../../../../realtime/web-login-websocket.cjs";
+
+const json = (body, options = {}) => NextResponse.json(body, { ...options, headers: { "Cache-Control": "no-store" } });
+const viewerFor = (session) => session.status === "running" && session.viewerToken ? { token: session.viewerToken } : null;
+const sameOrigin = (request) => remoteLogin.isSameOrigin(request.headers.get("origin"), request.headers.get("host"));
 
 /**
  * Interactive web login: open a headed browser at the provider's login page,
@@ -17,11 +22,11 @@ import { fetchWebIdentity } from "open-sse/services/webIdentity.js";
 export async function GET(request) {
   const provider = request.nextUrl.searchParams.get("provider");
   if (!provider) {
-    return NextResponse.json({ providers: listWebLoginProviders(), profiles: listWebLoginProfiles() });
+    return json({ providers: listWebLoginProviders(), profiles: listWebLoginProfiles() });
   }
   const session = getWebLoginStatus(provider);
   if (!session) {
-    return NextResponse.json({ error: "No login session for this provider" }, { status: 404 });
+    return json({ error: "No login session for this provider" }, { status: 404 });
   }
 
   if (session.status === "success" && !session.savedConnectionId) {
@@ -34,11 +39,12 @@ export async function GET(request) {
       if (identity.status === "invalid") {
         session.status = "error";
         session.error = identity.error || "The captured session was rejected";
-        return NextResponse.json({
+        return json({
           provider,
           status: session.status,
           profile: session.profile || null,
           error: session.error,
+          viewer: null,
         });
       }
 
@@ -103,38 +109,40 @@ export async function GET(request) {
     }
   }
 
-  return NextResponse.json({
+  return json({
     provider,
     status: session.status,
     profile: session.profile || null,
     error: session.error || null,
     connectionId: session.savedConnectionId || null,
     email: session.accountEmail || null,
-    credentialPreview: session.credential ? `${session.credential.slice(0, 10)}…` : null,
+    viewer: viewerFor(session),
   });
 }
 
 // POST /api/providers/web-login {provider, profile?} → start login window
 export async function POST(request) {
+  if (!sameOrigin(request)) return json({ error: "Same-origin request required" }, { status: 403 });
   try {
     const body = await request.json();
     const provider = String(body?.provider || "").trim();
     const profile = String(body?.profile || "").trim() || "default";
     if (!getWebLoginConfig(provider)) {
-      return NextResponse.json({ error: `Web login not supported for "${provider}"` }, { status: 400 });
+      return json({ error: `Web login not supported for "${provider}"` }, { status: 400 });
     }
     const session = await startWebLogin(provider, profile);
-    return NextResponse.json({ provider, profile: session.profile, status: session.status }, { status: 202 });
+    return json({ provider, profile: session.profile, status: session.status, viewer: viewerFor(session) }, { status: 202 });
   } catch (error) {
-    return NextResponse.json({ error: error?.message || "Failed to start login" }, { status: 500 });
+    return json({ error: error?.message || "Failed to start login" }, { status: error instanceof SyntaxError ? 400 : error.status || 500 });
   }
 }
 
 // DELETE /api/providers/web-login?provider=x → cancel a running session
 export async function DELETE(request) {
+  if (!sameOrigin(request)) return json({ error: "Same-origin request required" }, { status: 403 });
   const provider = request.nextUrl.searchParams.get("provider");
   if (!provider) {
-    return NextResponse.json({ error: "provider is required" }, { status: 400 });
+    return json({ error: "provider is required" }, { status: 400 });
   }
-  return NextResponse.json({ cancelled: cancelWebLogin(provider) });
+  return json({ cancelled: cancelWebLogin(provider) });
 }

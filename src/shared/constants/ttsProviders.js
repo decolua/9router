@@ -3,6 +3,18 @@
  * Centralized config for TTS provider UI behavior
  */
 export const TTS_PROVIDER_CONFIG = {
+  "codex": {
+    hasModelSelector: true,
+    defaultModel: "speech",
+    voiceSource: "hardcoded",
+    voicesPerModel: true,
+    defaultFormat: "mp3",
+    formatOptions: [
+      { value: "mp3", label: "MP3 (Binary)" },
+      { value: "wav", label: "WAV (Binary)" },
+      { value: "json", label: "JSON (Base64)" },
+    ],
+  },
   "google-tts": {
     hasLanguageDropdown: false,
     hasModelSelector: false,
@@ -18,10 +30,19 @@ export const TTS_PROVIDER_CONFIG = {
     voiceKey: "openai-tts-voices",
     voicesPerModel: true,
   },
+  "pollinations": {
+    hasModelSelector: true,
+    hasVoiceIdInput: true,
+    hasStyleInput: true,
+    hasLanguageHint: true,
+    defaultModel: "openai/tts-1",
+    defaultVoiceId: "alloy",
+  },
   "openrouter": {
     hasLanguageDropdown: false,
     hasModelSelector: true,
     hasBrowseButton: false,
+    hasVoiceIdInput: true,
     voiceSource: "hardcoded",
     modelKey: "openrouter-tts-models",
     voiceKey: "openrouter-tts-voices",
@@ -67,7 +88,6 @@ export const TTS_PROVIDER_CONFIG = {
     defaultFormat: "wav",
     formatOptions: [
       { value: "wav", label: "WAV (Binary)" },
-      { value: "pcm", label: "PCM (Raw)" },
     ],
   },
   // ── Config-driven providers (load models from providers.js → ttsConfig.models) ──

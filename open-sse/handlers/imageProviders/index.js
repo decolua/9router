@@ -18,8 +18,10 @@ import geminiWeb from "./gemini-web.js";
 import grokWeb from "./grok-web.js";
 import veoAiFreeWeb from "./veoaifree-web.js";
 import ucWeb from "./uc-web.js";
+import pollinations from "./pollinations.js";
 
 const ADAPTERS = {
+  pollinations,
   openai: createOpenAIAdapter("openai"),
   minimax: createOpenAIAdapter("minimax"),
   openrouter: createOpenAIAdapter("openrouter"),

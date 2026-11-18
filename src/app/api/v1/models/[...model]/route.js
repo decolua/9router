@@ -6,6 +6,7 @@ const KIND_SLUG_MAP = {
   "image": ["image"],
   "tts": ["tts"],
   "stt": ["stt"],
+  "realtime": ["realtime"],
   "embedding": ["embedding"],
   "image-to-text": ["imageToText"],
   "web": ["webSearch", "webFetch"],

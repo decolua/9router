@@ -16,10 +16,8 @@ import { GLM_OAUTH_CONFIG } from "../constants/oauth.js";
 //   5) Business JWT → coding-plan API key via getCustomerInfo → api_keys
 //      list/create("zcode-api-key") → copy → "apiKey.secretKey"
 //
-// The coding-plan API key is the long-lived model credential; the ZAI OAuth
-// provider has no refresh_token grant, so expiry means re-login (same as the
-// official CLI). zcode JWT + business token ride along in providerSpecificData
-// for quota/usage and debugging.
+// The Coding Plan API keys and official ZCode JWT are model credentials for
+// different plans. There is no refresh grant, so expiry means re-login.
 const glm = {
   config: GLM_OAUTH_CONFIG,
   flowType: "device_code",
@@ -127,15 +125,36 @@ const glm = {
       };
     }
 
-    // ready.accessToken is the Z.AI OAuth token — derive the coding-plan API key
-    const { planApiKey, businessToken } = await resolveCodingPlanApiKey(config, zaiAccessToken);
+    // Keep the official ZCode JWT for gateway plans, and best-effort provision
+    // separate API keys for every Coding Plan project on the same account.
+    const zcodeJwtToken = data.token || "";
+    let individualPlanApiKey = null;
+    let teamPlanApiKey = null;
+    let businessToken = "";
+    try {
+      ({ individualPlanApiKey, teamPlanApiKey, businessToken } = await resolveCodingPlanApiKeys(config, zaiAccessToken));
+    } catch (error) {
+      if (!zcodeJwtToken) throw error;
+    }
+    const planApiKey = individualPlanApiKey || teamPlanApiKey || zcodeJwtToken;
+    if (!planApiKey) {
+      return {
+        ok: true,
+        data: {
+          error: "access_denied",
+          error_description: "No Z.ai Coding Plan or ZCode Start Plan is available for this account",
+        },
+      };
+    }
 
     return {
       ok: true,
       data: {
         access_token: planApiKey,
-        _zcodeJwtToken: data.token || "",
+        _zcodeJwtToken: zcodeJwtToken,
         _zaiBusinessToken: businessToken,
+        _individualCodingPlanApiKey: individualPlanApiKey || "",
+        _teamCodingPlanApiKey: teamPlanApiKey || "",
         _zaiRefreshToken:
           providerData.refresh_token || providerData.refreshToken || data.refresh_token || data.refreshToken || "",
         _zcodeUser: data.user || {},
@@ -152,10 +171,15 @@ const glm = {
       ...(displayName ? { displayName } : {}),
       providerSpecificData: {
         authMethod: "cli_poll",
+        plan: tokens._individualCodingPlanApiKey
+          ? "individual-coding-plan"
+          : tokens._teamCodingPlanApiKey ? "team-coding-plan" : "start-plan",
         username: user.name || undefined,
         userId: user.user_id || undefined,
         zcodeJwtToken: tokens._zcodeJwtToken || undefined,
         zaiBusinessToken: tokens._zaiBusinessToken || undefined,
+        individualCodingPlanApiKey: tokens._individualCodingPlanApiKey || undefined,
+        teamCodingPlanApiKey: tokens._teamCodingPlanApiKey || undefined,
         ...(tokens._zaiRefreshToken ? { zaiRefreshToken: tokens._zaiRefreshToken } : {}),
       },
     };
@@ -165,7 +189,7 @@ const glm = {
 // Business JWT → coding-plan API key ("apiKey.secretKey"). Mirrors ZCode CLI
 // coding-plan-api-key.ts: getCustomerInfo → default org/project → api_keys
 // list/create("zcode-api-key") → copy → secretKey.
-async function resolveCodingPlanApiKey(config, zaiAccessToken) {
+async function resolveCodingPlanApiKeys(config, zaiAccessToken) {
   const businessToken = await exchangeBusinessToken(config, zaiAccessToken);
   const authHeaders = {
     Authorization: `Bearer ${businessToken}`,
@@ -177,11 +201,18 @@ async function resolveCodingPlanApiKey(config, zaiAccessToken) {
     { headers: authHeaders },
     "customer info"
   );
-  const location = pickOrgAndProject(customerInfo);
-  if (!location) {
-    throw new Error("Unable to resolve Z.ai organization and project for the coding plan");
-  }
+  const locations = pickPlanProjects(customerInfo);
+  const individualPlanApiKey = locations.individual
+    ? await resolveProjectApiKey(config, authHeaders, locations.individual).catch(() => null)
+    : null;
+  const teamPlanApiKey = locations.team
+    ? await resolveProjectApiKey(config, authHeaders, locations.team).catch(() => null)
+    : null;
 
+  return { individualPlanApiKey, teamPlanApiKey, businessToken };
+}
+
+async function resolveProjectApiKey(config, authHeaders, location) {
   const listUrl =
     `${config.apiBaseUrl}/api/biz/v1/organization/${location.organizationId}` +
     `/projects/${location.projectId}/api_keys`;
@@ -216,7 +247,7 @@ async function resolveCodingPlanApiKey(config, zaiAccessToken) {
     throw new Error("Z.ai api key copy response is missing secretKey");
   }
 
-  return { planApiKey: `${apiKey}.${secretKey}`, businessToken };
+  return `${apiKey}.${secretKey}`;
 }
 
 // POST {businessLoginUrl} {"token": <zai oauth token>} → { data: { access_token } }
@@ -257,31 +288,28 @@ async function fetchBusinessJson(url, options, label) {
   return payload?.data ?? payload ?? null;
 }
 
-// Prefer the org named "默认机构"/"default" and the non-team project named
-// "默认项目"/"default" (projectType "2" = team), falling back to the first entries.
-function pickOrgAndProject(customerInfo) {
+// ZCode identifies team projects with projectType "2". Keep one key per plan so
+// switching plans never sends a personal key to a team entitlement (or vice versa).
+function pickPlanProjects(customerInfo) {
   const organizations = Array.isArray(customerInfo?.organizations)
     ? customerInfo.organizations
     : [];
-  const personalOrgs = organizations
-    .map((organization) => ({
-      organization,
-      projects: (organization?.projects || []).filter(
-        (project) => String(project?.projectType ?? "").trim() !== "2"
-      ),
-    }))
-    .filter(({ organization, projects }) =>
-      Boolean(organization?.organizationId && projects.length)
+  const findLocation = (team) => {
+    const candidates = organizations.flatMap((organization) =>
+      (organization?.projects || [])
+        .filter((project) => (String(project?.projectType ?? "").trim() === "2") === team)
+        .filter((project) => organization?.organizationId && project?.projectId)
+        .map((project) => ({ organization, project })),
     );
-  if (!personalOrgs.length) return null;
-
-  const org =
-    personalOrgs.find(({ organization }) => isDefaultName(organization.organizationName)) ||
-    personalOrgs[0];
-  const project =
-    org.projects.find((item) => isDefaultName(item?.projectName)) || org.projects[0];
-  if (!org.organization?.organizationId || !project?.projectId) return null;
-  return { organizationId: org.organization.organizationId, projectId: project.projectId };
+    const selected = candidates.find(({ organization, project }) =>
+      isDefaultName(organization.organizationName) || isDefaultName(project.projectName),
+    ) || candidates[0];
+    return selected ? {
+      organizationId: selected.organization.organizationId,
+      projectId: selected.project.projectId,
+    } : null;
+  };
+  return { individual: findLocation(false), team: findLocation(true) };
 }
 
 function isDefaultName(name) {

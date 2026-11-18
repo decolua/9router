@@ -4,6 +4,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getExecutor } from "../executors/index.js";
 import { getImageAdapter } from "./imageProviders/index.js";
 import { urlToBase64 } from "./imageProviders/_base.js";
+import { extractUsage } from "../utils/usageTracking.js";
 
 function serializeRequestBody(requestBody) {
   if (typeof FormData !== "undefined" && requestBody instanceof FormData) return requestBody;
@@ -25,6 +26,7 @@ function serializeRequestBody(requestBody) {
  * @param {function} [options.onCredentialsRefreshed]
  * @param {function} [options.onRequestSuccess]
  * @param {function} [options.onUsage] - Receives exact provider-reported usage when available
+ * @param {function} [options.onRequestComplete] - Receives the terminal streaming outcome
  * @returns {Promise<{ success: boolean, response: Response, status?: number, error?: string }>}
  */
 export async function handleImageGenerationCore({
@@ -37,6 +39,7 @@ export async function handleImageGenerationCore({
   onCredentialsRefreshed,
   onRequestSuccess,
   onUsage,
+  onRequestComplete,
 }) {
   const { provider, model } = modelInfo;
 
@@ -57,6 +60,10 @@ export async function handleImageGenerationCore({
     try {
       log?.debug?.("IMAGE", `${provider.toUpperCase()} | ${model} | prompt="${body.prompt.slice(0, 50)}..." (executor)`);
       const responseBody = await adapter.executeViaExecutor(model, body, credentials, log);
+      if (onUsage && responseBody?.usage?.estimated !== true) {
+        const usage = extractUsage(responseBody) || extractUsage({ type: "response.completed", response: responseBody });
+        if (usage) await onUsage(usage);
+      }
       if (onRequestSuccess) await onRequestSuccess();
       const normalized = adapter.normalize(responseBody, body.prompt);
       const finalBody = (normalized.created && Array.isArray(normalized.data)) ? normalized : responseBody;
@@ -195,6 +202,7 @@ export async function handleImageGenerationCore({
         streamToClient,
         onRequestSuccess,
         onUsage,
+        onRequestComplete,
         url,
         requestBody,
         model,
@@ -202,13 +210,18 @@ export async function handleImageGenerationCore({
       });
       // Codex streaming case: returns an SSE Response directly
       if (parsed?.sseResponse) {
-        return { success: true, response: parsed.sseResponse };
+        return { success: true, response: parsed.sseResponse, usagePending: true };
       }
     } else {
       parsed = await providerResponse.json();
     }
   } catch (parseError) {
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parseError.message || `Invalid response from ${provider}`);
+  }
+
+  if (onUsage && parsed?.usage?.estimated !== true) {
+    const usage = extractUsage(parsed) || extractUsage({ type: "response.completed", response: parsed });
+    if (usage) await onUsage(usage);
   }
 
   if (onRequestSuccess) await onRequestSuccess();

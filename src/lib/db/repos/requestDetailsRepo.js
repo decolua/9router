@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { retainPromptData, getRetainedPromptData, getOriginalBody } from "../../promptRetention.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -12,6 +13,9 @@ let cachedConfigTs = 0;
 
 async function getObservabilityConfig() {
   if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
+  const retentionCap = Math.max(
+    parseInt(process.env.OBSERVABILITY_RETENTION_MAX_JSON_SIZE || "10240", 10), 1024
+  ) * 1024;
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
@@ -24,6 +28,7 @@ async function getObservabilityConfig() {
         batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
         flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
         maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+        retentionMaxJsonSize: retentionCap,
       };
       cachedConfigTs = Date.now();
       return cachedConfig;
@@ -40,6 +45,7 @@ async function getObservabilityConfig() {
       batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
       flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
       maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+      retentionMaxJsonSize: retentionCap,
     };
   } catch {
     cachedConfig = {
@@ -48,6 +54,7 @@ async function getObservabilityConfig() {
       batchSize: DEFAULT_BATCH_SIZE,
       flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
       maxJsonSize: DEFAULT_MAX_JSON_SIZE,
+      retentionMaxJsonSize: retentionCap,
     };
   }
   cachedConfigTs = Date.now();
@@ -85,6 +92,16 @@ function truncateField(obj, maxSize) {
   return obj || {};
 }
 
+// Like truncateField but emits undefined for empty objects, so optional fields
+// (e.g. the pristine originalRequest snapshot) disappear instead of persisting
+// as `{}` — an empty source would blank out the chat view when selected.
+function truncateOptionalField(obj, maxSize) {
+  if (obj == null) return undefined;
+  const str = JSON.stringify(obj);
+  if (str === "{}" || str === "[]") return undefined;
+  return truncateField(obj, maxSize);
+}
+
 async function flushToDatabase() {
   if (isFlushing) return;
   if (writeBuffer.length === 0) return;
@@ -100,8 +117,6 @@ async function flushToDatabase() {
         for (const item of items) {
           if (!item.id) item.id = generateDetailId(item.model);
           if (!item.timestamp) item.timestamp = new Date().toISOString();
-          if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
-
           const record = {
             id: item.id,
             provider: item.provider || null,
@@ -111,11 +126,8 @@ async function flushToDatabase() {
             status: item.status || null,
             latency: item.latency || {},
             tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-            pxpipe: item.pxpipe || undefined,
+            endpoint: item.endpoint || undefined,
+            apiKey: item.apiKey || undefined,
           };
 
           db.run(
@@ -142,9 +154,31 @@ async function flushToDatabase() {
 
 export async function saveRequestDetail(detail) {
   const config = await getObservabilityConfig();
-  if (!config.enabled) {return;}
+  if (!config.enabled && !detail.promptRetentionContext) {return;}
 
-  writeBuffer.push(detail);
+  const id = detail.id || generateDetailId(detail.model);
+  // Never queue conversation data: even shutdown flushes write metadata only.
+  if (detail.promptRetentionContext) {
+    // Retention payloads live in process memory behind explicit per-key consent —
+    // they use the dedicated retention cap, not the small disk-observability cap,
+    // so real client payloads (Claude Code runs are 10-100KB+) stay renderable.
+    const cap = config.retentionMaxJsonSize || config.maxJsonSize;
+    const payload = {
+      request: truncateField(detail.request, cap),
+      providerRequest: truncateField(detail.providerRequest, cap),
+      providerResponse: truncateField(detail.providerResponse, cap),
+      response: truncateField(detail.response, cap),
+      originalRequest: truncateOptionalField(getOriginalBody(detail.promptRetentionContext), cap),
+      pxpipe: detail.pxpipe || undefined,
+    };
+    if (payload.request?.headers) payload.request = { ...payload.request, headers: sanitizeHeaders(payload.request.headers) };
+    retainPromptData(id, detail.promptRetentionContext, payload, config.maxRecords);
+  }
+  writeBuffer.push({
+    id, timestamp: detail.timestamp, provider: detail.provider, model: detail.model,
+    connectionId: detail.connectionId, status: detail.status, latency: detail.latency,
+    tokens: detail.tokens, endpoint: detail.endpoint, apiKey: detail.apiKey,
+  });
 
   // Trigger immediate flush if batch threshold reached.
   // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
@@ -184,7 +218,7 @@ export async function getRequestDetails(filter = {}) {
     `SELECT data FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, offset]
   );
-  const details = rows.map((r) => parseJson(r.data, {}));
+  const details = rows.map((r) => withRetainedPayload(parseJson(r.data, {}), filter.includePayload !== false));
 
   return {
     details,
@@ -201,7 +235,27 @@ export async function getDistinctProviders() {
 export async function getRequestDetailById(id) {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
-  return row ? parseJson(row.data, null) : null;
+  return row ? withRetainedPayload(parseJson(row.data, {})) : null;
+}
+
+function withRetainedPayload(record, includePayload = true) {
+  if (!record?.id) return {};
+  // Legacy disk records may contain bodies without consent; never return them.
+  const { request, providerRequest, providerResponse, response, pxpipe, originalRequest, apiKey, ...metadata } = record;
+  // Raw client keys never leave the server; only the masked form does.
+  const maskedKey = typeof apiKey === "string" && apiKey
+    ? (apiKey.length <= 12 ? apiKey.charAt(0) + "***" : apiKey.slice(0, 8) + "***" + apiKey.slice(-4))
+    : undefined;
+  return {
+    ...metadata,
+    ...(maskedKey && { requestedByKey: { maskedKey } }),
+    request: { redacted: true }, providerRequest: { redacted: true },
+    providerResponse: { redacted: true }, response: { redacted: true },
+    // Only advertise the Client view when the record itself carried a snapshot;
+    // legacy rows have none, and a phantom option would blank the chat view.
+    ...(record.originalRequest && { originalRequest: { redacted: true } }),
+    ...(includePayload ? getRetainedPromptData(record.id) : null),
+  };
 }
 
 const _shutdownHandler = async () => {

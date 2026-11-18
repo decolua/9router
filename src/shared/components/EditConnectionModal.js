@@ -8,6 +8,7 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { DEFAULT_CODEX_QUOTA, validateCodexQuota } from "@/shared/utils/codexQuota";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -25,14 +26,18 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
   const [region, setRegion] = useState("");
+  const [plan, setPlan] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [codexQuota, setCodexQuota] = useState(DEFAULT_CODEX_QUOTA);
+  const [quotaError, setQuotaError] = useState("");
 
   useEffect(() => {
     if (connection) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the modal form for the selected connection
       setFormData({
         name: connection.name || "",
         priority: connection.priority || 1,
@@ -66,8 +71,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         const savedRegion = connection.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg.regions[0]?.id || "";
         setRegion(savedRegion);
       }
+      if (providerCfg?.plans) {
+        setPlan(connection.providerSpecificData?.plan || providerCfg.defaultPlan || providerCfg.plans[0]?.id || "");
+      }
       setTestResult(null);
       setValidationResult(null);
+      setCodexQuota({ ...DEFAULT_CODEX_QUOTA, ...connection.providerSpecificData?.codexQuota });
+      setQuotaError("");
     }
   }, [connection, isOpen]);
 
@@ -79,6 +89,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
+  const providerPlans = connection ? (AI_PROVIDERS?.[connection.provider]?.plans || null) : null;
+  const availablePlans = providerPlans?.filter((item) => !item.authModes || item.authModes.includes(connection.authType)) || null;
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
@@ -138,6 +150,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
   const handleSubmit = async () => {
     if (!connection) return;
+    if (connection.provider === "codex") {
+      const error = validateCodexQuota(codexQuota);
+      setQuotaError(error || "");
+      if (error) return;
+    }
     setSaving(true);
     try {
       const updates = {
@@ -198,8 +215,16 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
       }
+      if (providerPlans && plan) {
+        updates.providerSpecificData = { ...(connection.providerSpecificData || {}), plan };
+      }
+      if (connection.provider === "codex") {
+        updates.providerSpecificData = { codexQuota };
+      }
       
       await onSave(updates);
+    } catch (error) {
+      setQuotaError(error.message || "Could not save connection");
     } finally {
       setSaving(false);
     }
@@ -228,6 +253,50 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+
+        {connection.provider === "codex" && (
+          <fieldset className="flex flex-col gap-3 rounded-lg border border-border p-3">
+            <legend className="px-1 text-sm font-medium">Quota-weighted priority</legend>
+            <p className="text-xs text-text-muted">Used when Codex balancing is Quota-weighted. Lower numbers receive more traffic; the worse window wins and multiplies the account priority.</p>
+            <Select
+              label="Quota priority mode"
+              aria-label="Quota priority mode"
+              value={codexQuota.mode}
+              onChange={e => setCodexQuota({ ...codexQuota, mode: e.target.value })}
+              options={[
+                { value: "headroom", label: "Calculate from remaining headroom" },
+                { value: "rules", label: "Custom usage → priority rules" },
+              ]}
+            />
+            {codexQuota.mode === "headroom" ? (
+              <div className="grid grid-cols-2 gap-3">
+                {[["sessionCeiling", "5h usage ceiling (%)"], ["weeklyCeiling", "Weekly usage ceiling (%)"]].map(([key, label]) => (
+                  <Input key={key} label={label} aria-label={label} type="number" min="0.01" max="100" step="any"
+                    value={codexQuota[key]} onChange={e => setCodexQuota({ ...codexQuota, [key]: Number(e.target.value) })} />
+                ))}
+              </div>
+            ) : ["session", "weekly"].map(window => (
+              <div key={window} className="flex flex-col gap-2">
+                <span className="text-sm font-medium">{window === "session" ? "5h" : "Weekly"} rules</span>
+                {codexQuota[`${window}Rules`].map((rule, index, rules) => (
+                  <div key={index} className="flex items-end gap-2">
+                    {[["upTo", "Usage up to (%)"], ["priority", "Priority"]].map(([key, label]) => (
+                      <Input key={key} label={label} aria-label={`${window} rule ${index + 1} ${label}`} type="number" min="0.01" step="any"
+                        value={rule[key]} className="min-w-0 flex-1"
+                        onChange={e => setCodexQuota({ ...codexQuota, [`${window}Rules`]: rules.map((entry, i) => i === index ? { ...entry, [key]: Number(e.target.value) } : entry) })} />
+                    ))}
+                    <Button variant="ghost" size="sm" aria-label={`Remove ${window} rule ${index + 1}`} disabled={rules.length === 1}
+                      onClick={() => setCodexQuota({ ...codexQuota, [`${window}Rules`]: rules.filter((_, i) => i !== index) })}>Remove</Button>
+                  </div>
+                ))}
+                <Button variant="secondary" size="sm" disabled={codexQuota[`${window}Rules`].length >= 20}
+                  onClick={() => setCodexQuota({ ...codexQuota, [`${window}Rules`]: [...codexQuota[`${window}Rules`], { upTo: 100, priority: 10 }] })}>Add rule</Button>
+              </div>
+            ))}
+            <p className="text-xs text-text-muted">Routing stops at the ceiling (or final rule threshold). Quotas are cached for one minute; in-flight requests can exceed a ceiling.</p>
+          </fieldset>
+        )}
+        {quotaError && <p role="alert" className="text-sm text-red-500">{quotaError}</p>}
 
         {!isOAuth && (
           <>
@@ -344,6 +413,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
+          />
+        )}
+
+        {availablePlans && (
+          <Select
+            label="Plan"
+            value={plan}
+            onChange={(e) => setPlan(e.target.value)}
+            options={availablePlans.map((item) => ({ value: item.id, label: item.label }))}
           />
         )}
 

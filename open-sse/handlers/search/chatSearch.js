@@ -5,6 +5,8 @@
  */
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 import { ANTIGRAVITY_IDE_USER_AGENT } from "../../providers/shared.js";
+import { getModelUpstreamId } from "../../config/providerModels.js";
+import { stripThinkingSuffix } from "../../translator/concerns/thinkingUnified.js";
 
 // Default search model + endpoint derive from registry searchViaChat (single source)
 const searchModel = (id) => PROVIDER_MEDIA[id]?.searchViaChat?.defaultModel;
@@ -108,7 +110,7 @@ const CHAT_SEARCH_CONFIG = {
       credentials?.projectId ? null : "Antigravity account has no projectId — reconnect the account",
     buildBody: (query, model, credentials) => ({
       project: credentials.projectId,
-      model,
+      model: stripThinkingSuffix(getModelUpstreamId("ag", model)),
       userAgent: AG_CLIENT_NAME,
       requestType: "search",
       request: {

@@ -23,6 +23,8 @@ import { Buffer } from "node:buffer";
 //     verbose_json segments without fabricating timestamps. goAway advisements
 //     rotate the socket once per call: setup replay + byte-offset resume.
 
+import { extractUsage } from "../utils/usageTracking.js";
+
 const SETUP_TIMEOUT_MS = 10_000;  // open → setupComplete
 const TURN_TIMEOUT_MS = 60_000;   // audio streamed → turnComplete
 const MAX_TIMEOUT_MS = 300_000;   // clamp ceiling for client-supplied lifecycle knobs
@@ -91,7 +93,7 @@ function firstNumberField(formData, key, fallback) {
  *   incremental inputTranscription deltas (sttCore shapes verbose_json from them).
  * @throws {GeminiLiveError} with .status for the sttCore error envelope.
  */
-export async function transcribeGeminiLive({ cfg, file, model, token, formData, mimeType }) {
+export async function transcribeGeminiLive({ cfg, file, model, token, formData, mimeType, onUsage }) {
   const WS = globalThis.WebSocket;
   if (!WS) throw new GeminiLiveError("Gemini Live transport needs global WebSocket (Node >= 22)", 502);
 
@@ -219,6 +221,7 @@ export async function transcribeGeminiLive({ cfg, file, model, token, formData, 
           if (settled || gen !== generation) return;
           const frame = parseFrame(ev?.data);
           if (!frame) return;
+          onUsage?.(extractUsage(frame));
 
           if (frame.error) {
             const e = frame.error;

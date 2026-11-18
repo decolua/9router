@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -12,6 +13,7 @@ import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { saveRequestUsage } from "@/lib/usageDb.js";
 
 const NO_AUTH_VIDEO_PROVIDERS = new Set(["veoaifree-web"]);
 import * as log from "../utils/logger.js";
@@ -106,6 +108,33 @@ function withConnectionHeader(response, connectionId) {
   return new Response(response.body, { status: response.status, headers });
 }
 
+async function runVideoCreation(options, { model, connectionId, apiKey, endpoint }) {
+  const startedAt = Date.now();
+  const requestId = randomUUID();
+  const tokens = {};
+  let success = false;
+  try {
+    const result = await handleVideoProxyCore({
+      ...options,
+      onUsage: (usage) => {
+        if (!usage || usage.estimated === true) return;
+        for (const key of ["prompt_tokens", "completion_tokens", "input_tokens", "output_tokens", "total_tokens", "cached_tokens", "reasoning_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]) {
+          if (Number.isSafeInteger(usage[key]) && usage[key] >= 0) tokens[key] = usage[key];
+        }
+      },
+    });
+    success = result.success;
+    return result;
+  } finally {
+    await saveRequestUsage({
+      provider: options.provider, model: model || "video",
+      connectionId: connectionId || undefined, apiKey: apiKey || undefined,
+      endpoint, requestId, timestamp: new Date(startedAt).toISOString(),
+      latencyMs: Date.now() - startedAt, tokens, status: success ? "success" : "error",
+    }).catch(() => {});
+  }
+}
+
 /**
  * POST /v1/videos/{generations|edits|extensions} — async job creation proxy.
  */
@@ -136,10 +165,11 @@ export async function handleVideoCreate(request, action) {
 
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const idempotencyKey = request.headers.get("idempotency-key") || null;
+  const usageContext = { model, apiKey: extractApiKey(request), endpoint: new URL(request.url).pathname };
 
   // noAuth providers — executor-driven generation, no credential needed
   if (NO_AUTH_VIDEO_PROVIDERS.has(provider)) {
-    const result = await handleVideoProxyCore({
+    const result = await runVideoCreation({
       provider,
       action,
       rawBody: forwardBody,
@@ -148,7 +178,7 @@ export async function handleVideoCreate(request, action) {
       credentials: null,
       signal: request.signal,
       log,
-    });
+    }, usageContext);
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Video generation failed");
   }
@@ -174,7 +204,7 @@ export async function handleVideoCreate(request, action) {
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleVideoProxyCore({
+    const result = await runVideoCreation({
       provider,
       action,
       rawBody: forwardBody,
@@ -193,7 +223,7 @@ export async function handleVideoCreate(request, action) {
           testStatus: "active",
         });
       },
-    });
+    }, { ...usageContext, connectionId: credentials.connectionId });
 
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, model);

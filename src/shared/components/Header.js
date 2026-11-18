@@ -77,6 +77,13 @@ const getPageInfo = (pathname) => {
       icon: "dns",
       breadcrumbs: [],
     };
+  if (pathname.startsWith("/dashboard/browser"))
+    return {
+      title: "Browser Workspace",
+      description: "Manage browser profiles and persistent remote sessions",
+      icon: "language",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/combos"))
     return {
       title: "Combos",

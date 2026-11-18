@@ -64,6 +64,27 @@ docker run -d \
   decolua/9router:latest
 ```
 
+## Browser login
+
+For web-cookie providers, choose **Login via Browser**, select a browser profile, then **Open Browser & Login**. Chromium runs inside the container on a private Xvfb display; its page streams into the dashboard with mouse, keyboard, scrolling, paste, and popup tabs. The icon toolbar provides back, reload, and reconnect controls. Expand **Keyboard help & text input** for mobile keyboards, IME text, or remote Tab (normal Tab leaves the viewer).
+
+The image includes Chromium, Xvfb, and Playwright. No host desktop, VNC server, X11 socket mount, or published DevTools port is needed. Browser profiles persist under `/app/data/browser-profiles/`; treat that volume as credentials. Login capture automatically saves the provider connection. Cancel or the five-minute timeout closes the browser and revokes viewer access; disconnecting the viewer alone leaves login running so you can reconnect.
+
+Open **Browser** in the dashboard sidebar to launch a browser independently of provider login. Choose a profile and an HTTP(S) launch URL, then use the address bar to navigate. **Open viewer** resumes a running browser; disconnecting or leaving the page keeps it running. **Stop browser** releases the profile and preserves sign-ins. Independent browsers do not capture provider credentials and close after 30 minutes.
+
+The profile picker supports create, rename, and confirmed deletion. Names use 1–40 letters, numbers, underscores, or hyphens. Profiles in use cannot be renamed or deleted; the default profile is protected. Deletion permanently removes that profile’s browser cookies and saved sessions, not existing provider connections. A profile can be open in only one login or independent browser at a time.
+
+Keep dashboard authentication enabled and use HTTPS for remote access. The viewer uses a short-lived session capability issued through the authenticated dashboard API, rejects cross-origin WebSocket connections, and exposes only images and allowlisted input—not raw DevTools commands. Reverse proxies must preserve the external `Host` and allow WebSocket upgrades on `/api/providers/web-login/view` over the existing app port.
+
+To exercise the browser transport against a local fixture (no provider credentials):
+
+```bash
+docker run --rm --init --user node --entrypoint node \
+  -e WEB_LOGIN_CHECK_ROOT=/app \
+  -v "$PWD/tests/scripts/web-login-remote.mjs:/checks/web-login-remote.mjs:ro" \
+  9router /checks/web-login-remote.mjs
+```
+
 ## Optional Headroom sidecar
 
 The 9Router image does not bundle Python or Headroom. To use Headroom in Docker, run it as a separate service and point 9Router at that proxy:

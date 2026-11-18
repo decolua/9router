@@ -3,15 +3,20 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { pathToFileURL } = require("url");
+const realtimeWebSocket = require("./realtime/realtime-websocket.js");
+const webLoginWebSocket = require("./realtime/web-login-websocket.cjs");
 
 const origCreate = http.createServer.bind(http);
 
-// Per-process secret proving x-9r-real-ip was stamped below rather than sent by the client.
-// A bare `next start` / `next dev` never loads this file, so it cannot produce a matching
-// header even though the env var is inherited by child processes. Named like x-9r-cli-token
-// so the request-detail header sanitizer redacts it too.
+// The legacy peer token is regenerated on every process start so an externally supplied
+// value cannot authorize local-request trust.
 const PEER_TOKEN = crypto.randomBytes(24).toString("hex");
 process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+
+// Keep the realtime credential token separate and in memory. It must never be supplied
+// through the environment or reused by the broader local-request trust layer.
+const REALTIME_INTERNAL_SECRET = crypto.randomBytes(24).toString("hex");
+globalThis[Symbol.for("9router.realtime.internal-secret")] = REALTIME_INTERNAL_SECRET;
 
 let backgroundRefreshStarted = false;
 
@@ -80,6 +85,12 @@ http.createServer = (...args) => {
   // JBR 25 sends h2c upgrades that the HTTP/1.1 server would otherwise close.
   server.emit = function (event, ...eventArgs) {
     const [req, socket, head] = eventArgs;
+    if (event === "upgrade" && String(req.headers.upgrade || "").toLowerCase() === "websocket") {
+      try {
+        if (webLoginWebSocket(server, req, socket, head)) return true;
+        if (realtimeWebSocket(server, req, socket, head)) return true;
+      } catch { socket.destroy(); return true; }
+    }
     if (event !== "upgrade" || String(req.headers.upgrade || "").toLowerCase() !== "h2c") {
       return origEmit.call(this, event, ...eventArgs);
     }

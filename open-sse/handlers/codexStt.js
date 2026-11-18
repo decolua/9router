@@ -38,7 +38,7 @@ export function codexHttpFetch(url, { headers, body, signal }) {
   });
 }
 
-export async function transcribeCodex({ formData, credentials, signal: clientSignal, proxyOptions }) {
+export async function transcribeCodex({ formData, credentials, signal: clientSignal, proxyOptions, onUsage }) {
   let slot = false;
   const signal = AbortSignal.any([...(clientSignal ? [clientSignal] : []), AbortSignal.timeout(60000)]);
   try {
@@ -86,6 +86,7 @@ export async function transcribeCodex({ formData, credentials, signal: clientSig
     let data;
     try { data = JSON.parse(bytes.toString("utf8")); } catch { throw failure(502, "Invalid transcription response"); }
     if (typeof data?.text !== "string" || data.text.length > 250000) throw failure(502, "Invalid transcription response");
+    onUsage?.(data.usage);
     return { success: true, response: format === "text"
       ? new Response(data.text, { headers: { ...cors, "Content-Type": "text/plain; charset=utf-8" } })
       : Response.json({ text: data.text }, { headers: cors }) };

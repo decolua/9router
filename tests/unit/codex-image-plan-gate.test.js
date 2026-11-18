@@ -52,7 +52,7 @@ vi.mock("../../src/sse/utils/logger.js", () => ({
 }));
 
 vi.mock("@/lib/usageDb.js", () => ({
-  saveRequestUsage: vi.fn(),
+  saveRequestUsage: vi.fn(async () => {}),
 }));
 
 import { handleImageGeneration } from "../../src/sse/handlers/imageGeneration.js";

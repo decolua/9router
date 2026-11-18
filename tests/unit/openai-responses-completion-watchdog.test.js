@@ -44,6 +44,15 @@ async function pipe() {
 }
 
 describe("pending response.completed watchdog", () => {
+  it("waits for OpenAI cache usage before closing a Claude stream", async () => {
+    const chunks = [FINISH_CHUNK, { ...USAGE_TRAILER, usage: { prompt_tokens: 120, completion_tokens: 30, prompt_tokens_details: { cached_tokens: 80, cache_creation_tokens: 10 } } }];
+    const input = new ReadableStream({ start(c) { for (const chunk of chunks) c.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`)); c.enqueue(encoder.encode("data: [DONE]\n\n")); c.close(); } });
+    const output = input.pipeThrough(createSSETransformStreamWithLogger(FORMATS.OPENAI, FORMATS.CLAUDE, "test", null, null, "gpt-test"));
+    const text = await readAll(output.getReader());
+    const events = text.split("\n").filter((line) => line.startsWith("data: {")).map((line) => JSON.parse(line.slice(6)));
+    expect(events.filter((event) => event.type === "message_stop")).toHaveLength(1);
+    expect(events.find((event) => event.type === "message_delta").usage).toEqual({ input_tokens: 30, output_tokens: 30, cache_read_input_tokens: 80, cache_creation_input_tokens: 10 });
+  });
   it("flushes the deferred completion when the upstream stalls after finish_reason", async () => {
     vi.useFakeTimers();
     try {

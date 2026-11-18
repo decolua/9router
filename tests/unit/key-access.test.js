@@ -10,6 +10,7 @@ const fx = vi.hoisted(() => ({
   ],
   nodes: [{ id: "openai-compatible-chat-n1", type: "openai-compatible", prefix: "mock" }],
   aliases: { fast: "openai/model-a", bee: "openai/model-b" },
+  groups: [],
   keys: {},
 }));
 
@@ -20,6 +21,7 @@ vi.mock("@/lib/localDb", () => ({
 }));
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getCombos: async () => fx.combos }));
 vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({ getApiKeyByKey: async (k) => fx.keys[k] || null }));
+vi.mock("@/lib/db/repos/keyModelGroupsRepo.js", () => ({ getKeyModelGroups: async () => fx.groups }));
 vi.mock("@/sse/utils/logger.js", () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }));
 
 const engine = await import("../../src/sse/services/keyAccess.js");
@@ -43,6 +45,7 @@ async function status(k, model) {
 
 beforeEach(() => {
   fx.keys = {};
+  fx.groups = [];
   key("open", { restricted: false, allow: [] });
   key("combo", { restricted: true, allow: ["main"] }); // case differs from combo "Main" on purpose
   key("b", { restricted: true, allow: ["openai/MODEL-B"] });
@@ -79,6 +82,43 @@ describe("restricted: allow by exact model", () => {
   });
   it("denies a combo whose members include the allowed model", async () => {
     expect(await status("sk-b", "Main")).toBe(403);
+  });
+});
+
+describe("provider group grants", () => {
+  it("matches resolved providers without granting other providers or combos", async () => {
+    key("providers", { restricted: true, allow: ["cx/*", "mock/*", "tavily/*"] });
+    const ctx = await ctxFor("sk-providers");
+    expect(await status("sk-providers", "codex/gpt-5")).toBe(200);
+    expect(await status("sk-providers", "cx/another-model")).toBe(200);
+    expect(await status("sk-providers", "openai-compatible-chat-n1/glm-4")).toBe(200);
+    expect(await status("sk-providers", "openai/gpt-5")).toBe(403);
+    expect(await status("sk-providers", "Main")).toBe(403);
+    expect(await engine.enforceKeyAccessResolved(ctx, "cx/gpt-5", "codex", "gpt-5")).toBeNull();
+    expect((await engine.enforceKeyAccessResolved(ctx, "openai/gpt-5", "openai", "gpt-5")).status).toBe(403);
+    expect(await engine.enforceKeyAccessProvider(ctx, "tavily", null)).toBeNull();
+    expect((await engine.enforceKeyAccessProvider(ctx, "exa", null)).status).toBe(403);
+    const list = [{ id: "cx/gpt-5" }, { id: "openai/gpt-5" }, { id: "Main", owned_by: "combo" }, { id: "tavily/search", kind: "webSearch" }];
+    expect((await engine.filterModelsListForKey(ctx, list)).map((entry) => entry.id)).toEqual(["cx/gpt-5", "tavily/search"]);
+    expect(await engine.filterAdapterModels(ctx, ["cx/gpt-5", "openai/gpt-5"], [])).toEqual(["cx/gpt-5"]);
+  });
+});
+
+describe("linked model groups", () => {
+  it("tracks group edits across keys, but expanded entries remain independent", async () => {
+    const id = "12345678-1234-4123-8123-123456789abc";
+    fx.groups = [{ id, allow: ["cx/*", "Main"] }];
+    key("linked1", { restricted: true, allow: [`@group/${id}`] });
+    key("linked2", { restricted: true, allow: [`@GROUP/${id.toUpperCase()}`] });
+    key("expanded", { restricted: true, allow: ["cx/*", "Main"] });
+    expect(await status("sk-linked1", "cx/gpt-5")).toBe(200);
+    expect(await status("sk-linked2", "Main")).toBe(200);
+    fx.groups[0].allow = ["openai/model-a"];
+    expect(await status("sk-linked1", "cx/gpt-5")).toBe(403);
+    expect(await status("sk-linked2", "fast")).toBe(200);
+    expect(await status("sk-expanded", "cx/gpt-5")).toBe(200);
+    fx.groups = [];
+    expect(await status("sk-linked1", "openai/model-a")).toBe(403);
   });
 });
 

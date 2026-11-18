@@ -113,4 +113,22 @@ describe("OpenAI Responses usage across the pivot", () => {
       expect(Number.isFinite(usage[field]), `${field} must be a number`).toBe(true);
     }
   });
+
+  it.each([false, true])("completes an Antigravity stream with sequential item indices (finish marker: %s)", async (finish) => {
+    const chunks = [{ response: { candidates: [{ content: { parts: [
+      { thought: true, text: "Thinking" },
+      { text: "Checking." },
+      { functionCall: { id: "call_shell", name: "shell", args: { command: "pwd" } } },
+    ] } }] } }];
+    if (finish) chunks.push({ response: { candidates: [{ finishReason: "STOP" }] } });
+    const output = await runTransform(chunks, FORMATS.ANTIGRAVITY, "antigravity");
+    const events = output.split("\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => JSON.parse(line.slice(6)));
+    const added = events.filter((event) => event.type === "response.output_item.added");
+
+    expect(added.map((event) => event.output_index)).toEqual([0, 1, 2]);
+    expect(completedResponse(output).output.map((item) => item.type)).toEqual(["reasoning", "message", "function_call"]);
+    expect(events.at(-1).type).toBe("response.completed");
+  });
 });

@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
+
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.resetModules(); });
 
 function streamFromText(text) {
   const encoder = new TextEncoder();
@@ -12,6 +14,19 @@ function streamFromText(text) {
 }
 
 describe("Codex fast tier and capacity handling", () => {
+  it("retries a silent initial stream when enabled", async () => {
+    vi.stubEnv("CODEX_EARLY_RETRY", "true");
+    vi.stubEnv("CODEX_EARLY_RETRY_TIMEOUT_MS", "10");
+    vi.resetModules();
+    const { BaseExecutor } = await import("../../open-sse/executors/base.js");
+    const { CodexExecutor: Executor } = await import("../../open-sse/executors/codex.js");
+    const spy = vi.spyOn(BaseExecutor.prototype, "execute")
+      .mockImplementationOnce(({ signal }) => new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")))))
+      .mockResolvedValueOnce({ response: new Response(streamFromText('event: response.output_text.delta\ndata: {"delta":"ok"}\n\n'), { headers: { "content-type": "text/event-stream" } }) });
+    const result = await new Executor().execute({ body: {}, stream: true, credentials: {} });
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(await result.response.text()).toContain('"ok"');
+  });
   it("maps Codex fast tier to priority and max reasoning to xhigh", () => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest("gpt-reserve", {

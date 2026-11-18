@@ -6,6 +6,9 @@ import {
   KEY_ACCESS_UNRESTRICTED,
 } from "@/shared/constants/keyAccess.js";
 
+const GROUP_REFERENCE_PREFIX = /^@group\//i;
+const GROUP_REFERENCE = /^@group\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Normalize an allow list: keep strings only, trim, drop empties, de-duplicate
  * case-insensitively (the first spelling wins). Order is preserved.
@@ -75,6 +78,9 @@ export function validateKeyAccessInput(input) {
   }
   if (allow.some((e) => e.trim().length > KEY_ACCESS_MAX_ENTRY_LENGTH)) {
     return { ok: false, error: `access.allow entries must be at most ${KEY_ACCESS_MAX_ENTRY_LENGTH} characters` };
+  }
+  if (allow.some((e) => GROUP_REFERENCE_PREFIX.test(e.trim()) && !GROUP_REFERENCE.test(e.trim()))) {
+    return { ok: false, error: "access.allow group references must contain a valid UUID" };
   }
   return { ok: true, value: { restricted: input.restricted, allow: normalizeAllowList(allow) } };
 }

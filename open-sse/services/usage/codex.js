@@ -40,7 +40,9 @@ function getCodexRateLimitBody(snapshot) {
 }
 
 function formatCodexWindow(window) {
-  const used = Math.max(0, Math.min(100, toFiniteNumber(window?.used_percent ?? window?.percent_used, 0)));
+  const value = window?.used_percent ?? window?.percent_used;
+  if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) return null;
+  const used = Math.max(0, Math.min(100, Number(value)));
   return {
     used,
     total: 100,
@@ -58,12 +60,14 @@ function appendCodexQuotaWindows(quotas, prefix, snapshot) {
   const secondary = rateLimit.secondary_window || rateLimit.secondary || snapshot.secondary_window || snapshot.secondary;
   let added = false;
 
-  if (primary) {
-    quotas[prefix ? `${prefix}_session` : "session"] = formatCodexWindow(primary);
+  const primaryQuota = formatCodexWindow(primary);
+  const secondaryQuota = formatCodexWindow(secondary);
+  if (primaryQuota) {
+    quotas[prefix ? `${prefix}_session` : "session"] = primaryQuota;
     added = true;
   }
-  if (secondary) {
-    quotas[prefix ? `${prefix}_weekly` : "weekly"] = formatCodexWindow(secondary);
+  if (secondaryQuota) {
+    quotas[prefix ? `${prefix}_weekly` : "weekly"] = secondaryQuota;
     added = true;
   }
 
@@ -104,13 +108,16 @@ function getCodexSparkRateLimit(data) {
   }) || null;
 }
 
-export async function getCodexUsage(accessToken, proxyOptions = null) {
+export async function getCodexUsage(accessToken, proxyOptions = null, providerSpecificData = null) {
   try {
+    const accountId = getCodexAccountId(providerSpecificData);
     const response = await proxyAwareFetch(CODEX_CONFIG.usageUrl, {
       method: "GET",
+      signal: AbortSignal.timeout(10_000),
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
+        ...(accountId ? { "ChatGPT-Account-ID": accountId } : {}),
       },
     }, proxyOptions);
 

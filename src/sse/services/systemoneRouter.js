@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { saveRequestUsage } from "@/lib/usageDb.js";
 import { getModelInfo } from "../services/model.js";
 import { getProviderCredentials } from "../services/auth.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -32,6 +34,8 @@ export async function resolveSmartChoice({
   routerModel = DEFAULT_SYSTEMONE_ROUTER_MODEL,
   log,
   timeoutMs = DEFAULT_SYSTEMONE_TIMEOUT_MS,
+  apiKey,
+  endpoint = "/v1/systemone",
 }) {
   if (!Array.isArray(models) || models.length <= 1) return null;
 
@@ -80,6 +84,7 @@ export async function resolveSmartChoice({
       timeoutId = setTimeout(() => reject(new Error(`System One router timed out after ${timeoutMs}ms`)), timeoutMs);
     });
 
+    const startedAt = Date.now();
     const corePromise = handleSystemoneCore({
       body: systemoneBody,
       modelInfo: { provider, model },
@@ -93,6 +98,13 @@ export async function resolveSmartChoice({
       result = await Promise.race([corePromise, timeoutPromise]);
     } finally {
       clearTimeout(timeoutId);
+      await saveRequestUsage({
+        requestId: randomUUID(), provider, model,
+        connectionId: credentials.connectionId, apiKey, endpoint,
+        timestamp: new Date(startedAt).toISOString(), latencyMs: Date.now() - startedAt,
+        tokens: result?.usage || {},
+        status: result?.success ? "success" : String(result?.status || 504),
+      });
     }
 
     if (!result?.success || !result.response) {

@@ -119,7 +119,7 @@ export async function handleSystemoneCore({
   return {
     success: true,
     usage: usage
-      ? { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 }
+      ? { ...usage, prompt_tokens: usage.prompt_tokens ?? usage.input_tokens ?? 0, completion_tokens: usage.completion_tokens ?? usage.output_tokens ?? 0 }
       : null,
     response: new Response(JSON.stringify(responseBody), {
       headers: {

@@ -69,14 +69,10 @@ function stopTextBlock(state, results) {
 
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
-
   const results = [];
-  const choice = chunk.choices[0];
-  const delta = choice.delta;
 
   // Track usage from OpenAI chunk if available
-  if (chunk.usage && typeof chunk.usage === "object") {
+  if (chunk?.usage && typeof chunk.usage === "object") {
     const promptTokens = typeof chunk.usage.prompt_tokens === "number" ? chunk.usage.prompt_tokens : 0;
     const outputTokens = typeof chunk.usage.completion_tokens === "number" ? chunk.usage.completion_tokens : 0;
 
@@ -90,24 +86,36 @@ export function openaiToClaudeResponse(chunk, state) {
     // Because OpenAI's prompt_tokens includes all prompt-side tokens
     const inputTokens = promptTokens - cacheReadTokens - cacheCreateTokens;
 
-    state.usage = {
+    state.claudeUsage = {
       input_tokens: inputTokens,
       output_tokens: outputTokens
     };
 
     // Add cache_read_input_tokens if present
     if (cacheReadTokens > 0) {
-      state.usage.cache_read_input_tokens = cacheReadTokens;
+      state.claudeUsage.cache_read_input_tokens = cacheReadTokens;
     }
 
     // Add cache_creation_input_tokens if present
     if (cacheCreateTokens > 0) {
-      state.usage.cache_creation_input_tokens = cacheCreateTokens;
+      state.claudeUsage.cache_creation_input_tokens = cacheCreateTokens;
     }
 
     // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
     // No need to add separately as Claude expects total output_tokens
   }
+
+  if (state.claudeCompletionPending && (!chunk || chunk.usage)) {
+    state.claudeCompletionPending = false;
+    state.claudeCompletionSent = true;
+    return [
+      { type: "message_delta", delta: { stop_reason: convertFinishReason(state.finishReason) }, usage: state.claudeUsage || { input_tokens: 0, output_tokens: 0 } },
+      { type: "message_stop" }
+    ];
+  }
+  if (!chunk?.choices?.[0] || state.claudeCompletionSent) return null;
+  const choice = chunk.choices[0];
+  const delta = choice.delta;
 
   // First chunk - ALWAYS send message_start first
   if (!state.messageStartSent) {
@@ -247,7 +255,12 @@ export function openaiToClaudeResponse(chunk, state) {
     state.finishReason = choice.finish_reason;
 
     // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+    if (state.targetFormat === FORMATS.OPENAI && !state.claudeUsage) {
+      state.claudeCompletionPending = true;
+      return results.length ? results : null;
+    }
+    state.claudeCompletionSent = true;
+    const finalUsage = state.claudeUsage || { input_tokens: 0, output_tokens: 0 };
     results.push({
       type: "message_delta",
       delta: { stop_reason: convertFinishReason(choice.finish_reason) },

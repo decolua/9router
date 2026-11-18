@@ -6,7 +6,8 @@ import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
-import { stringifyJson } from "./helpers/jsonCol.js";
+import { recordRetentionChange } from "@/lib/promptRetention.js";
+import { parseJson, stringifyJson } from "./helpers/jsonCol.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -212,6 +213,18 @@ function importLegacyDetails(adapter, data) {
   }
 }
 
+function scrubLegacyRequestPayloads(adapter) {
+  if (getMetaSync(adapter, "promptPayloadsScrubbed", "") === "1") return;
+  adapter.transaction(() => {
+    for (const row of adapter.all("SELECT id, data FROM requestDetails")) {
+      const record = parseJson(row.data, {}) || {};
+      const { request, providerRequest, providerResponse, response, pxpipe, ...metadata } = record;
+      adapter.run("UPDATE requestDetails SET data = ? WHERE id = ?", [stringifyJson(metadata), row.id]);
+    }
+    setMetaSync(adapter, "promptPayloadsScrubbed", "1");
+  });
+}
+
 // ─── Main entry ──────────────────────────────────────────────────────────
 export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
@@ -271,6 +284,7 @@ export async function runMigrationOnce(adapter) {
         importLegacyUsage(adapter, legacyUsage);
         importLegacyDisabled(adapter, legacyDisabled);
         importLegacyDetails(adapter, legacyDetails);
+        scrubLegacyRequestPayloads(adapter);
         setMetaSync(adapter, "appVersion", getAppVersion());
         setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
         setMetaSync(adapter, "migratedAt", new Date().toISOString());
@@ -286,8 +300,14 @@ export async function runMigrationOnce(adapter) {
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
     pruneOldBackups();
     console.log(`[DB][migrate] JSON → SQLite in ${Date.now() - t0}ms | legacy JSON kept at DATA_DIR | backup: ${backupDir}`);
+    recordRetentionChange(null, null, null, false, "restart");
     return;
   }
+  scrubLegacyRequestPayloads(adapter);
+
+  // Retained prompts live in process memory only, so every server start wipes
+  // them. Record the consent loss once per boot so the activity log reflects it.
+  recordRetentionChange(null, null, null, false, "restart");
 
   // Track app version for informational purposes only. App version bumps no
   // longer trigger a DB backup — only real schema changes (SCHEMA_VERSION) do.

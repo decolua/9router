@@ -37,6 +37,7 @@
 
 import { matchPattern } from "./pricing.js";
 import { looksLikeVisionModel } from "./visionPatterns.js";
+import cohere from "./registry/cohere.js";
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -198,6 +199,9 @@ export const MODEL_CAPABILITIES = {
   "kimi-k3":           { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "k3":                { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "kimi-k3.1-pro":     { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
+  // Kimi Code's official ids omit the "kimi-" platform prefix.
+  "k3.1-pro":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
+  "k3.1-pro-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "kimi-for-coding":   { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-for-coding-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-k2.7-code":    { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
@@ -243,6 +247,17 @@ const DEVIN_CLI_GPT_CAPS = { vision: true, reasoning: true, search: true, thinki
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // Public API docs: https://developers.openai.com/api/docs/models/gpt-6.2-sol
+  // and /gpt-6.2-astra. These limits are not a Codex OAuth guarantee.
+  openai: {
+    "gpt-6.2-sol": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1050000, maxOutput: 128000 },
+    "gpt-6.2-astra": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1050000, maxOutput: 128000 },
+  },
+  cohere: Object.fromEntries(cohere.models.map(model => [model.id, {
+    ...model.capabilities,
+    thinkingFormat: "openai",
+    ...(model.kind === "embedding" ? { tools: false } : model.kind === "stt" ? { audioInput: true, tools: false } : {}),
+  }])),
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
@@ -321,12 +336,12 @@ export const PROVIDER_CAPABILITIES = {
     // (the API model is 1.05M; Codex caps the default window like its siblings).
     "gpt-6.1-terra":             { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 128000 },
     "gpt-6-luna":                { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
-    "gpt-6-astra[1m]":           CODEX_EXTENDED_CAPS,
-    "gpt-6-sol[1m]":             CODEX_EXTENDED_CAPS,
-    "gpt-6-luna[1m]":            CODEX_EXTENDED_CAPS,
-    "gpt-5.6-sol[1m]":           CODEX_EXTENDED_CAPS,
-    "gpt-5.6-terra[1m]":         CODEX_EXTENDED_CAPS,
-    "gpt-5.6-luna[1m]":          CODEX_EXTENDED_CAPS,
+    "gpt-6-astra-1m":           CODEX_EXTENDED_CAPS,
+    "gpt-6-sol-1m":             CODEX_EXTENDED_CAPS,
+    "gpt-6-luna-1m":            CODEX_EXTENDED_CAPS,
+    "gpt-5.6-sol-1m":           CODEX_EXTENDED_CAPS,
+    "gpt-5.6-terra-1m":         CODEX_EXTENDED_CAPS,
+    "gpt-5.6-luna-1m":          CODEX_EXTENDED_CAPS,
     "gpt-5.6-sol":               CODEX_GPT_56_SOL_CAPS,
     "gpt-5.6-sol-review":        CODEX_GPT_56_SOL_CAPS,
     "gpt-5.6-terra":             CODEX_GPT_56_DEFAULT_CAPS,
@@ -521,7 +536,11 @@ export const PATTERN_CAPABILITIES = [
 
   // ── Gemini (all 2.0+ multimodal + google_search grounding, 1M ctx) ─
   { pattern: "*gemini*image*",  caps: { vision: true, imageOutput: true, contextWindow: 1048576 } },
-  // Gemini 4 (Argon): no "minimal" tier (400) and no thinkingBudget — LOW/MEDIUM/HIGH only, cannot disable.
+  // Gemini 4 Hydrogen: text/image/video/audio/PDF in, 1M unified window, 64K per request
+  // (models/gemini-4-hydrogen: inputTokenLimit 1048576, outputTokenLimit 65536). Levels in thinkingLevels.js.
+  // longDecode: a max_tokens above 64K runs CONTINUATION hops up to 1M (utils/geminiLongDecode.js).
+  { pattern: "*gemini-4-hydrogen*", caps: { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536, longDecode: true } },
+  // Gemini 4 (Carbon/Argon): no "minimal" tier (400) and no thinkingBudget — LOW/MEDIUM/HIGH only, cannot disable.
   { pattern: "*gemini-4*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-3.8*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-3.7*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
@@ -882,7 +901,7 @@ export function getCapabilitiesForModel(provider, model) {
   return refine(null, provider, model);
 }
 
-// Gemini 4 (Argon) drops sampling params and requires functionResponse-last merged user turns.
+// Gemini 4 (Hydrogen/Carbon/Argon) drops sampling params and requires functionResponse-last merged user turns.
 export function isGemini4Model(model) {
   return /(?:^|\/)gemini-4(?:$|[-.])/i.test(String(model || ""));
 }

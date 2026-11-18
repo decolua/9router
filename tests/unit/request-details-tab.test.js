@@ -84,7 +84,7 @@ describe("request details — tab crash-risk cases", () => {
     expect(res.pagination.pageSize).toBe(9999);
   });
 
-  it("oversized field → stored truncated + reparseable (no circular)", async () => {
+  it("oversized field without key consent is not persisted or returned", async () => {
     const huge = "x".repeat(20 * 1024);
     await saveDetail({
       id: "trunc-1", provider: "openai", model: "gpt-4",
@@ -94,9 +94,10 @@ describe("request details — tab crash-risk cases", () => {
 
     const got = await db.getRequestDetailById("trunc-1");
     expect(got).toBeDefined();
-    // Truncated field is a plain object safe for JSON.stringify in the drawer
-    expect(() => JSON.stringify(got)).not.toThrow();
-    expect(got.request._truncated).toBe(true);
+    expect(got.request).toEqual({ redacted: true });
+    const stored = adapter.get("SELECT data FROM requestDetails WHERE id = ?", ["trunc-1"]);
+    expect(stored.data).not.toContain(huge);
+    expect(JSON.parse(stored.data).request).toBeUndefined();
   });
 
   it("missing tokens/timestamp on row → getInputTokens-style access safe", async () => {

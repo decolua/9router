@@ -38,6 +38,16 @@ async function modelsWithCombo(providerId, modelId, combos) {
 }
 
 describe("/v1/models combo limits", () => {
+  it("advertises selectable reasoning levels only for supported models", async () => {
+    const models = await modelsWithCombo("grok-cli", "grok-4.5", []);
+    const model = models.find((entry) => entry.id.endsWith("/grok-4.5"));
+    expect(model.supported_reasoning_efforts).toEqual(["low", "medium", "high", "xhigh"]);
+    expect(model.supported_reasoning_levels.map((level) => level.effort)).toEqual(model.supported_reasoning_efforts);
+
+    const unsupported = await modelsWithCombo("grok-cli", "grok-build", []);
+    expect(unsupported.find((entry) => entry.id.endsWith("/grok-build"))).not.toHaveProperty("supported_reasoning_levels");
+  });
+
   it.each([
     ["ocg", "opencode-go", "mimo-v2.5"],
     ["xmtp", "xiaomi-tokenplan", "mimo-v2.5"],

@@ -34,7 +34,7 @@ function toImagePreviewSrc(value) {
   return `data:image/png;base64,${trimmed}`;
 }
 
-export function GenericExampleCard({ providerId, kind }) {
+export function GenericExampleCard({ providerId, kind, catalogModels }) {
   const providerAlias = getProviderAlias(providerId);
   const resolvedId = resolveProviderId(providerAlias);
   const safeProviderAlias = resolvedId === providerId ? providerAlias : providerId;
@@ -50,15 +50,18 @@ export function GenericExampleCard({ providerId, kind }) {
   ));
 
   // Get models for this kind (e.g., type="image")
-  const kindModels = getModelsByProviderId(providerId).filter((m) => getModelKind(m) === kind);
+  const kindModels = (catalogModels ?? getModelsByProviderId(providerId)).filter((m) => getModelKind(m) === kind);
   // Kinds that need a model identifier in the request (image/video/music/systemone)
   const KIND_NEEDS_MODEL = new Set(["image", "video", "music", "imageToText", "systemone"]);
   const needsModel = KIND_NEEDS_MODEL.has(kind);
   const allowManualModel = needsModel && kindModels.length === 0;
   const [selectedModel, setSelectedModel] = useState(kindModels[0]?.id ?? "");
+  useEffect(() => {
+    setSelectedModel((current) => kindModels.some((m) => m.id === current) ? current : kindModels[0]?.id || "");
+  }, [catalogModels]);
   const selectedModelObj = kindModels.find((m) => m.id === selectedModel);
-  const supportsEdit = !!selectedModelObj?.capabilities?.includes("edit");
-  const supportsMask = !!selectedModelObj?.capabilities?.includes("mask");
+  const supportsEdit = !!(Array.isArray(selectedModelObj?.capabilities) ? selectedModelObj.capabilities.includes("edit") : selectedModelObj?.capabilities?.imageEdit);
+  const supportsMask = Array.isArray(selectedModelObj?.capabilities) && selectedModelObj.capabilities.includes("mask");
 
   const [input, setInput] = useState(safeExConfig.defaultInput || "");
   const [question, setQuestion] = useState("Does this request require urgent attention?");

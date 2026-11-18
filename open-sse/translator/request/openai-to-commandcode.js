@@ -16,6 +16,7 @@ import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { COMMAND_CODE_WORKING_DIR, toCommandCodeSessionUuid } from "../../shared/commandCodeHeaders.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 import { parseDataUri, encodeDataUri } from "../concerns/image.js";
+import { commandCodeThreadId } from "../../utils/commandCodeSession.js";
 
 function flattenText(content) {
   if (content == null) return "";
@@ -237,7 +238,8 @@ export function openaiToCommandCodeRequest(model, body, stream, credentials) {
 
   return {
     // Conversation-stable (session captured by translateRequest); the executor reuses it as x-session-id.
-    threadId: toCommandCodeSessionUuid(credentials?._clientSessionId),
+    threadId: credentials?._clientSessionId
+      ? toCommandCodeSessionUuid(credentials._clientSessionId) : commandCodeThreadId(body),
     memory: null,
     taste: null,
     skills: null,

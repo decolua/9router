@@ -19,8 +19,8 @@ export async function listTtsVoices(provider, langFilter = null, apiKey = null) 
   }
 
   // ElevenLabs requires API key
-  const raw = provider === "elevenlabs" ? await fetcher(apiKey) : await fetcher();
-  const useElevenShape = provider === "elevenlabs" || provider === "gemini";
+  const raw = ["elevenlabs", "pollinations"].includes(provider) ? await fetcher(apiKey) : await fetcher();
+  const useElevenShape = ["elevenlabs", "gemini", "pollinations"].includes(provider);
   let voices;
 
   if (provider === "local-device") {
@@ -38,11 +38,11 @@ export async function listTtsVoices(provider, langFilter = null, apiKey = null) 
     voices = raw.map((v) => ({
       id:      v.voice_id,
       name:    v.name,
-      locale:  v.labels?.language || "en",
-      lang:    (v.labels?.language || "en").split("-")[0],
+      locale:  v.labels?.language || v.lang || "en",
+      lang:    (v.labels?.language || v.lang || "en").split("-")[0],
       country: "",
       countryName: "",
-      langName:    langName((v.labels?.language || "en").split("-")[0]),
+      langName:    langName((v.labels?.language || v.lang || "en").split("-")[0]),
       gender:  v.labels?.gender || "",
       category: v.category,
     }));

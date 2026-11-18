@@ -110,6 +110,40 @@ export function reorderByCapabilities(models, required) {
  */
 const comboRotationState = new Map();
 
+/**
+ * Sticky-fallback state per combo. Remembers which member index the combo is
+ * "parked" on (usually a later member after the first failed) plus how many
+ * consecutive failures happened since the last success, so a failing sticky
+ * member eventually rotates back to the original first model.
+ * @type {Map<string, { start: number, failures: number, lastUsed: number }>}
+ */
+const comboStickyFallbackState = new Map();
+
+// Same TTL as the smart-router sticky session: an unused position expires back
+// to the original model order.
+const STICKY_FALLBACK_TTL_MS = 2 * 60 * 60 * 1000;
+
+function getStickyFallbackState(key) {
+  const entry = comboStickyFallbackState.get(key);
+  if (entry && Date.now() - entry.lastUsed > STICKY_FALLBACK_TTL_MS) {
+    comboStickyFallbackState.delete(key);
+    return null;
+  }
+  return entry || null;
+}
+
+function setStickyFallbackState(key, state) {
+  comboStickyFallbackState.set(key, { ...state, lastUsed: Date.now() });
+}
+
+function resetStickyFallbackState() {
+  for (const [key, entry] of comboStickyFallbackState) {
+    if (Date.now() - entry.lastUsed > STICKY_FALLBACK_TTL_MS) {
+      comboStickyFallbackState.delete(key);
+    }
+  }
+}
+
 // Trailing run of items after the last assistant/model turn = the current user
 // turn. It may span several messages (e.g. text + image split across blocks),
 // so we return all of them. History media (older turns) must not pin the combo
@@ -220,6 +254,26 @@ function rotateModelsFromIndex(models, currentIndex) {
   return rotatedModels;
 }
 
+// Put the member the combo is parked on first, keeping the original relative
+// order of everything else intact so in-loop fallback order still matches.
+function reorderForSticky(models, startIndex) {
+  if (!Array.isArray(models) || startIndex <= 0 || startIndex >= models.length) return models;
+  return rotateModelsFromIndex(models, startIndex);
+}
+
+/**
+ * Exposed for tests: inspect/clear sticky-fallback state for a combo.
+ */
+export function getStickyFallbackEntry(comboName) {
+  resetStickyFallbackState();
+  return getStickyFallbackState(comboName || "__default__");
+}
+
+export function clearStickyFallbackState(comboName) {
+  if (comboName) comboStickyFallbackState.delete(comboName || "__default__");
+  else comboStickyFallbackState.clear();
+}
+
 /**
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
@@ -266,9 +320,11 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
 export function resetComboRotation(comboName) {
   if (comboName) {
     comboRotationState.delete(comboName);
+    comboStickyFallbackState.delete(comboName);
     clearStickyComboSession(comboName);
   } else {
     comboRotationState.clear();
+    comboStickyFallbackState.clear();
     clearStickyComboSession();
   }
 }
@@ -341,7 +397,7 @@ export function isZeroContentResponse(data) {
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
- * @param {string} [options.comboStrategy] - Strategy: "fallback", "round-robin", or "smart"
+ * @param {string} [options.comboStrategy] - Strategy: "fallback", "round-robin", "sticky-fallback", or "smart"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @param {boolean} [options.autoSwitch=true] - Capability auto-switching
  * @param {string|null} [options.sessionId=null] - Client session identifier for prompt cache retention
@@ -446,6 +502,27 @@ export async function handleComboChat({
         log.warn("COMBO", `smart-router error, fallback to order: [${models.join(", ")}]`, { error: err?.message || String(err) });
       }
     }
+  } else if (comboStrategy === "sticky-fallback") {
+    // Sticky fallback: normally try in order, but if a previous request had to
+    // demote the original first model, keep starting from the member the traffic
+    // moved to so its upstream prompt cache stays warm. Successes there refresh
+    // the position; enough consecutive failures rotate us back to index 0.
+    const stickyKey = comboName || "__default__";
+    if (models && models.length > 1 && sessionId) {
+      const stickyState = getStickyFallbackState(stickyKey);
+      if (stickyState) {
+        const stickyLimit = normalizeStickyLimit(comboStickyLimit);
+        if (stickyState.failures >= stickyLimit) {
+          stickyState.start = 0;
+          stickyState.failures = 0;
+          log.info("COMBO", `sticky-fallback: ${stickyLimit} failure(s) on parked model, rotating back to original head`);
+        }
+        if (stickyState.start > 0) {
+          rotatedModels = reorderForSticky(models, stickyState.start);
+          log.info("COMBO", `sticky-fallback: starting from parked member (${stickyState.failures} failure(s) since last success)`);
+        }
+      }
+    }
   } else {
     // Apply rotation strategy if enabled
     rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
@@ -467,6 +544,24 @@ export async function handleComboChat({
   let earliestRetryAfter = null;
   let lastStatus = null;
   let requestScopedResult = null;
+
+  const stickyFallsback = comboStrategy === "sticky-fallback" && sessionId;
+  const stickyFallbackKey = stickyFallsback ? (comboName || "__default__") : null;
+  // Per-request outcome for the parked member: it counts as one failed "slot"
+  // and drives the rotate-back-to-original behavior once the budget is spent.
+  const stickyEntry = stickyFallsback ? getStickyFallbackState(stickyFallbackKey) : null;
+  const recordStickyFailure = () => {
+    if (!stickyEntry) return;
+    const entry = getStickyFallbackState(stickyFallbackKey) || { start: 0, failures: 0 };
+    entry.failures += 1;
+    setStickyFallbackState(stickyFallbackKey, entry);
+  };
+  const recordStickySuccess = () => {
+    if (!stickyEntry) return;
+    const entry = getStickyFallbackState(stickyFallbackKey) || { start: 0, failures: 0 };
+    entry.failures = 0;
+    setStickyFallbackState(stickyFallbackKey, entry);
+  };
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
@@ -520,11 +615,13 @@ export async function handleComboChat({
           }
 
           log.info("COMBO", `Model ${modelStr} succeeded`);
+          recordStickySuccess();
           return result;
         }
 
         if (peeked.outcome === "content") {
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
+          recordStickySuccess();
           return peeked.response;
         }
 
@@ -544,6 +641,7 @@ export async function handleComboChat({
         }
         // Drain/close the discarded stream in the background so its usage logging still runs.
         peeked.response.body?.cancel?.().catch(() => {});
+        recordStickyFailure();
         lastError = `empty generation (${reasonLabel})`;
         if (!lastStatus) lastStatus = 502;
         continue;
@@ -593,6 +691,7 @@ export async function handleComboChat({
       // request-scoped fault must not evict a healthy account from rotation).
       if (requestScoped) {
         log.warn("COMBO", `Model ${modelStr} rejected the request (${result.status}), trying next`, { status: result.status });
+        recordStickyFailure();
         lastError = errorText || String(result.status);
         if (!lastStatus) lastStatus = result.status;
         if (!requestScopedResult) requestScopedResult = result;
@@ -612,6 +711,7 @@ export async function handleComboChat({
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      recordStickyFailure();
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
@@ -620,6 +720,7 @@ export async function handleComboChat({
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      recordStickyFailure();
     }
   }
 

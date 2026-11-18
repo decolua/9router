@@ -26,7 +26,7 @@ const PROVIDER_ORDER = [
 // Static registry stays as fallback when live fetch fails or is empty.
 // zed added in #4244: its backend customResolver already returns live models
 // but the frontend omitted it, hiding Zed entirely from the Combo picker.
-const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed"];
+const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "cohere", "pollinations"];
 
 // Fetch a provider's account-scoped catalog for every active connection and merge
 // the results. Entries collapse by model id on purpose: two connections of the
@@ -89,6 +89,8 @@ export default function ModelSelectModal({
   addedModelValues = [],
   closeOnSelect = true,
   allowProviderWildcard = false,
+  modelGroups = [],
+  modelGroupsError = "",
 }) {
   // Live-fetched connections on modal open, fallback to activeProviders prop
   const [fetchedConnections, setFetchedConnections] = useState(null);
@@ -156,6 +158,8 @@ export default function ModelSelectModal({
   const clineModels = useLiveProviderModels(isOpen, clineConnectionIds, "Cline");
   const clinepassModels = useLiveProviderModels(isOpen, clinepassConnectionIds, "ClinePass");
   const zedModels = useLiveProviderModels(isOpen, zedConnectionIds, "Zed");
+  const cohereModels = useLiveProviderModels(isOpen, liveConnectionIdsByProvider.cohere, "Cohere");
+  const pollinationsModels = useLiveProviderModels(isOpen, liveConnectionIdsByProvider.pollinations, "Pollinations");
 
   const fetchCombos = async () => {
     try {
@@ -230,7 +234,7 @@ export default function ModelSelectModal({
     // Kinds where the provider IS the model (no per-model selection needed)
     const PROVIDER_AS_MODEL_KINDS = new Set(["webSearch", "webFetch"]);
     // Kinds that map directly to model.type field
-    const TYPED_KINDS = new Set(["image", "tts", "stt", "embedding", "imageToText", "systemone"]);
+    const TYPED_KINDS = new Set(["image", "tts", "stt", "embedding", "imageToText", "systemone", "realtime"]);
     // For these kinds, providers without hardcoded models can still be picked (provider-as-model fallback)
     const ALLOW_PROVIDER_FALLBACK_KINDS = new Set(["tts", "image", "webFetch"]);
 
@@ -299,7 +303,7 @@ export default function ModelSelectModal({
         return;
       }
 
-      if (providerInfo.passthroughModels) {
+      if (providerInfo.passthroughModels && !["cohere", "pollinations"].includes(providerId)) {
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
@@ -406,7 +410,7 @@ export default function ModelSelectModal({
           hasModels: mergedModels.length > 0,
         };
       } else {
-        const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : providerId === "zed" ? zedModels : [];
+        const liveModels = ({ cursor: cursorModels, cline: clineModels, clinepass: clinepassModels, zed: zedModels, cohere: cohereModels, pollinations: pollinationsModels })[providerId] || [];
         const hardcodedModels = liveModels.length > 0
           ? liveModels
           : getModelsByProviderId(providerId);
@@ -433,7 +437,7 @@ export default function ModelSelectModal({
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
         const merged = [
-          ...applyQoderModelNames(hardcodedModels, customModels, alias).map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
+          ...applyQoderModelNames(hardcodedModels, customModels, alias).map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m), capabilities: m.capabilities })),
           ...customAliasModels,
           ...customRegisteredModels,
         ];
@@ -500,7 +504,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels, cohereModels, pollinationsModels]);
 
   // Parse search query into structured query (regex, positive tokens, negative tokens)
   const parsedQuery = useMemo(() => parseSearchQuery(searchQuery), [searchQuery]);
@@ -511,6 +515,11 @@ export default function ModelSelectModal({
     if (parsedQuery.isEmpty) return combos;
     return combos.filter(c => matchesSearch(c.name, parsedQuery));
   }, [combos, parsedQuery, kindFilter, capFilter]);
+
+  const filteredModelGroups = useMemo(() => modelGroups
+    .filter((group) => parsedQuery.isEmpty || matchesSearch(group.name, parsedQuery))
+    .map((group) => ({ value: `@group/${group.id}`, name: group.name })), [modelGroups, parsedQuery]);
+  const isGroupAdded = (value) => addedModelValues.some((entry) => entry.toLowerCase() === value.toLowerCase());
 
   // Sort models alphabetically, with added models floated to top
   const sortModels = (models) => {
@@ -526,7 +535,7 @@ export default function ModelSelectModal({
       let models = group.models;
       // Filter by input-modality capability (vision/pdf/audioInput/videoInput).
       if (capFilter) {
-        models = models.filter((m) => getCaps(m.value)?.[capFilter] === true);
+        models = models.filter((m) => (m.capabilities || getCaps(m.value))?.[capFilter] === true);
         if (models.length === 0) return;
       }
       if (!parsedQuery.isEmpty) {
@@ -570,15 +579,15 @@ export default function ModelSelectModal({
         }
       });
     });
-    return list;
-  }, [filteredGroups]);
+    return [...list, ...filteredModelGroups];
+  }, [filteredGroups, filteredModelGroups]);
 
   const visibleUnadded = useMemo(() => {
-    return visibleModels.filter((m) => !addedModelValues.includes(m.value));
+    return visibleModels.filter((m) => m.value.startsWith("@group/") ? !isGroupAdded(m.value) : !addedModelValues.includes(m.value));
   }, [visibleModels, addedModelValues]);
 
   const visibleAdded = useMemo(() => {
-    return visibleModels.filter((m) => addedModelValues.includes(m.value));
+    return visibleModels.filter((m) => m.value.startsWith("@group/") ? isGroupAdded(m.value) : addedModelValues.includes(m.value));
   }, [visibleModels, addedModelValues]);
 
   const handleSelectAllVisible = () => {
@@ -601,7 +610,7 @@ export default function ModelSelectModal({
 
   const handleSelect = (model) => {
     const value = model?.value || model?.name || model;
-    const isAdded = addedModelValues.includes(value);
+    const isAdded = typeof value === "string" && value.toLowerCase().startsWith("@group/") ? isGroupAdded(value) : addedModelValues.includes(value);
 
     if (isAdded && onDeselect) {
       onDeselect(model);
@@ -636,6 +645,7 @@ export default function ModelSelectModal({
             : "Click to add, click again to remove. Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/)."}
         </span>
       </div>
+      {modelGroupsError && <p className="mb-2 text-xs text-red-500" role="alert">{modelGroupsError}</p>}
 
       {/* Search & batch actions */}
       <div className="mb-3 space-y-2">
@@ -681,7 +691,7 @@ export default function ModelSelectModal({
         {!closeOnSelect && visibleModels.length > 0 && (
           <div className="flex items-center justify-between px-1 text-[11px] text-text-muted">
             <span className="flex items-center gap-1.5">
-              <span>{visibleModels.length} models</span>
+              <span>{visibleModels.length} {modelGroups.length ? "models and groups" : "models"}</span>
               {addedModelValues.length > 0 && (
                 <span className="text-primary font-medium">({addedModelValues.length} selected)</span>
               )}
@@ -714,7 +724,30 @@ export default function ModelSelectModal({
 
       {/* Models grouped by provider - compact */}
       <div className="max-h-[400px] overflow-y-auto space-y-3">
-        {/* Combos section - always first */}
+        {filteredModelGroups.length > 0 && (
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
+              <span className="material-symbols-outlined text-primary text-[14px]">folder_shared</span>
+              <span className="text-xs font-medium text-primary">Model groups</span>
+              <span className="text-[10px] text-text-muted">({filteredModelGroups.length})</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {filteredModelGroups.map((group) => (
+                <button
+                  type="button"
+                  key={group.value}
+                  onClick={() => handleSelect(group)}
+                  aria-pressed={isGroupAdded(group.value)}
+                  className={`px-2 py-1 rounded-xl text-xs font-medium transition-all border cursor-pointer flex items-center gap-1 ${isGroupAdded(group.value) ? "bg-primary border-primary text-white hover:bg-primary-hover" : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"}`}
+                >
+                  {isGroupAdded(group.value) && <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>}
+                  {group.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* Combos section */}
         {filteredCombos.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
@@ -846,7 +879,7 @@ export default function ModelSelectModal({
         );
       })}
 
-      {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && (
+      {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && filteredModelGroups.length === 0 && (
         <div className="text-center py-4 text-text-muted">
           <span className="material-symbols-outlined text-2xl mb-1 block">
             search_off
@@ -879,4 +912,6 @@ ModelSelectModal.propTypes = {
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
   allowProviderWildcard: PropTypes.bool,
+  modelGroups: PropTypes.arrayOf(PropTypes.shape({ id: PropTypes.string.isRequired, name: PropTypes.string.isRequired })),
+  modelGroupsError: PropTypes.string,
 };

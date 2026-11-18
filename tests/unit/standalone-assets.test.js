@@ -11,8 +11,15 @@ function createBuildFixture(distDir) {
   mkdirSync(join(buildRoot, "standalone"), { recursive: true });
   mkdirSync(join(buildRoot, "static", "chunks"), { recursive: true });
   mkdirSync(join(projectRoot, "public"), { recursive: true });
+  mkdirSync(join(projectRoot, "realtime"), { recursive: true });
+  mkdirSync(join(projectRoot, "node_modules", "ws"), { recursive: true });
   writeFileSync(join(buildRoot, "static", "chunks", "app.js"), "static asset");
   writeFileSync(join(projectRoot, "public", "favicon.svg"), "public asset");
+  writeFileSync(join(projectRoot, "realtime", "codex-websocket.js"), "codex websocket");
+  writeFileSync(join(projectRoot, "realtime", "realtime-websocket.js"), "realtime dispatcher");
+  writeFileSync(join(projectRoot, "realtime", "openai-realtime-websocket.js"), "openai realtime websocket");
+  writeFileSync(join(projectRoot, "realtime", "realtime-models.cjs"), "realtime models");
+  writeFileSync(join(projectRoot, "node_modules", "ws", "index.js"), "ws runtime");
   return projectRoot;
 }
 
@@ -26,6 +33,12 @@ describe("standalone build assets", () => {
       .toBe("static asset");
     expect(readFileSync(join(projectRoot, ".next", "standalone", "public", "favicon.svg"), "utf8"))
       .toBe("public asset");
+    expect(readFileSync(join(projectRoot, ".next", "standalone", "realtime", "openai-realtime-websocket.js"), "utf8"))
+      .toBe("openai realtime websocket");
+    expect(readFileSync(join(projectRoot, ".next", "standalone", "realtime", "realtime-websocket.js"), "utf8"))
+      .toBe("realtime dispatcher");
+    expect(readFileSync(join(projectRoot, ".next", "standalone", "realtime", "realtime-models.cjs"), "utf8"))
+      .toBe("realtime models");
   });
 
   it("uses a custom Next dist directory", () => {
@@ -46,6 +59,8 @@ describe("standalone build assets", () => {
 
     expect(readFileSync(join(projectRoot, ".next", "standalone", "custom-server.js"), "utf8"))
       .toBe("wrapper");
+    expect(readFileSync(join(projectRoot, ".next", "standalone", "realtime", "codex-websocket.js"), "utf8"))
+      .toBe("codex websocket");
   });
 
   it("does not modify workspace-traced CLI builds", () => {

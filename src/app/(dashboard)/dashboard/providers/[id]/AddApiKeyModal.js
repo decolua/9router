@@ -29,6 +29,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const apiKeyOptionalWith = AI_PROVIDERS?.[provider]?.apiKeyOptionalWith || null;
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
+  const providerPlans = AI_PROVIDERS?.[provider]?.plans || null;
+  const availablePlans = providerPlans?.filter((item) => !item.authModes || item.authModes.includes("apikey")) || null;
+  const defaultPlan = AI_PROVIDERS?.[provider]?.defaultPlan || availablePlans?.[0]?.id || "";
 
   const [formData, setFormData] = useState({
     name: "",
@@ -52,6 +55,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     sessionToken: "",
   });
   const [region, setRegion] = useState(defaultRegion);
+  const [plan, setPlan] = useState(defaultPlan);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -116,6 +120,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (providerRegions && region) {
       return { region };
+    }
+    if (providerPlans && plan) {
+      return { plan };
     }
     return undefined;
   };
@@ -368,6 +375,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
+          />
+        )}
+        {availablePlans && (
+          <Select
+            label="Plan"
+            value={plan}
+            onChange={(e) => setPlan(e.target.value)}
+            options={availablePlans.map((item) => ({ value: item.id, label: item.label }))}
           />
         )}
         {isCompatible && (

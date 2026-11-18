@@ -65,6 +65,22 @@ describe("request normalization", () => {
     expect(result.messages[0].content).toBe("a\nb");
   });
 
+  it("filterToOpenAIFormat defaults missing function.parameters on OpenAI-format tools", () => {
+    const body = {
+      messages: [{ role: "user", content: "hi" }],
+      tools: [
+        { type: "function", function: { name: "no_params", description: "d" } },
+        { type: "function", function: { name: "has_params", parameters: { type: "object", properties: {} } } },
+        { type: "function", function: { name: "null_params", parameters: null } },
+      ],
+    };
+
+    const result = filterToOpenAIFormat(JSON.parse(JSON.stringify(body)));
+    expect(result.tools[0].function.parameters).toEqual({ type: "object", properties: {} });
+    expect(result.tools[1].function.parameters).toEqual({ type: "object", properties: {} });
+    expect(result.tools[2].function.parameters).toEqual({ type: "object", properties: {} });
+  });
+
   it("translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe", () => {
     const body = {
       model: "ollama/gpt-oss:120b",

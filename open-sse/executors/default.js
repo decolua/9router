@@ -9,6 +9,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { extractClaudeSessionIdFromUserId } from "../utils/claudeCloaking.js";
+import { wantsGeminiLongDecode, withGeminiLongDecode } from "../utils/geminiLongDecode.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -26,9 +27,12 @@ function setAuth(headers, spec, token) {
 
 // Resolve auth onto headers from a descriptor.
 function applyAuth(headers, desc, credentials) {
+  const token = desc.tokenField
+    ? credentials.providerSpecificData?.[desc.tokenField]
+    : credentials.apiKey || credentials.accessToken;
   if (desc.combined) {
     // combined providers always set the header (legacy behavior, incl. noAuth → "Bearer undefined")
-    setAuth(headers, desc, credentials.apiKey || credentials.accessToken);
+    setAuth(headers, desc, token);
     if (desc.anthropicVersion && !headers["anthropic-version"]) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
     return;
   }
@@ -95,6 +99,17 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
+  // Gemini 4 long decode: a gemini-format request asking for more than one hop's output
+  // re-sends the same body with the top-level continuationToken until the model finishes.
+  async execute(args) {
+    const result = await super.execute(args);
+    if (this.config.format !== "gemini" || !result?.response?.ok) return result;
+    if (!wantsGeminiLongDecode(this.provider, args.model, result.transformedBody?.generationConfig)) return result;
+    const nextHop = async (continuationToken) =>
+      (await super.execute({ ...args, body: { ...args.body, continuationToken } })).response;
+    return withGeminiLongDecode(result, { stream: args.stream, nextHop, signal: args.signal, log: args.log });
+  }
+
   transformRequest(model, body, stream, credentials) {
     let transformed = this.applyJsonSchemaFallback(this.applyNousAttribution(model, body, stream, credentials));
 
@@ -108,6 +123,11 @@ export class DefaultExecutor extends BaseExecutor {
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
+      }
+      if (this.provider === "anthropic") {
+        delete transformed.temperature;
+        delete transformed.top_p;
+        delete transformed.top_k;
       }
       stripUnsupportedParams(this.provider, model, transformed);
     }
@@ -159,9 +179,21 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
+    const plan = credentials?.providerSpecificData?.plan;
+    const planTransport = plan && this.config.plans?.[plan];
+    if (planTransport?.baseUrl) {
+      const baseModel = typeof model === "string" ? model.replace(/\([^()]+\)\s*$/, "").trim() : model;
+      if (planTransport.supportedModels && !planTransport.supportedModels.includes(baseModel)) {
+        throw new Error(`${this.provider} ${plan} does not support model ${model}`);
+      }
+      return planTransport.baseUrl;
+    }
     // Runtime transport (multi-endpoint providers): use the sourceFormat-matched endpoint
     const rt = credentials?.runtimeTransport;
     if (rt?.baseUrl) {
+      if (rt.format === "gemini") {
+        return `${rt.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+      }
       return rt.urlSuffix ? `${rt.baseUrl}${rt.urlSuffix}` : rt.baseUrl;
     }
     if (this.provider?.startsWith?.("openai-compatible-")) {
@@ -205,8 +237,21 @@ export class DefaultExecutor extends BaseExecutor {
 
   buildHeaders(credentials, stream = true, url, model, body = null) {
     const rt = credentials?.runtimeTransport;
-    const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers) };
-    const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
+    const plan = credentials?.providerSpecificData?.plan;
+    const planTransport = plan && this.config.plans?.[plan];
+    const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers), ...planTransport?.headers };
+    const desc = planTransport?.auth || rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
+    if (planTransport?.tokenField) {
+      const planToken = credentials?.providerSpecificData?.[planTransport.tokenField]
+        || (plan === this.config.defaultPlan ? credentials.apiKey || credentials.accessToken : null);
+      if (planToken) credentials = { ...credentials, apiKey: planToken, accessToken: null };
+      else if (credentials?.authType === "oauth") {
+        throw new Error(`${this.provider} ${plan} is unavailable for this account; reconnect with Z.ai OAuth`);
+      }
+    }
+    if (desc.tokenField && !credentials?.providerSpecificData?.[desc.tokenField]) {
+      throw new Error(`${this.provider} ${plan} requires ${desc.tokenField}; reconnect with Z.ai OAuth`);
+    }
     // Hooks run BEFORE auth so dynamic overlays can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);

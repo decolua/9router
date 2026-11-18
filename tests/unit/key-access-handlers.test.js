@@ -104,6 +104,21 @@ const chat = (model, k) => handleChat(post("/v1/chat/completions", { model, stre
 describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handleChat)", () => {
   beforeEach(() => mocks.getProviderCredentials.mockResolvedValue({ connectionId: "conn", connectionName: "mock" }));
 
+  it("rejects realtime models before credential lookup, including combo members", async () => {
+    fx.combos.push({ id: "realtime", name: "RealtimeOnly", models: ["cx/gpt-live-1-codex"] });
+    try {
+      for (const model of ["codex/gpt-live-1-codex", "cx/gpt-live-1-codex", "openai/gpt-realtime", "RealtimeOnly"]) {
+        const response = await chat(model, "sk-open");
+        expect(response.status).toBe(400);
+        expect((await response.text())).toContain("/v1/realtime");
+      }
+      expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
+      expect(mocks.handleChatCore).not.toHaveBeenCalled();
+      expect((await chat("codex/gpt-5.1-codex", "sk-open")).status).toBe(200);
+    } finally {
+      fx.combos.pop();
+    }
+  });
   it("unrestricted key reaches the provider for the combo and models", async () => {
     for (const m of ["Main", "openai/model-b"]) {
       expect((await chat(m, "sk-open")).status).toBe(200);

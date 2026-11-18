@@ -28,7 +28,17 @@ export default {
     forceStream: true,
   },
   models: [
+    { id: "gpt-realtime-2", name: "GPT Realtime 2", kind: "realtime" },
+    { id: "gpt-realtime-1.5", name: "GPT Realtime 1.5", kind: "realtime" },
+    { id: "gpt-realtime", name: "GPT Realtime", kind: "realtime" },
+    { id: "gpt-realtime-mini", name: "GPT Realtime Mini", kind: "realtime" },
+    { id: "gpt-4o-realtime-preview", name: "GPT-4o Realtime Preview", kind: "realtime" },
+    { id: "gpt-4o-realtime-preview-2024-12-17", name: "GPT-4o Realtime Preview (2024-12-17)", kind: "realtime" },
+    { id: "gpt-4o-mini-realtime-preview", name: "GPT-4o Mini Realtime Preview", kind: "realtime" },
     { id: "gpt-5.5", name: "GPT-5.5" },
+    // Public OpenAI API models; availability on Codex OAuth is not verified.
+    { id: "gpt-6.2-sol", name: "GPT-6.2 Sol" },
+    { id: "gpt-6.2-astra", name: "GPT-6.2 Astra" },
     { id: "gpt-5.4", name: "GPT-5.4" },
     { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
     { id: "gpt-5.4-nano", name: "GPT-5.4 Nano" },
@@ -65,7 +75,7 @@ export default {
     { id: "dall-e-3", name: "DALL-E 3", params: ["size","quality","style","response_format"], kind: "image" },
     { id: "dall-e-2", name: "DALL-E 2", params: ["n","size","response_format"], kind: "image" },
   ],
-  serviceKinds: ["llm","embedding","tts","stt","image","imageToText","webSearch"],
+  serviceKinds: ["llm","embedding","tts","stt","image","imageToText","webSearch","realtime"],
   ttsConfig: {
     baseUrl: "https://api.openai.com/v1/audio/speech",
     authType: "apikey",

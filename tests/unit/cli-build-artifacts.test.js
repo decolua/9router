@@ -41,6 +41,7 @@ function createCompleteServer(buildDistDir) {
   const serverDir = path.join(buildDistDir, "server");
   writeFixture(serverDir, "app/api/v1/chat/completions/route.js", "chat route");
   writeFixture(serverDir, "app/api/v1/messages/route.js", "messages route");
+  writeFixture(serverDir, "app/api/internal/realtime-credentials/route.js", "realtime credentials route");
   writeFixture(serverDir, "chunks/openai-provider.js", "openai chunk");
   writeFixture(serverDir, "chunks/anthropic-provider.js", "anthropic chunk");
   return serverDir;

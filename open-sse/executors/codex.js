@@ -7,9 +7,10 @@ import {
 } from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
+import { fitCodexImage } from "../utils/codexImage.js";
 import { getModelUpstreamId, getProviderModels } from "../config/providerModels.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
-import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { CODEX_EARLY_RETRY, CODEX_EARLY_RETRY_TIMEOUT_MS, CODEX_EARLY_RETRY_ATTEMPTS, DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { stripCodexUnsupportedPatterns } from "../utils/codexToolSchema.js";
@@ -22,6 +23,8 @@ const CODEX_SSE_USER_OUTPUT_PATTERNS = [
   "event: response.function_call_arguments.delta",
   '"type":"response.output_text.delta"',
   '"type":"response.function_call_arguments.delta"',
+  "event: response.reasoning",
+  '"type":"response.reasoning',
 ];
 const CODEX_SSE_PEEK_BYTES = 256 * 1024;
 const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
@@ -263,16 +266,15 @@ export class CodexExecutor extends BaseExecutor {
     if (!Array.isArray(body?.input)) return;
     for (const item of body.input) {
       if (!Array.isArray(item.content)) continue;
-      const pending = item.content.map(async (c) => {
-        if (c.type !== "image_url") return c;
+      for (let index = 0; index < item.content.length; index++) {
+        const c = item.content[index];
+        if (c.type !== "image_url" && c.type !== "input_image") continue;
         const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
-        const detail = c.image_url?.detail || "auto";
-        if (!url) return c;
-        if (url.startsWith("data:")) return { type: "input_image", image_url: url, detail };
-        const fetched = await fetchImageAsBase64(url, { timeoutMs: 15000 });
-        return { type: "input_image", image_url: fetched?.url || url, detail };
-      });
-      item.content = await Promise.all(pending);
+        if (!url) continue;
+        const detail = c.detail || c.image_url?.detail || "auto";
+        const fetched = url.startsWith("data:") ? null : await fetchImageAsBase64(url, { timeoutMs: 15000 });
+        item.content[index] = { ...c, type: "input_image", image_url: await fitCodexImage(fetched?.url || url), detail };
+      }
     }
   }
 
@@ -293,9 +295,29 @@ export class CodexExecutor extends BaseExecutor {
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
+    let earlyRetries = 0;
+    // ponytail: hosted tools may have side effects before output; add retries only with upstream idempotency.
+    const earlyRetry = CODEX_EARLY_RETRY && args.stream && !args.body?._compact && !args.body?.tools?.some(t => CODEX_HOSTED_TOOL_TYPES.has(t.type));
     while (true) {
-      const result = await super.execute(args);
-      const peek = await this._peekSseTransientError(result.response);
+      const timeout = earlyRetry ? new AbortController() : null;
+      const timer = timeout && setTimeout(() => timeout.abort(), CODEX_EARLY_RETRY_TIMEOUT_MS);
+      let result, peek;
+      try {
+        result = await super.execute(timeout ? { ...args, signal: args.signal ? AbortSignal.any([args.signal, timeout.signal]) : timeout.signal } : args);
+        peek = await this._peekSseTransientError(result.response);
+      } catch (error) {
+        if (!timeout?.signal.aborted || args.signal?.aborted) throw error;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      if (args.signal?.aborted) throw args.signal.reason;
+      if (timeout?.signal.aborted) {
+        if (earlyRetries++ >= CODEX_EARLY_RETRY_ATTEMPTS) {
+          return { ...result, response: codexSseErrorResponse(HTTP_STATUS.GATEWAY_TIMEOUT, "Codex initial output timeout") };
+        }
+        args.log?.warn?.("RETRY", `CODEX | no initial output within ${CODEX_EARLY_RETRY_TIMEOUT_MS}ms; retry ${earlyRetries}/${CODEX_EARLY_RETRY_ATTEMPTS}`);
+        continue;
+      }
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
         if (peek.replacementBody) {
@@ -328,7 +350,7 @@ export class CodexExecutor extends BaseExecutor {
   // Returns { matched: string|null, message: string|null, accountFallback: boolean, replacementBody: ReadableStream|null }.
   // Caller must use replacementBody when no error matched (original body has been read).
   async _peekSseTransientError(response) {
-    if (!response || !response.ok || !response.body) return { matched: null, message: null, accountFallback: false, replacementBody: null };
+    if (!response || !response.ok || !response.body || !response.headers.get("content-type")?.includes("text/event-stream")) return { matched: null, message: null, accountFallback: false, replacementBody: null };
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const chunks = [];
@@ -346,6 +368,8 @@ export class CodexExecutor extends BaseExecutor {
         if (accountHit) { matched = accountHit; accountFallback = true; break; }
         const retryHit = CODEX_SSE_RETRY_PATTERNS.find(p => lowerText.includes(p));
         if (retryHit) { matched = retryHit; break; }
+        if (/"type"\s*:\s*"(?:function_call|custom_tool_call)"/.test(lowerText)) break;
+        if (/event:\s*response\.(completed|failed|incomplete)|"type"\s*:\s*"response\.(completed|failed|incomplete)"/.test(lowerText)) break;
         if (CODEX_SSE_USER_OUTPUT_PATTERNS.some(p => lowerText.includes(p))) break;
       }
     } catch (e) {

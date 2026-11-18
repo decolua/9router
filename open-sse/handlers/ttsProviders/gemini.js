@@ -1,6 +1,7 @@
 // Gemini TTS — generateContent with AUDIO modality returns PCM L16, wrap as WAV
 import { Buffer } from "node:buffer";
 import { PROVIDER_MEDIA, PROVIDER_MODELS } from "../../providers/index.js";
+import { extractUsage } from "../../utils/usageTracking.js";
 
 const TTS_CFG = PROVIDER_MEDIA["gemini"]?.ttsConfig || {};
 const TTS_BASE = TTS_CFG.baseUrl;
@@ -79,6 +80,7 @@ export default {
       throw new Error(err?.error?.message || `Gemini TTS failed: ${res.status}`);
     }
     const data = await res.json();
+    opts.onUsage?.(extractUsage(data));
     const b64 = data?.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData?.data;
     if (!b64) {
       const reason = data?.candidates?.[0]?.finishReason || data?.promptFeedback?.blockReason || "unknown";

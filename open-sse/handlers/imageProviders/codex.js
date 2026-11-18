@@ -293,7 +293,7 @@ async function parseStream(response, log, callbacks = {}) {
 }
 
 // SSE Response that pipes codex progress + partial + done events to client
-function buildSseResponse(providerResponse, log, onSuccess, onUsage) {
+function buildSseResponse(providerResponse, log, onSuccess, onUsage, onComplete) {
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
@@ -305,14 +305,17 @@ function buildSseResponse(providerResponse, log, onSuccess, onUsage) {
           onProgress: (info) => send("progress", info),
           onPartialImage: (info) => send("partial_image", info),
         });
+        if (usage && onUsage) await onUsage(usage);
         if (!b64) {
+          if (onComplete) await onComplete(false);
           send("error", { message: upstreamError || "Codex completed without an image. No upstream image result was provided." });
         } else {
-          if (usage && onUsage) await onUsage(usage);
           if (onSuccess) await onSuccess();
+          if (onComplete) await onComplete(true);
           send("done", { created: nowSec(), data: [{ b64_json: b64 }] });
         }
       } catch (err) {
+        if (onComplete) await onComplete(false);
         send("error", {
           message: err?.message || "Stream failed",
           ...(err?.code ? { code: err.code } : {}),
@@ -399,7 +402,7 @@ export default {
     return { ...requestBody, model: CODEX_IMAGES_FALLBACK_MAIN_MODEL };
   },
   // Custom: codex parses SSE → either pipe to client or collect b64
-  async parseResponse(response, { log, streamToClient, onRequestSuccess, onUsage, requestBody }) {
+  async parseResponse(response, { log, streamToClient, onRequestSuccess, onUsage, onRequestComplete, requestBody }) {
     if (requestBody?.prompt && !requestBody?.input) {
       let payload;
       try {
@@ -407,6 +410,8 @@ export default {
       } catch {
         throw new Error("Codex Images API returned invalid JSON.");
       }
+      const usage = normalizeResponsesUsage(payload.usage);
+      if (usage && onUsage) await onUsage(usage);
       const data = Array.isArray(payload?.data) ? payload.data : [];
       if (!data.some((item) => item?.b64_json || item?.url)) {
         const error = payload?.error || {};
@@ -417,24 +422,22 @@ export default {
         throw err;
       }
       const result = { created: payload.created || nowSec(), data };
-      const usage = normalizeResponsesUsage(payload.usage);
       if (streamToClient) {
-        if (usage && onUsage) await onUsage(usage);
         if (onRequestSuccess) await onRequestSuccess();
+        if (onRequestComplete) await onRequestComplete(true);
         return { sseResponse: nativeImageSseResponse(result) };
       }
-      if (usage && onUsage) await onUsage(usage);
       return result;
     }
 
     if (streamToClient) {
-      return { sseResponse: buildSseResponse(response, log, onRequestSuccess, onUsage) };
+      return { sseResponse: buildSseResponse(response, log, onRequestSuccess, onUsage, onRequestComplete) };
     }
     const { imageB64: b64, usage, error: upstreamError } = await parseStream(response, log);
+    if (usage && onUsage) await onUsage(usage);
     if (!b64) {
       throw new Error(upstreamError || "Codex completed without an image. No upstream image result was provided.");
     }
-    if (usage && onUsage) await onUsage(usage);
     return { created: nowSec(), data: [{ b64_json: b64 }] };
   },
   normalize: (responseBody) => responseBody,

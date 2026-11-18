@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -19,7 +20,7 @@ function exactEmbeddingUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
   const promptTokens = raw.prompt_tokens ?? raw.input_tokens;
   const completionTokens = raw.completion_tokens ?? raw.output_tokens ?? 0;
-  const totalTokens = raw.total_tokens;
+  const totalTokens = raw.total_tokens ?? promptTokens;
   if (!Number.isSafeInteger(promptTokens) || promptTokens <= 0 || completionTokens !== 0 || totalTokens !== promptTokens) return null;
   return { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: totalTokens };
 }
@@ -122,38 +123,35 @@ export async function handleEmbeddings(request) {
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleEmbeddingsCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      log,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-      }
-    });
-
-    if (result.success) {
-      const usage = exactEmbeddingUsage(result.usage);
-      if (usage) {
-        saveRequestUsage({
-          provider,
-          model,
-          connectionId: credentials.connectionId,
-          apiKey,
-          endpoint: url.pathname,
-          tokens: usage,
-          status: "success",
-        }).catch(() => {});
-      }
-      return result.response;
+    const startedAt = Date.now();
+    let result;
+    try {
+      result = await handleEmbeddingsCore({
+        body: { ...body, model: `${provider}/${model}` },
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        log,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        }
+      });
+    } finally {
+      await saveRequestUsage({
+        requestId: randomUUID(), provider, model,
+        connectionId: credentials.connectionId, apiKey, endpoint: url.pathname,
+        timestamp: new Date(startedAt).toISOString(), latencyMs: Date.now() - startedAt,
+        tokens: exactEmbeddingUsage(result?.usage) || {},
+        status: result?.success ? "success" : String(result?.status || 502),
+      });
     }
+    if (result.success) return result.response;
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 

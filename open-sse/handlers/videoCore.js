@@ -3,6 +3,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
 import { getVideoAdapter } from "./videoProviders/index.js";
+import { extractUsage } from "../utils/usageTracking.js";
 
 // Upstream fetch deadline for video job submission/polling (the job itself is
 // async upstream — this only bounds the HTTP round-trip, not video rendering).
@@ -23,7 +24,7 @@ function isExecutorDrivenVideo(provider) {
 }
 
 /** Executor-driven generation: the browser executor returns base64 mp4. */
-async function executeExecutorDrivenVideo({ provider, rawBody, credentials, signal, log, onCredentialsRefreshed }) {
+async function executeExecutorDrivenVideo({ provider, rawBody, credentials, signal, log, onCredentialsRefreshed, onUsage }) {
   let parsed = {};
   try {
     parsed = JSON.parse(typeof rawBody === "string" ? rawBody : String(rawBody || "{}"));
@@ -62,6 +63,10 @@ async function executeExecutorDrivenVideo({ provider, rawBody, credentials, sign
       signal,
       log,
     });
+    if (onUsage && media?.usage?.estimated !== true) {
+      const usage = extractUsage(media) || extractUsage({ type: "response.completed", response: media });
+      if (usage) await onUsage(usage);
+    }
     const dataUrl = `data:${media.mime || "video/mp4"};base64,${media.b64}`;
     // Cookies that rotate on use (Clerk `__client`) are mutated in place by the
     // executor — persist the new value so the chain does not drift.
@@ -146,6 +151,7 @@ function combineSignals(signal, timeoutMs) {
  * @param {number} [options.timeoutMs]
  * @param {object} [options.log]
  * @param {function} [options.onCredentialsRefreshed]
+ * @param {function} [options.onUsage] - Receives provider-reported creation usage, never polling usage
  * @returns {Promise<{ success: boolean, response: Response, status?: number, error?: string }>}
  */
 export async function handleVideoProxyCore({
@@ -160,6 +166,7 @@ export async function handleVideoProxyCore({
   timeoutMs = VIDEO_FETCH_TIMEOUT_MS,
   log,
   onCredentialsRefreshed,
+  onUsage,
 }) {
   // Executor-driven providers (browser-automation web providers, e.g.
   // muse-web): the registry marks them with videoConfig.executorDriven and the
@@ -171,7 +178,7 @@ export async function handleVideoProxyCore({
     !requestId &&
     (action === "generations" || action === "edits")
   ) {
-    return executeExecutorDrivenVideo({ provider, rawBody, credentials, signal, log, onCredentialsRefreshed });
+    return executeExecutorDrivenVideo({ provider, rawBody, credentials, signal, log, onCredentialsRefreshed, onUsage });
   }
 
   const config = getVideoConfig(provider);
@@ -263,7 +270,23 @@ export async function handleVideoProxyCore({
     }
   }
 
-  const bodyText = await upstream.text().catch(() => "");
+  let bodyText;
+  try {
+    bodyText = upstream.ok && adapter?.parseResponse
+      ? JSON.stringify(await adapter.parseResponse(upstream, { credentials, signal: fetchSignal }))
+      : await upstream.text();
+  } catch (error) {
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, sanitizeSecrets(`[${provider}] invalid video response: ${error.message}`, credentials));
+  }
+  if (!requestId && onUsage) {
+    try {
+      const payload = JSON.parse(bodyText);
+      if (payload?.usage?.estimated !== true) {
+        const usage = extractUsage(payload) || extractUsage({ type: "response.completed", response: payload });
+        if (usage) await onUsage(usage);
+      }
+    } catch { /* Non-JSON responses carry no token usage. */ }
+  }
 
   if (!upstream.ok) {
     const message = sanitizeSecrets(bodyText || `HTTP ${upstream.status}`, credentials);
