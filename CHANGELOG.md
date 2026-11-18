@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Fixes
+- **GPT-6.2 pricing**: share rates across OpenAI API and Codex. Per million tokens (input/cached read/cache write/output): Sol $2/$0.10/$2.50/$10; Astra $8/$0.40/$10/$40. Reasoning uses the output rate.
 - **Antigravity**: strip/rewrite Claude Code prompt fingerprints that trigger fake 429 responses (PR #5733); use the live per-account catalog and hide disabled/internal models in provider model discovery (PR #5734).
 - **Kimi Code**: recognize K3.1 Pro and Highspeed IDs with 1,048,576-token context metadata (PR #5722).
 - **Codex images**: resize individual inline and fetched images exceeding 30,000 32×32 patches before forwarding. Preserve aspect ratio and requested detail; images within the limit remain unchanged. Install Sharp directly for server and CLI image processing.

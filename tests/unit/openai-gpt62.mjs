@@ -8,7 +8,7 @@ import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 
 // OpenAI API docs: /api/docs/models/gpt-6.2-{sol,astra} and /api/docs/pricing.
-// Standard short-context prices, USD per million tokens; not Codex OAuth rates.
+// Router pricing in USD per million tokens, shared across API and Codex.
 for (const [id, name, input, output, cached, cacheCreation] of [
   ["gpt-6.2-sol", "GPT-6.2 Sol", 2, 10, 0.1, 2.5],
   ["gpt-6.2-astra", "GPT-6.2 Astra", 8, 40, 0.4, 10],
@@ -55,11 +55,11 @@ for (const [id, name, input, output, cached, cacheCreation] of [
     assert.equal(neighbor.reasoning_effort, "none");
   });
 
-  test(`${id}: Standard API pricing is provider scoped`, () => {
+  test(`${id}: API and Codex use the specified token rates`, () => {
     const expected = { input, output, cached, reasoning: output, cache_creation: cacheCreation };
     assert.deepEqual(getPricingForModel("openai", id), expected);
-    assert.notDeepEqual(getPricingForModel("codex", id), expected);
-    assert.notDeepEqual(getPricingForModel("cx", id), expected);
+    assert.deepEqual(getPricingForModel("codex", id), expected);
+    assert.deepEqual(getPricingForModel("cx", id), expected);
   });
 
   test(`${id}: explicit Codex selection forwards the upstream ID without changing bare routing`, async () => {
