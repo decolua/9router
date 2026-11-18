@@ -1,4 +1,5 @@
 import { execFileSync, execSync } from "child_process";
+import { realpathSync } from "fs";
 import path from "path";
 
 // Extras that improve headroom compression quality. `proxy` is the base;
@@ -76,7 +77,10 @@ function pythonCandidates() {
   const list = [];
   const bin = findHeadroomBinary();
   if (bin) {
-    const dir = path.dirname(bin);
+    // pipx exposes a symlink in ~/.local/bin; Python lives beside its target.
+    let resolvedBin = bin;
+    try { resolvedBin = realpathSync(bin); } catch { /* keep searching if it disappeared */ }
+    const dir = path.dirname(resolvedBin);
     const names = IS_WIN ? ["python.exe", "python3.exe"] : ["python3", "python3.13", "python"];
     for (const n of names) list.push(path.join(dir, n));
   }
@@ -92,7 +96,7 @@ export function findPython310() {
   let fallback = null;
   for (const candidate of pythonCandidates()) {
     try {
-      const ver = execSync(`${candidate} --version`, {
+      const ver = execFileSync(candidate, ["--version"], {
         stdio: ["ignore", "pipe", "ignore"],
         windowsHide: true,
         env: { ...process.env, PATH: EXTENDED_PATH },

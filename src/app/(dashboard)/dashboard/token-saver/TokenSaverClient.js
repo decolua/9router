@@ -41,6 +41,7 @@ export default function TokenSaverClient() {
   const [kompress, setKompress] = useState(true);
   const [restartingProxy, setRestartingProxy] = useState(false);
   const logPollRef = useRef(null);
+  const logRequestRef = useRef(0);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
@@ -216,24 +217,28 @@ export default function TokenSaverClient() {
     );
   };
 
-  // Poll the install log tail while a pip install/uninstall is running.
+  const refreshInstallLog = useCallback(async () => {
+    const requestId = ++logRequestRef.current;
+    try {
+      const r = await fetch("/api/headroom/extras?log=1", {
+        headers: { "Cache-Control": "no-store" },
+      });
+      const d = await r.json().catch(() => ({}));
+      if (requestId === logRequestRef.current && typeof d.log === "string") setInstallLog(d.log);
+    } catch { /* ignore transient poll errors */ }
+  }, []);
+
+  // Poll while running, and retain the final log after the action completes.
   const startLogPolling = useCallback(() => {
     setInstallLog("");
     if (logPollRef.current) clearInterval(logPollRef.current);
-    const tick = async () => {
-      try {
-        const r = await fetch("/api/headroom/extras?log=1", {
-          headers: { "Cache-Control": "no-store" },
-        });
-        const d = await r.json().catch(() => ({}));
-        if (typeof d.log === "string") setInstallLog(d.log);
-      } catch { /* ignore transient poll errors */ }
-    };
-    tick();
-    logPollRef.current = setInterval(tick, 1500);
-  }, []);
+    refreshInstallLog();
+    logPollRef.current = setInterval(refreshInstallLog, 1500);
+  }, [refreshInstallLog]);
 
   const stopLogPolling = useCallback(() => {
+    // Discard responses from polls started before the final refresh or unmount.
+    logRequestRef.current++;
     if (logPollRef.current) {
       clearInterval(logPollRef.current);
       logPollRef.current = null;
@@ -247,6 +252,7 @@ export default function TokenSaverClient() {
     setExtrasActionLoading(true);
     setExtrasActionError("");
     startLogPolling();
+    let readFinalLog = false;
     try {
       const res = await fetch("/api/headroom/extras", {
         method: "POST",
@@ -254,6 +260,7 @@ export default function TokenSaverClient() {
         body: JSON.stringify({ extras: pendingExtras }),
       });
       const data = await res.json().catch(() => ({}));
+      readFinalLog = res.ok || data.code === "INSTALL_FAILED";
       if (!res.ok) throw new Error(data.error || "Install failed");
       setHeadroomExtras((s) => ({
         ...s,
@@ -266,13 +273,16 @@ export default function TokenSaverClient() {
     } finally {
       stopLogPolling();
       setExtrasActionLoading(false);
+      if (readFinalLog) await refreshInstallLog();
+      else setInstallLog("");
     }
-  }, [pendingExtras, startLogPolling, stopLogPolling]);
+  }, [pendingExtras, startLogPolling, stopLogPolling, refreshInstallLog]);
 
   const removeExtraConfirmed = useCallback(async (extra) => {
     setRemovingExtra(extra);
     setExtrasActionError("");
     startLogPolling();
+    let readFinalLog = false;
     try {
       const res = await fetch("/api/headroom/extras", {
         method: "DELETE",
@@ -280,6 +290,7 @@ export default function TokenSaverClient() {
         body: JSON.stringify({ extras: [extra] }),
       });
       const data = await res.json().catch(() => ({}));
+      readFinalLog = res.ok || data.code === "UNINSTALL_FAILED";
       if (!res.ok) throw new Error(data.error || "Remove failed");
       setHeadroomExtras((s) => ({
         ...s,
@@ -291,8 +302,10 @@ export default function TokenSaverClient() {
     } finally {
       stopLogPolling();
       setRemovingExtra(null);
+      if (readFinalLog) await refreshInstallLog();
+      else setInstallLog("");
     }
-  }, [startLogPolling, stopLogPolling]);
+  }, [startLogPolling, stopLogPolling, refreshInstallLog]);
 
   const handleInstallExtras = useCallback(() => {
     if (pendingExtras.length === 0) return;
@@ -644,7 +657,7 @@ export default function TokenSaverClient() {
             {restartingProxy && (
               <p className="text-xs text-text-muted mt-1">Restarting proxy…</p>
             )}
-            {(extrasActionLoading || removingExtra) && installLog && (
+            {installLog && (
               <pre className="mt-2 max-h-32 overflow-auto rounded bg-surface-2 p-2 text-[10px] leading-tight text-text-muted whitespace-pre-wrap">
                 {installLog}
               </pre>

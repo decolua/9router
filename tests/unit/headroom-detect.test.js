@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import path from "node:path";
 
 const mocks = vi.hoisted(() => ({
   execSync: vi.fn(() => { throw new Error("not found"); }),
@@ -39,13 +40,14 @@ describe("headroom detect", () => {
 
   it("prefers the interpreter that actually has headroom-ai installed", () => {
     // headroom binary lives in a bin dir; the python next to it has headroom-ai.
-    const binPython = "/opt/hr/bin/python3";
+    const binPython = path.join("/opt/hr/bin", process.platform === "win32" ? "python.exe" : "python3");
     mocks.execSync.mockImplementation((cmd) => {
       if (String(cmd).includes("where") || String(cmd).includes("which")) return Buffer.from("/opt/hr/bin/headroom\n");
       if (String(cmd).includes("--version")) return Buffer.from("Python 3.13.0\n");
       throw new Error("unexpected execSync");
     });
     mocks.execFileSync.mockImplementation((py, args) => {
+      if (args[0] === "--version") return Buffer.from("Python 3.13.0\n");
       if (args.join(" ") === "-m pip show headroom-ai") {
         if (py === binPython) return Buffer.from("Name: headroom-ai\nVersion: 0.26.0\n");
         throw new Error(`not installed in ${py}`);
@@ -65,6 +67,7 @@ describe("headroom detect", () => {
       throw new Error("unexpected execSync");
     });
     mocks.execFileSync.mockImplementation((py, args) => {
+      if (args[0] === "--version" && ["python3", "python"].includes(py)) return Buffer.from("Python 3.13.0\n");
       if (py === "python3" && args.join(" ") === "-m pip show headroom-ai") throw new Error("not installed in python3");
       if (py === "python" && args.join(" ") === "-m pip show headroom-ai") return Buffer.from("Name: headroom-ai\nVersion: 0.26.0\n");
       if (py === "python" && args.join(" ").startsWith("-m pip list ")) return Buffer.from(JSON.stringify([
