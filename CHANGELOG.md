@@ -1,4 +1,4 @@
-# Unreleased
+# v0.5.120-beta.14 (2026-11-17)
 
 ## Fixes
 - **GPT-6.2 pricing**: share rates across OpenAI API and Codex. Per million tokens (input/cached read/cache write/output): Sol $2/$0.10/$2.50/$10; Astra $8/$0.40/$10/$40. Reasoning uses the output rate.
