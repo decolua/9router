@@ -11,7 +11,7 @@ const credentials = { connectionId: "fixture", accessToken: "fixture-token" };
 afterEach(() => vi.restoreAllMocks());
 
 describe("Codex GPT-6 Sol/Luna transport", () => {
-  it.each(["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"])("lists %s with Codex capabilities", (model) => {
+  it.each(["gpt-6.2-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"])("lists %s with Codex capabilities", (model) => {
     const entry = getModelsByProviderId("codex").find((item) => item.id === model);
     expect(entry?.responsesLite).toBe(true);
     expect(entry?.thinkingLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
@@ -27,27 +27,64 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(getThinkingLevels("codex", `${model}(high)`)).toEqual(entry.thinkingLevels);
   });
 
-  it("lists gpt-6.1-terra as a Lite model with its 500k Codex window", () => {
-    const entry = getModelsByProviderId("codex").find((item) => item.id === "gpt-6.1-terra");
+  it.each([
+    { id: "gpt-6.2-sol", contextWindow: 500000, pricing: { input: 2, cached: 0.1, cache_creation: 2.5, output: 10 } },
+    { id: "gpt-6.2-astra", contextWindow: 272000, pricing: { input: 8, cached: 0.4, cache_creation: 10, output: 40 } },
+    { id: "gpt-6.1-terra", contextWindow: 500000, pricing: { input: 1, cached: 0.05, cache_creation: 1.25, output: 5 } },
+  ])("lists $id as a Lite model with its Codex window and pricing", ({ id, contextWindow, pricing }) => {
+    const entry = getModelsByProviderId("codex").find((item) => item.id === id);
     expect(entry?.responsesLite).toBe(true);
     expect(entry?.thinkingLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
-    expect(getCapabilitiesForModel("codex", "gpt-6.1-terra")).toMatchObject({
+    expect(getCapabilitiesForModel("codex", id)).toMatchObject({
       vision: true,
       reasoning: true,
       search: true,
       thinkingFormat: "openai",
-      contextWindow: 500000,
+      contextWindow,
       maxOutput: 128000,
     });
-    expect(getPricingForModel("codex", "gpt-6.1-terra")).toMatchObject({ input: 1, cached: 0.05, cache_creation: 1.25, output: 5 });
+    expect(getThinkingLevels("codex", id)).toEqual(entry.thinkingLevels);
+    expect(getThinkingLevels("codex", `${id}(high)`)).toEqual(entry.thinkingLevels);
+    expect(getPricingForModel("codex", id)).toMatchObject(pricing);
   });
 
-  it("sends gpt-6.1-terra with the Lite header and shape", () => {
+  it.each(["codex", "cx"])("resolves Codex 6.2 reasoning suffix capabilities and pricing on %s", (provider) => {
+    for (const suffix of ["low", "medium", "high", "xhigh", "max"]) {
+      expect(getCapabilitiesForModel(provider, `gpt-6.2-sol(${suffix})`)).toMatchObject({
+        vision: true,
+        reasoning: true,
+        search: true,
+        thinkingFormat: "openai",
+        contextWindow: 500000,
+        maxOutput: 128000,
+      });
+      expect(getCapabilitiesForModel(provider, `gpt-6.2-astra(${suffix})`)).toMatchObject({
+        vision: true,
+        reasoning: true,
+        search: true,
+        thinkingFormat: "openai",
+        contextWindow: 272000,
+        maxOutput: 128000,
+      });
+      expect(getPricingForModel(provider, `gpt-6.2-sol(${suffix})`)).toMatchObject({
+        input: 2, cached: 0.1, cache_creation: 2.5, output: 10,
+      });
+      expect(getPricingForModel(provider, `gpt-6.2-astra(${suffix})`)).toMatchObject({
+        input: 8, cached: 0.4, cache_creation: 10, output: 40,
+      });
+    }
+    expect(getCapabilitiesForModel("openai", "gpt-6.2-sol(high)").contextWindow).toBe(1050000);
+    expect(getCapabilitiesForModel(provider, "gpt-6.2-sol(invalid)").contextWindow).toBe(1050000);
+    expect(getPricingForModel("openai", "gpt-6.2-sol(high)")).toBeNull();
+    expect(getPricingForModel(provider, "gpt-6.2-sol(invalid)")).toBeNull();
+  });
+
+  it.each(["gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-terra"])("sends %s with the Lite header and shape", (model) => {
     const executor = new CodexExecutor();
-    const body = executor.transformRequest("gpt-6.1-terra", {
-      model: "gpt-6.1-terra", input: "hello", reasoning: { effort: "ultra" },
+    const body = executor.transformRequest(model, {
+      model, input: "hello", reasoning: { effort: "ultra" },
     }, true, credentials);
-    const headers = executor.buildHeaders(credentials, true, null, "gpt-6.1-terra");
+    const headers = executor.buildHeaders(credentials, true, null, model);
 
     expect(headers["x-openai-internal-codex-responses-lite"]).toBe("true");
     expect(body.reasoning).toEqual({ effort: "max", context: "all_turns" });
@@ -209,13 +246,13 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(body.reasoning).toEqual({ effort: "max", context: "all_turns" });
   });
 
-  it("sends the Lite shape and header in the actual outbound request", async () => {
+  it.each(["gpt-6.2-sol", "gpt-6.2-astra", "gpt-6-luna"])("sends the Lite shape and header in the actual outbound request for %s", async (model) => {
     const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
       ok: true, status: 200, headers: new Map(),
     });
     await new CodexExecutor().execute({
-      model: "gpt-6-luna",
-      body: { model: "gpt-6-luna", input: "hello", instructions: "Do the task" },
+      model,
+      body: { model, input: "hello", instructions: "Do the task" },
       stream: true,
       credentials,
     });
@@ -226,7 +263,7 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(options.headers["x-openai-internal-codex-responses-lite"]).toBe("true");
     expect(options.headers.version).toBe("0.167.1");
     expect(options.headers["User-Agent"]).toBe("codex_cli_rs/0.167.1");
-    expect(body.model).toBe("gpt-6-luna");
+    expect(body.model).toBe(model);
     expect(body.instructions).toBe("");
     expect(body.input[0].type).toBe("additional_tools");
     expect(body.reasoning.context).toBe("all_turns");
