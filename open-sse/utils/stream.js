@@ -446,7 +446,12 @@ export function createSSEStream(options = {}) {
               state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
-              const buffered = addBufferToUsage(state.usage);
+              // Claude -> OpenAI: the translator already built the OpenAI usage with
+              // prompt_tokens_details.cached_tokens; state.usage keeps Claude field names
+              // (cache_read_input_tokens) that the OpenAI filter below drops.
+              const translatorUsage = targetFormat === FORMATS.CLAUDE && sourceFormat === FORMATS.OPENAI
+                && item.usage?.prompt_tokens !== undefined ? item.usage : null;
+              const buffered = addBufferToUsage(translatorUsage || state.usage);
               item.usage = filterUsageForFormat(buffered, sourceFormat);
             }
 

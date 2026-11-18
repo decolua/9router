@@ -172,12 +172,15 @@ export function claudeToOpenAIResponse(chunk, state) {
     case "message_stop": {
       if (!state.finishReasonSent) {
         const finishReason = state.finishReason || (state.toolCalls?.size > 0 ? OPENAI_FINISH.TOOL_CALLS : OPENAI_FINISH.STOP);
+        // Same usage math as message_delta: prompt includes cache read/creation,
+        // and the cache counts travel in prompt_tokens_details.
         const usageObj = (state.usage && typeof state.usage === 'object') ? {
-          usage: {
-            prompt_tokens: state.usage.input_tokens || 0,
-            completion_tokens: state.usage.output_tokens || 0,
-            total_tokens: (state.usage.input_tokens || 0) + (state.usage.output_tokens || 0)
-          }
+          usage: toOpenAIUsage({
+            input_tokens: state.usage.input_tokens || 0,
+            output_tokens: state.usage.output_tokens || 0,
+            cache_read_input_tokens: state.usage.cache_read_input_tokens,
+            cache_creation_input_tokens: state.usage.cache_creation_input_tokens
+          }, "claude")
         } : {};
         results.push({ ...createChunk(state, {}, finishReason), ...usageObj });
         state.finishReasonSent = true;
