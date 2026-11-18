@@ -87,8 +87,10 @@ export const MODEL_PRICING = {
   "gpt-5.6-luna":                 { input: 1.00,  output: 6.00,  cached: 0.10,  reasoning: 6.00,   cache_creation: 1.00  },
   "gpt-5.6-terra":                { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 15.00,  cache_creation: 2.50  },
   "gpt-5.6-sol":                  { input: 5.00,  output: 30.00, cached: 0.50,  reasoning: 30.00,  cache_creation: 5.00  },
-  // OpenAI Standard short-context pricing (developers.openai.com/api/docs/pricing).
+  // OpenAI Standard short-context (<=272k) pricing (developers.openai.com/api/docs/pricing).
   // Long-context pricing is higher, but this table currently stores one rate per model.
+  "gpt-6.2-astra":                { input: 8.00,  output: 40.00, cached: 0.40,  reasoning: 40.00,  cache_creation: 10.00 },
+  "gpt-6.2-sol":                  { input: 2.00,  output: 10.00, cached: 0.10,  reasoning: 10.00,  cache_creation: 2.50  },
   "gpt-6-astra":                  { input: 10.00, output: 50.00, cached: 1.00,  reasoning: 50.00,  cache_creation: 12.50 },
   "gpt-6.1-sol":                  { input: 2.00,  output: 10.00, cached: 0.10,  reasoning: 10.00,  cache_creation: 2.50  },
   "gpt-6.1-terra":                { input: 1.00,  output: 5.00,  cached: 0.05,  reasoning: 5.00,   cache_creation: 1.25  },
@@ -437,6 +439,10 @@ export function getPricingForModel(provider, model) {
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
   if (MODEL_PRICING[baseModel]) return MODEL_PRICING[baseModel];
   if (MODEL_PRICING[model]) return MODEL_PRICING[model];
+  if (provider === "codex" || provider === "cx") {
+    const normalized = baseModel.replace(/^(gpt-6\.2-(?:sol|astra))\((?:low|medium|high|xhigh|max)\)$/, "$1");
+    if (normalized !== baseModel && MODEL_PRICING[normalized]) return MODEL_PRICING[normalized];
+  }
 
   // 4. Pattern match
   for (const { pattern, pricing } of PATTERN_PRICING) {
