@@ -1,4 +1,4 @@
-import { cpSync, existsSync } from "node:fs";
+import { cpSync, existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -36,6 +36,18 @@ export function copyStandaloneAssets({ projectRoot = process.cwd(), distDir = pr
   if (existsSync(serverWrapperSource)) {
     cpSync(serverWrapperSource, serverWrapperDestination, { force: true });
     console.log(`[standalone-assets] Copied custom-server.js to ${serverWrapperDestination}`);
+  }
+
+  // Raw src/ files dynamically imported by custom-server.js (e.g. the background
+  // token refresh scheduler) are ES modules, but the standalone package.json is
+  // typeless because custom-server.js itself is CommonJS. Without this marker
+  // Node reparses every such file (MODULE_TYPELESS_PACKAGE_JSON warning).
+  // Scoping "type":"module" to src/ keeps the CJS entry working.
+  const tracedSrcDir = resolve(standaloneDir, "src");
+  if (existsSync(tracedSrcDir)) {
+    const esmMarkerPath = resolve(tracedSrcDir, "package.json");
+    writeFileSync(esmMarkerPath, '{"type":"module"}\n');
+    console.log(`[standalone-assets] Wrote ESM marker to ${esmMarkerPath}`);
   }
 }
 
