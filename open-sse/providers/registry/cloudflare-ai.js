@@ -28,6 +28,9 @@ export default {
   },
   models: [
     { id: "@cf/cloudflare/clef-flash", name: "Clef Flash", kind: "systemone", upstreamModelId: "clef-flash" },
+    { id: "@cf/cloudflare/clef", name: "Clef", kind: "systemone", upstreamModelId: "clef" },
+    { id: "@cf/cloudflare/clef-omni", name: "Clef Omni", kind: "systemone", upstreamModelId: "clef-omni" },
+    { id: "@cf/cloudflare/clairic", name: "Clairic", kind: "systemone", upstreamModelId: "clairic", payloadShape: "fields" },
     { id: "@cf/meta/llama-3.2-1b-instruct", name: "Llama 3.2 1B Instruct" },
     { id: "@cf/meta/llama-3.2-3b-instruct", name: "Llama 3.2 3B Instruct" },
     { id: "@cf/meta/llama-3.1-8b-instruct-fp8-fast", name: "Llama 3.1 8B Instruct FP8 Fast" },
