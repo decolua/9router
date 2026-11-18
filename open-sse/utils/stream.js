@@ -64,6 +64,13 @@ export function createSSEStream(options = {}) {
   let buffer = "";
   let usage = null;
 
+  // Passthrough: some upstreams (OpenRouter) send the finish chunk without usage and
+  // the real usage in a later chunk. When the client asked for a usage trailer, wait
+  // for it and estimate only if it never arrives (emitted before [DONE]).
+  const wantsUsageTrailer = body?.stream_options?.include_usage === true;
+  let pendingUsageEstimate = false;
+  let lastChunkMeta = null;
+
   // Tool-call ids already sent to the client, keyed by the tool-call index.
   // A late fragment that opens a NEW index without an id must not reach the
   // client as-is: strict OpenAI-compatible SDKs abort the turn on a
@@ -134,6 +141,27 @@ export function createSSEStream(options = {}) {
     }
   };
 
+  // Passthrough: the upstream finished without ever sending usage — emit one
+  // estimated usage chunk (choices: []) so the client still gets a usage trailer.
+  const emitPendingUsageEstimate = (controller) => {
+    if (!pendingUsageEstimate) return;
+    pendingUsageEstimate = false;
+    if (hasValidUsage(usage)) return;
+    const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
+    usage = estimated;
+    const chunk = {
+      id: lastChunkMeta?.id,
+      object: "chat.completion.chunk",
+      created: lastChunkMeta?.created || Math.floor(Date.now() / 1000),
+      model: lastChunkMeta?.model || model,
+      choices: [],
+      usage: filterUsageForFormat(estimated, FORMATS.OPENAI)
+    };
+    const output = `data: ${JSON.stringify(chunk)}\n\n`;
+    reqLogger?.appendConvertedChunk?.(output);
+    controller.enqueue(sharedEncoder.encode(output));
+  };
+
   // Emit the deferred response.completed now — at [DONE], or when the watchdog
   // below gives up on a usage trailer that never arrives.
   const flushPendingCompletion = (controller) => {
@@ -180,7 +208,10 @@ export function createSSEStream(options = {}) {
           let responsesTerminal = false;
 
           // Upstream already sent the sentinel; flush() must not append a second one.
-          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") streamDoneSent = true;
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            streamDoneSent = true;
+            emitPendingUsageEstimate(controller);
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -275,17 +306,25 @@ export function createSSEStream(options = {}) {
               if (extracted) {
                 usage = mergeUsage(usage, extracted);
               }
+              if (parsed.id || parsed.model) {
+                lastChunkMeta = { id: parsed.id, created: parsed.created, model: parsed.model };
+              }
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
-              if (isFinishChunk && !hasValidUsage(parsed.usage)) {
+              const isLateUsageChunk = pendingUsageEstimate && hasValidUsage(parsed.usage);
+              if (isFinishChunk && !hasValidUsage(parsed.usage) && wantsUsageTrailer && !hasValidUsage(usage)) {
+                // Real usage may still follow; decide at [DONE] / end of stream.
+                pendingUsageEstimate = true;
+              } else if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
-              } else if (isFinishChunk && usage) {
+              } else if ((isFinishChunk || isLateUsageChunk) && usage) {
+                pendingUsageEstimate = false;
                 const buffered = addBufferToUsage(usage);
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
@@ -500,6 +539,7 @@ export function createSSEStream(options = {}) {
           // Without it they can hang until timeout and trigger failover.
           // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
           const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
+          if (!streamDoneSent) emitPendingUsageEstimate(controller);
           if (!streamDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
