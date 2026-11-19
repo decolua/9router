@@ -138,10 +138,10 @@ describe("getUsageForProvider(opendesign-go)", () => {
 
     expect(usage.message).toBeUndefined();
     expect(usage.plan).toBe("OpenDesign Go");
-    expect(Object.keys(usage.quotas)).toEqual(["5 giờ", "7 ngày", "Balance ($)"]);
+    expect(Object.keys(usage.quotas)).toEqual(["Session (5h)", "Weekly (7d)", "Balance ($)"]);
 
     // 32210 / 50000 = 64.42% used → 35.58% left.
-    expect(usage.quotas["5 giờ"]).toEqual({
+    expect(usage.quotas["Session (5h)"]).toEqual({
       used: 32210,
       total: 50000,
       remainingPercentage: 35.58,
@@ -149,7 +149,7 @@ describe("getUsageForProvider(opendesign-go)", () => {
       unlimited: false,
     });
     // 74282 / 150000 = 49.5213…% used → 50.48% left.
-    expect(usage.quotas["7 ngày"]).toEqual({
+    expect(usage.quotas["Weekly (7d)"]).toEqual({
       used: 74282,
       total: 150000,
       remainingPercentage: 50.48,
@@ -205,7 +205,7 @@ describe("getUsageForProvider(opendesign-go)", () => {
     const usage = await callUsage();
 
     // Exactly half of the pool is spent → the bar must read 50.00.
-    const row = usage.quotas["5 giờ"];
+    const row = usage.quotas["Session (5h)"];
     expect(row.remainingPercentage).toBe(50);
     expect(row.used).not.toBe(row.total);
 
@@ -225,12 +225,12 @@ describe("getUsageForProvider(opendesign-go)", () => {
     });
 
     const big = await callUsage();
-    expect(big.quotas["7 ngày"].remainingPercentage).toBe(0);
-    expect(Number.isFinite(big.quotas["7 ngày"].remainingPercentage)).toBe(true);
+    expect(big.quotas["Weekly (7d)"].remainingPercentage).toBe(0);
+    expect(Number.isFinite(big.quotas["Weekly (7d)"].remainingPercentage)).toBe(true);
     // Narrowed for display only; the true value is still past the safe range.
-    expect(big.quotas["7 ngày"].used).toBe(9007199254740992);
+    expect(big.quotas["Weekly (7d)"].used).toBe(9007199254740992);
     // resetsAt null is accepted and surfaces as the null placeholder.
-    expect(big.quotas["7 ngày"].resetAt).toBeNull();
+    expect(big.quotas["Weekly (7d)"].resetAt).toBeNull();
   });
 
   it("asks for the Control Key when it is missing and never touches the network", async () => {
@@ -240,7 +240,7 @@ describe("getUsageForProvider(opendesign-go)", () => {
       providerSpecificData: {},
     });
 
-    expect(usage.message).toMatch(/chưa cấu hình Control Key/i);
+    expect(usage.message).toMatch(/control key not configured/i);
     expect(usage.message).toMatch(/vela_ctrl/);
     expect(usage.message).toMatch(/sk-amr/);
     expect(usage.quotas).toBeUndefined();
@@ -253,8 +253,8 @@ describe("getUsageForProvider(opendesign-go)", () => {
     const usage = await callUsage();
 
     expect(usage.message).toBeUndefined();
-    expect(usage.quotas["5 giờ"].used).toBe(32210);
-    expect(usage.quotas["7 ngày"].used).toBe(74282);
+    expect(usage.quotas["Session (5h)"].used).toBe(32210);
+    expect(usage.quotas["Weekly (7d)"].used).toBe(74282);
     expect(usage.quotas["Balance ($)"]).toBeUndefined();
   });
 
@@ -277,7 +277,7 @@ describe("getUsageForProvider(opendesign-go)", () => {
     const usage = await callUsage();
 
     expect(usage.quotas).toBeUndefined();
-    expect(usage.message).toMatch(/Không đọc được quota OpenDesign Go/i);
+    expect(usage.message).toMatch(/Could not read OpenDesign Go quota/i);
     expect(usage.message).toMatch(/preflight/);
     expect(usage.message).toMatch(/wallet/);
   });
@@ -291,7 +291,7 @@ describe("getUsageForProvider(opendesign-go)", () => {
     const usage = await callUsage();
 
     expect(usage.quotas).toBeUndefined();
-    expect(usage.message).toMatch(/workspaceId không khớp/i);
+    expect(usage.message).toMatch(/workspaceId mismatch/i);
   });
 
   it("drops only the mismatched side", async () => {
@@ -326,7 +326,7 @@ describe("getUsageForProvider(opendesign-go)", () => {
     const usage = await callUsage();
 
     expect(usage.quotas).toEqual({});
-    expect(usage.message).toMatch(/không báo quota nào/i);
+    expect(usage.message).toMatch(/reports no quota/i);
   });
 
   it("returns a message (no throw) when the workspace list itself fails", async () => {
@@ -334,7 +334,7 @@ describe("getUsageForProvider(opendesign-go)", () => {
 
     const usage = await callUsage();
 
-    expect(usage.message).toMatch(/Không lấy được workspace/i);
+    expect(usage.message).toMatch(/resolve the OpenDesign workspace/i);
     expect(usage.message).toMatch(/401/);
     expect(usage.quotas).toBeUndefined();
   });
@@ -350,7 +350,7 @@ describe("getUsageForProvider(opendesign-go)", () => {
     const usage = await callUsage();
 
     expect(usage.quotas).toBeUndefined();
-    expect(usage.message).toMatch(/thấy 2 workspace/i);
+    expect(usage.message).toMatch(/sees 2 workspaces/i);
     // Both ids are named so the user can pick one deliberately.
     expect(usage.message).toContain(otherWs);
     expect(usage.message).toContain(WS);
@@ -372,7 +372,7 @@ describe("getUsageForProvider(opendesign-go)", () => {
     });
     const usage = await callUsage({ providerSpecificData: pinnedData });
 
-    expect(Object.keys(usage.quotas)).toEqual(["5 giờ", "7 ngày", "Balance ($)"]);
+    expect(Object.keys(usage.quotas)).toEqual(["Session (5h)", "Weekly (7d)", "Balance ($)"]);
     const fetched = proxyAwareFetch.mock.calls.map(([url]) => url);
     expect(fetched.some((url) => url === WORKSPACES_URL)).toBe(false);
     expect(fetched.some((url) => url.includes(otherWs))).toBe(true);
@@ -387,9 +387,9 @@ describe("parseQuotaData(opendesign-go)", () => {
     const usage = await callUsage();
     const rows = parseQuotaData("opendesign-go", usage);
 
-    expect(rows.map((r) => r.name)).toEqual(["5 giờ", "7 ngày", "Balance ($)"]);
+    expect(rows.map((r) => r.name)).toEqual(["Session (5h)", "Weekly (7d)", "Balance ($)"]);
     expect(rows[0]).toMatchObject({
-      name: "5 giờ",
+      name: "Session (5h)",
       used: 32210,
       total: 50000,
       remainingPercentage: 35.58,

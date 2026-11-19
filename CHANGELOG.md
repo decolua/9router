@@ -913,7 +913,7 @@
 # v0.5.8 (2026-06-21)
 
 ## Features
-- **Antigravity**: native image generation support (image models tagged kind:image, hiển thị trong media-providers UI)
+- **Antigravity**: native image generation support (image models tagged kind:image, shown in the media-providers UI)
 - **CodeBuddy CN**: API key auth + credit quota tracker
 - **CodeBuddy CN**: short model prefix alias "cbcn"
 

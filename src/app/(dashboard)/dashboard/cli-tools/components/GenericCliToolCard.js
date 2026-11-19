@@ -658,7 +658,7 @@ export default function GenericCliToolCard({
                   </div>
                 )}
 
-                {/* Model (1 model cho các tool khác, trừ omp) */}
+                {/* Model (one model for other tools except omp) */}
                 {tool.id !== "omp" && tool.id !== "pi" && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Model</span>

@@ -1,6 +1,6 @@
 /**
- * Script: đọc providersDisplay.js + providers.js, inject display+category+uiAlias+extra vào từng registry file.
- * Chạy: node scripts/injectDisplayToRegistry.mjs
+ * Script: read providersDisplay.js + providers.js, inject display+category+uiAlias+extra into each registry file.
+ * Run: node scripts/injectDisplayToRegistry.mjs
  */
 import fs from "fs";
 import path from "path";
@@ -10,8 +10,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const REGISTRY_DIR = path.join(ROOT, "open-sse/providers/registry");
 
-// ── 1. Build DISPLAY map từ providersDisplay.js (parse thủ công để không cần import) ──
-// Đọc file, eval trong sandbox đơn giản
+// ── 1. Build DISPLAY map from providersDisplay.js (parse manually to avoid importing) ──
+// Read the file, eval in a simple sandbox
 const displaySrc = fs.readFileSync(path.join(ROOT, "src/shared/constants/providersDisplay.js"), "utf8");
 const RISK_NOTICE = "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.";
 // strip export keywords + inject RISK_NOTICE as param so no redeclaration
@@ -23,11 +23,11 @@ const displayBody = displaySrc
 const getDisplay = new Function("RISK_NOTICE", `${displayBody}; return PROVIDER_DISPLAY;`);
 const DISPLAY = getDisplay(RISK_NOTICE);
 
-// ── 2. Build CATEGORY + EXTRA map từ providers.js ──
+// ── 2. Build CATEGORY + EXTRA map from providers.js ──
 // Map: providerId → { category, uiAlias, extra fields }
 const CATEGORY_MAP = {};
 
-// Đọc providers.js source để extract thủ công từng dòng
+// Read providers.js source to extract each line manually
 const provSrc = fs.readFileSync(path.join(ROOT, "src/shared/constants/providers.js"), "utf8");
 
 // Detect category blocks
@@ -40,10 +40,10 @@ const CATEGORIES = {
 };
 
 // Extract provider ids + uiAlias + extra fields per category
-// Parse dòng dạng: "  openai: { ...D("openai"), id: "openai", alias: "openai", ... }"
+// Parse lines like: "  openai: { ...D("openai"), id: "openai", alias: "openai", ... }"
 const ENTRY_RE = /^\s{2}["']?([\w-]+)["']?\s*:\s*\{[^}]*?id:\s*["']([\w-]+)["'][^}]*?alias:\s*["']([\w-]+)["']([\s\S]*?)(?=\n\s{2}["']?[\w-]|\n\};)/gm;
 
-// Extra fields cần lấy từ providers.js (không lấy display, id, alias vì đã có nguồn khác)
+// Extra fields to take from providers.js (skip display, id, alias — they come from another source)
 const EXTRA_FIELDS = [
   "thinkingConfig",
   "regions",
@@ -58,24 +58,24 @@ const EXTRA_FIELDS = [
   "authModes",
 ];
 
-// THINKING_CONFIG values để inline
+// THINKING_CONFIG values to inline
 const THINKING_CONFIG = {
   extended: { options: ["auto", "on", "off"], defaultMode: "auto", defaultBudgetTokens: 10000 },
   effort: { options: ["auto", "none", "low", "medium", "high"], defaultMode: "auto" },
 };
 
-// Parse thủ công từng category block
+// Parse each category block manually
 for (const [cat, re] of Object.entries(CATEGORIES)) {
   const match = provSrc.match(re);
   if (!match) continue;
   const block = match[1];
 
-  // Tìm tất cả entry lines (không comment)
+  // Find all entry lines (non-comment)
   const lines = block.split("\n").filter(l => l.trim() && !l.trim().startsWith("//"));
   for (const line of lines) {
-    // Extract id từ id: "xxx"
+    // Extract id from id: "xxx"
     const idM = line.match(/\bid:\s*["']([\w-]+)["']/);
-    // Extract uiAlias từ alias: "xxx"
+    // Extract uiAlias from alias: "xxx"
     const aliasM = line.match(/\balias:\s*["']([\w-]+)["']/);
     if (!idM) continue;
     const id = idM[1];
@@ -131,7 +131,7 @@ for (const [cat, re] of Object.entries(CATEGORIES)) {
   }
 }
 
-// ── 3. Inject vào từng registry file ──
+// ── 3. Inject into each registry file ──
 const registryFiles = fs.readdirSync(REGISTRY_DIR)
   .filter(f => f.endsWith(".js") && f !== "index.js")
   .map(f => f.replace(".js", ""));
@@ -144,7 +144,7 @@ for (const id of registryFiles) {
   const filePath = path.join(REGISTRY_DIR, `${id}.js`);
   let src = fs.readFileSync(filePath, "utf8");
 
-  // Bỏ qua nếu đã có display field
+  // Skip if a display field already exists
   if (src.includes("display:")) {
     skipped++;
     results.push(`⏭️  ${id} (already has display)`);
@@ -164,7 +164,7 @@ for (const id of registryFiles) {
   let displayBlock = "";
   if (display) {
     const d = { ...display };
-    // Thay RISK_NOTICE string về const reference khi serialize
+    // Replace the RISK_NOTICE string with the const reference when serializing
     const RISK = RISK_NOTICE;
     const displayJson = JSON.stringify(d, null, 4)
       .replace(new RegExp(JSON.stringify(RISK).slice(1, -1), "g"), "RISK_NOTICE");
@@ -175,7 +175,7 @@ for (const id of registryFiles) {
   // Build category line
   const categoryLine = catInfo ? `  category: "${catInfo.category}",\n` : "";
 
-  // Build uiAlias line (chỉ khi khác với alias routing)
+  // Build uiAlias line (only when it differs from the routing alias)
   let uiAliasLine = "";
   if (catInfo && catInfo.uiAlias && catInfo.uiAlias !== id) {
     uiAliasLine = `  uiAlias: "${catInfo.uiAlias}",\n`;
@@ -189,7 +189,7 @@ for (const id of registryFiles) {
     }
   }
 
-  // Inject SAU dòng "alias:" hoặc cuối object (trước closing "};")
+  // Inject AFTER the "alias:" line or at the end of the object (before the closing "};")
   const insertBlock = displayBlock + categoryLine + uiAliasLine + extraBlock;
 
   if (!insertBlock.trim()) {
@@ -198,16 +198,16 @@ for (const id of registryFiles) {
     continue;
   }
 
-  // Tìm vị trí sau field "alias:" để inject
+  // Find the position after the "alias:" field to inject
   const aliasLineRe = /^(\s+"?alias"?\s*:\s*["'][^"']+["'],?\n)/m;
   if (aliasLineRe.test(src)) {
     src = src.replace(aliasLineRe, `$1${insertBlock}`);
   } else {
-    // Fallback: inject trước closing "};"
+    // Fallback: inject before the closing "};"
     src = src.replace(/^(\}\s*;\s*)$/m, `${insertBlock}$1`);
   }
 
-  // Thêm RISK_NOTICE import nếu cần
+  // Add the RISK_NOTICE import if needed
   if (insertBlock.includes("RISK_NOTICE") && !src.includes("RISK_NOTICE")) {
     const riskLine = `const RISK_NOTICE = ${JSON.stringify(RISK_NOTICE)};\n\n`;
     src = riskLine + src;
@@ -218,6 +218,6 @@ for (const id of registryFiles) {
   results.push(`✅ ${id}`);
 }
 
-console.log(`\n📦 Inject display+category vào registry files:`);
+console.log(`\n📦 Injecting display+category into registry files:`);
 for (const r of results) console.log(` ${r}`);
 console.log(`\n✅ Injected: ${injected}  |  ⏭️ Skipped: ${skipped}`);

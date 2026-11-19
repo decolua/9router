@@ -49,12 +49,12 @@ const REQUEST_TIMEOUT_MS = 10000;
 // Window duration (seconds) → dashboard row name. Only these two windows are
 // rendered; anything else the vendor adds stays hidden until someone names it.
 const WINDOW_NAMES = [
-  [18000, "5 giờ"],
-  [604800, "7 ngày"],
+  [18000, "Session (5h)"],
+  [604800, "Weekly (7d)"],
 ];
 
 const MISSING_CONTROL_KEY_MESSAGE =
-  "OpenDesign Go: chưa cấu hình Control Key. Dán Control Key (vela_ctrl_...) vào Settings của provider OpenDesign; runtime key sk-amr không đọc được quota.";
+  "OpenDesign Go: control key not configured. Paste the Control Key (vela_ctrl_...) into the OpenDesign provider settings; the runtime key sk-amr cannot read quota.";
 
 function authHeaders(controlKey, workspaceId) {
   const headers = {
@@ -124,12 +124,12 @@ async function resolveWorkspaceId(controlKey, providerSpecificData, proxyOptions
       : ""))
     .filter(Boolean);
   if (ids.length === 0) {
-    return { workspaceId: null, error: "không tìm thấy workspace nào cho Control Key này" };
+    return { workspaceId: null, error: "no workspace found for this Control Key" };
   }
   if (ids.length > 1) {
     return {
       workspaceId: null,
-      error: `Control Key này thấy ${ids.length} workspace (${ids.join(", ")}). Chọn workspace của tài khoản trong Settings của provider (providerSpecificData.opendesignWorkspaceId) để không hiển thị nhầm quota của workspace khác.`,
+      error: `This Control Key sees ${ids.length} workspaces (${ids.join(", ")}). Pick the account's workspace in the provider settings (providerSpecificData.opendesignWorkspaceId) so another workspace's quota is not shown here.`,
     };
   }
   return { workspaceId: ids[0], error: null };
@@ -260,7 +260,7 @@ export async function getOpenDesignUsage(ctx = {}) {
     if (!resolved.workspaceId) {
       return {
         plan: PLAN,
-        message: `Không lấy được workspace OpenDesign: ${resolved.error}. Kiểm tra Control Key (vela_ctrl_...) hoặc đặt workspaceId thủ công.`,
+        message: `Unable to resolve the OpenDesign workspace: ${resolved.error}. Check the Control Key (vela_ctrl_...) or set workspaceId manually.`,
       };
     }
 
@@ -281,7 +281,7 @@ export async function getOpenDesignUsage(ctx = {}) {
     if (!preflight.ok) {
       errors.push(describeFailure("preflight", preflight.error));
     } else if (!workspaceMatches(preflight.body, workspaceId)) {
-      errors.push("preflight: workspaceId không khớp");
+      errors.push("preflight: workspaceId mismatch");
     } else {
       Object.assign(quotas, planQuotas(preflight.body));
     }
@@ -289,7 +289,7 @@ export async function getOpenDesignUsage(ctx = {}) {
     if (!balance.ok) {
       errors.push(describeFailure("wallet", balance.error));
     } else if (!workspaceMatches(balance.body, workspaceId)) {
-      errors.push("wallet: workspaceId không khớp");
+      errors.push("wallet: workspaceId mismatch");
     } else {
       const quota = balanceQuota(balance.body);
       if (quota) quotas["Balance ($)"] = quota;
@@ -301,7 +301,7 @@ export async function getOpenDesignUsage(ctx = {}) {
     if (rowCount === 0 && errors.length >= 2) {
       return {
         plan: PLAN,
-        message: `Không đọc được quota OpenDesign Go — ${errors.join("; ")}`,
+        message: `Could not read OpenDesign Go quota — ${errors.join("; ")}`,
       };
     }
 
@@ -311,7 +311,7 @@ export async function getOpenDesignUsage(ctx = {}) {
       const tail = errors.length ? ` (${errors.join("; ")})` : "";
       return {
         plan: PLAN,
-        message: `OpenDesign Go đã kết nối nhưng tài khoản này không báo quota nào${tail}.`,
+        message: `OpenDesign Go is connected but this account reports no quota${tail}.`,
         quotas: {},
       };
     }
