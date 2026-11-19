@@ -802,7 +802,8 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "agnes":
       case "bai":
       case "muse":
-      case "runcrate": {
+      case "runcrate":
+      case "synthetic": {
         const cfg = PROVIDERS[connection.provider];
         const res = await fetchWithConnectionProxy(cfg.validateUrl, { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
@@ -931,8 +932,11 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
       }
-      case "sensenova": {
-        const validateUrl = PROVIDERS.sensenova?.validateUrl || "https://token.sensenova.cn/v1/models";
+      case "sensenova":
+      case "sensenova-intl": {
+        // China and international sites are separate providers; each registry entry owns its host.
+        const validateUrl = PROVIDERS[connection.provider]?.validateUrl;
+        if (!validateUrl) return { valid: false, error: "Provider test not supported" };
         const res = await fetchWithConnectionProxy(validateUrl, {
           method: "GET",
           headers: {

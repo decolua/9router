@@ -8,6 +8,7 @@ export default {
     textIcon: "SN",
     website: "https://token.sensenova.cn",
     notice: {
+      text: "For China accounts (token.sensenova.cn). International accounts (platform.sensenova.ai) use SenseNova (Intl).",
       apiKeyUrl: "https://token.sensenova.cn",
     },
   },
@@ -19,6 +20,11 @@ export default {
   transport: {
     baseUrl: "https://token.sensenova.cn/v1/chat/completions",
     validateUrl: "https://token.sensenova.cn/v1/models",
+    quirks: {
+      // SenseNova streams thinking as `reasoning`, not reasoning_content. The lift is
+      // additive and a no-op when the upstream already sends reasoning_content.
+      reasoningAliasFields: true,
+    },
   },
   models: [
     { id: "sensenova-6.8-flash", name: "SenseNova 6.8 Flash" },

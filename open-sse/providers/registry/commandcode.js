@@ -56,6 +56,8 @@ export default {
     { id: "stepfun/Step-3.7-Flash", name: "Step 3.7 Flash" },
     { id: "stepfun/Step-3.5-Flash", name: "Step 3.5 Flash" },
     { id: "nvidia/nemotron-3-ultra-550b-a55b", name: "Nemotron 3 Ultra" },
+    { id: "google/gemini-4-carbon", name: "Gemini 4 Carbon" },
+    { id: "claude-fable-5-2", name: "Claude Fable 5.2" },
   ],
   passthroughModels: true,
   features: {

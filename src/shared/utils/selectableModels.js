@@ -1,3 +1,4 @@
+import { applyQoderModelNames } from "@/shared/utils/providerCustomModels";
 // Model-set resolution for dashboard callers that need "the models a user can
 // currently route to". The rules mirror ModelSelectModal's picker memo (kept in
 // sync by hand for now — adopting this module there is the follow-up that would
@@ -27,9 +28,10 @@ export const PROVIDER_ORDER = [
   ...Object.keys(APIKEY_PROVIDERS),
 ];
 
-// Providers that need no auth — always selectable, and they never own a
-// connection row, so any caller that only walks connections misses them.
-export const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter((id) => FREE_PROVIDERS[id].noAuth);
+// Authentication requirements are independent of billing category: no-auth
+// providers such as SearXNG can live outside the "free" group.
+export const NO_AUTH_PROVIDER_IDS = Object.keys(AI_PROVIDERS)
+  .filter((id) => AI_PROVIDERS[id].noAuth && !AI_PROVIDERS[id].hidden);
 
 // Providers with per-account live catalogs via /api/providers/[id]/models.
 // Static registry stays as fallback when live fetch fails or is empty.
@@ -290,7 +292,7 @@ export function buildModelGroups({
         .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
       const merged = [
-        ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
+        ...applyQoderModelNames(hardcodedModels, customModelsSafe, alias).map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
         ...customAliasModels,
         ...customRegisteredModels,
       ];
