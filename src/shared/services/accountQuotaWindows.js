@@ -1,9 +1,12 @@
+import { SNAPSHOT_MAX_AGE_MS, isWindowStrategy } from "@/shared/utils/accountOrdering";
+
 // Shared across Next server bundles and hot reloads. No provider imports on auth's path.
 const state = globalThis.__accountQuotaWindows ??= {
   snapshots: new Map(), failures: new Map(), providers: new Map(),
   active: new Set(), pending: new Set(), queue: [], running: 0, timer: null,
 };
-export const ACCOUNT_QUOTA_TTL_MS = 5 * 60_000;
+export const ACCOUNT_QUOTA_TTL_MS = SNAPSHOT_MAX_AGE_MS;
+const COLLECTION_INTERVAL_MS = 5 * 60_000;
 const REFRESH_MS = 60_000;
 const MAX_ENTRIES = 2000;
 const SUPPORTED = new Set(["claude", "codex"]);
@@ -83,7 +86,7 @@ async function enqueueProvider(providerId, providerState) {
     for (const connection of connections) {
       if (connection.authType !== "oauth" || state.pending.has(connection.id)) continue;
       const snapshot = getAccountQuotaSnapshot(connection.id);
-      if (snapshot && Date.now() - snapshot.fetchedAt < REFRESH_MS) continue;
+      if (snapshot && Date.now() - snapshot.fetchedAt < COLLECTION_INTERVAL_MS) continue;
       if (Date.now() < (state.failures.get(connection.id)?.retryAt || 0)) continue;
       state.pending.add(connection.id);
       state.queue.push(connection);
@@ -112,7 +115,7 @@ export function ensureProviderQuotaWindows(providerId) {
 export function configureAccountQuotaWindows(settings) {
   const active = new Set(Object.entries(settings?.providerStrategies || {})
     .filter(([provider, config]) => SUPPORTED.has(provider)
-      && /^(weekly|session)-reset-/.test(config?.strategy || ""))
+      && isWindowStrategy(config?.fallbackStrategy))
     .map(([provider]) => provider));
   state.active = active;
   if (!active.size && state.timer) {

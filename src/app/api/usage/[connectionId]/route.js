@@ -2,7 +2,6 @@ import { getProviderConnectionById } from "@/lib/localDb";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import { isLeaseConnection } from "open-sse/services/minimaxCodeLease.js";
 import { collectProviderUsage } from "@/shared/services/providerUsage";
-import { recordAccountQuotaSnapshot } from "@/shared/services/accountQuotaWindows";
 
 // Kept for existing reset routes and auto-ping callers.
 export { refreshAndUpdateCredentials } from "@/shared/services/providerUsage";
@@ -19,7 +18,6 @@ export async function GET(request, { params }) {
     if (!eligible) return Response.json({ message: "Usage not available for this connection" });
     const force = new URL(request.url).searchParams.get("force") === "1";
     const usage = await collectProviderUsage(connection, { force });
-    recordAccountQuotaSnapshot(connection.id, usage, connection.provider);
     return Response.json(usage);
   } catch (error) {
     console.warn(`[Usage] ${connection?.provider ?? "unknown"}: ${error.message}`);

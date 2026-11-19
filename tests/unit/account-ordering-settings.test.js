@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+const configure = vi.hoisted(() => vi.fn());
 const save = vi.hoisted(() => vi.fn(async body => body));
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({}), updateSettings: save }));
 vi.mock("@/lib/network/outboundProxy", () => ({ applyOutboundProxyEnv: vi.fn() }));
 vi.mock("open-sse/services/combo.js", () => ({ resetComboRotation: vi.fn() }));
-vi.mock("@/shared/services/accountQuotaWindows", () => ({ configureAccountQuotaWindows: vi.fn() }));
-vi.mock("@/shared/services/accountQuotaWindows.js", () => ({ configureAccountQuotaWindows: vi.fn() }));
+vi.mock("@/shared/services/accountQuotaWindows", () => ({ configureAccountQuotaWindows: configure }));
+vi.mock("@/shared/services/accountQuotaWindows.js", () => ({ configureAccountQuotaWindows: configure }));
 const { PATCH } = await import("../../src/app/api/settings/route.js");
 const request = body => new Request("http://localhost/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 beforeEach(() => vi.clearAllMocks());
@@ -18,5 +19,6 @@ describe("account strategy settings HTTP boundary", () => {
     const body = { providerStrategies: { claude: { fallbackStrategy: "session-reset-desc", proxyPoolId: "pool", rotateStrategy: "round-robin" } } };
     expect((await PATCH(request(body))).status).toBe(200);
     expect(save).toHaveBeenCalledWith(body);
+    expect(configure).toHaveBeenCalledWith(body);
   });
 });

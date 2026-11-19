@@ -7,7 +7,7 @@ import { collectProviderUsage } from "@/shared/services/providerUsage";
 
 let quota;
 const connection = (id, provider = "claude") => ({ id, provider, authType: "oauth" });
-const settings = (strategy = "weekly-reset-earliest") => ({ providerStrategies: { claude: { strategy } } });
+const settings = (fallbackStrategy = "weekly-reset-asc") => ({ providerStrategies: { claude: { fallbackStrategy } } });
 const usage = { quotas: { "weekly (7d)": { resetAt: "2030-01-01T00:00:00Z", used: 5 } } };
 async function tick(ms = 0) {
   await vi.advanceTimersByTimeAsync(ms);
@@ -39,6 +39,8 @@ describe("account quota windows real cache/scheduler", () => {
     expect(collectProviderUsage).toHaveBeenCalledTimes(1);
     expect(quota.getAccountQuotaSnapshot("a").quotas).toEqual(usage.quotas);
     await tick(60_001);
+    expect(collectProviderUsage).toHaveBeenCalledTimes(1);
+    await tick(240_000);
     expect(collectProviderUsage).toHaveBeenCalledTimes(2);
   });
 
@@ -52,7 +54,7 @@ describe("account quota windows real cache/scheduler", () => {
     await tick();
     expect(collectProviderUsage).not.toHaveBeenCalled();
     expect(getProviderConnections).toHaveBeenCalledWith({ provider: "claude", isActive: true });
-    quota.configureAccountQuotaWindows({ providerStrategies: { antigravity: { strategy: "weekly-reset-earliest" } } });
+    quota.configureAccountQuotaWindows({ providerStrategies: { antigravity: { fallbackStrategy: "weekly-reset-asc" } } });
     await tick(120_000);
     expect(collectProviderUsage).not.toHaveBeenCalled();
   });
@@ -79,13 +81,13 @@ describe("account quota windows real cache/scheduler", () => {
     quota.recordAccountQuotaSnapshot("a", usage, "claude");
     collectProviderUsage.mockRejectedValue(new Error("429"));
     quota.configureAccountQuotaWindows(settings());
-    await tick(60_001);
+    await tick(300_001);
     expect(collectProviderUsage).toHaveBeenCalledTimes(1);
     await tick(60_000);
     expect(collectProviderUsage).toHaveBeenCalledTimes(2);
     await tick(60_000);
     expect(collectProviderUsage).toHaveBeenCalledTimes(2);
-    await tick(120_000);
+    await tick(180_000);
     expect(quota.getAccountQuotaSnapshot("a")).toBeNull();
     expect(collectProviderUsage).toHaveBeenCalledTimes(3);
   });
