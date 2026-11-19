@@ -1,5 +1,7 @@
-// empty-content failover for combo streaming responses.
+// Pre-content failover for combo streaming responses.
 import { describe, it, expect, vi } from "vitest";
+import { EMPTY_PEEK_DEADLINE_MS } from "../../open-sse/config/runtimeConfig.js";
+import { handleComboChat } from "../../open-sse/services/combo.js";
 import {
   deltaHasClientContent,
   inspectSSELine,
@@ -22,11 +24,15 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 // Build a ReadableStream of encoded SSE frames. `delays[i]` (ms) optionally staggers frame i.
-function sseStream(frames, delays = []) {
+function sseStream(frames, delays = [], failure = null) {
   let i = 0;
   return new ReadableStream({
     async pull(controller) {
-      if (i >= frames.length) { controller.close(); return; }
+      if (i >= frames.length) {
+        if (failure) controller.error(failure);
+        else controller.close();
+        return;
+      }
       const d = delays[i] || 0;
       if (d) await new Promise((r) => setTimeout(r, d));
       controller.enqueue(enc.encode(frames[i]));
@@ -110,20 +116,13 @@ describe("peekStreamForContent", () => {
     expect(isNoRetryFinish(p.finishReason)).toBe(true);
   });
 
-  it("deadline fail-open: slow first content → committed as content", async () => {
-    // content frame delayed 200ms, deadline 30ms → must commit (not falsely fall through)
-    const p = await peekStreamForContent(sseStream([ROLE, CONTENT, DONE], [0, 200]), { deadlineMs: 30 });
-    expect(p.outcome).toBe("content");
-    expect(p.timedOut).toBe(true);
-  });
-
   // Regression for C1: the deadline must NOT drop the in-flight chunk. Reconstruct + drain and
   // assert the delayed content actually reaches the client (previously it was silently lost).
   it("deadline hand-off preserves the delayed content frame end-to-end", async () => {
     const frames = [ROLE, CONTENT, EMPTY_STOP, DONE];
     const p = await peekStreamForContent(sseStream(frames, [0, 200]), { deadlineMs: 30 });
-    expect(p.outcome).toBe("content");
-    expect(p.timedOut).toBe(true);
+    expect(p.outcome).toBe("deadline");
+    expect(p.pendingRead).toBeInstanceOf(Promise);
     const rebuilt = reconstructStream(p.head, p.reader, p.pendingRead);
     const rd = rebuilt.getReader(); let out = "";
     while (true) { const { done, value } = await rd.read(); if (done) break; out += dec.decode(value); }
@@ -170,9 +169,11 @@ describe("reconstructStream is byte-faithful", () => {
 
   it("content case replays head + remaining identically", async () => {
     const frames = [ROLE, CONTENT, EMPTY_STOP, DONE];
-    const p = await peekStreamForContent(sseStream(frames));
+    const stream = sseStream(frames);
+    const p = await peekStreamForContent(stream);
     const rebuilt = reconstructStream(p.head, p.reader);
     expect(await drain(rebuilt)).toBe(frames.join(""));
+    expect(stream.locked).toBe(false);
   });
 
   it("empty case (fully buffered) replays identically", async () => {
@@ -180,6 +181,16 @@ describe("reconstructStream is byte-faithful", () => {
     const p = await peekStreamForContent(sseStream(frames));
     const rebuilt = reconstructStream(p.head, p.reader);
     expect(await drain(rebuilt)).toBe(frames.join(""));
+  });
+
+  it("releases the reader when a deadline stream is discarded and cancellation rejects", async () => {
+    const cancel = vi.fn(() => Promise.reject(new Error("cancel failed")));
+    const stream = new ReadableStream({ cancel });
+    const p = await peekStreamForContent(stream, { deadlineMs: 5 });
+    const rebuilt = reconstructStream(p.head, p.reader, p.pendingRead);
+    await expect(rebuilt.cancel("client cancelled")).resolves.toBeUndefined();
+    expect(cancel).toHaveBeenCalledExactlyOnceWith("client cancelled");
+    expect(stream.locked).toBe(false);
   });
 });
 
@@ -269,8 +280,149 @@ describe("inspectSSELine — OpenAI Responses client format", () => {
   });
   it("response.failed → a finish that falls through (not no-retry)", () => {
     const r = inspectSSELine(ev({ type: "response.failed", response: { status: "failed", error: { code: "server_error", message: "x" } } }));
-    expect(r).toMatchObject({ content: false, finishReason: "failed" });
+    expect(r).toMatchObject({ content: false, finishReason: "failed", error: { message: "x" } });
     expect(isNoRetryFinish(r.finishReason)).toBe(false);
+  });
+});
+
+describe("combo recovery before stream commitment", () => {
+  const sse = (stream) => new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+  const goodMember = () => sse(CONTENT + DONE);
+  const errorFrame = `${ev({ error: { code: 502, message: "Upstream disconnected" } })}\n\n`;
+
+  function startCombo(...members) {
+    const handleSingleModel = vi.fn();
+    for (const member of members) handleSingleModel.mockResolvedValueOnce(member);
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const response = handleComboChat({
+      body: { stream: true }, models: members.map((_, i) => `openai/m${i}`), handleSingleModel, log,
+    });
+    return { response, handleSingleModel, log };
+  }
+
+  it("advances past a rejected read after role and reasoning metadata", async () => {
+    const stream = sseStream([ROLE, REASONING], [], new TypeError("terminated"));
+    const { response, handleSingleModel } = startCombo(sse(stream), goodMember());
+    expect(await (await response).text()).toBe(CONTENT + DONE);
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    expect(stream.locked).toBe(false);
+  });
+
+  it.each([
+    ["transport read failure", () => sseStream([ROLE], [], new TypeError("stream stall timeout")), 502, "stream stall timeout"],
+    ["structured stream failure", () => sseStream([ROLE, `${ev({ error: { code: "UPSTREAM_STREAM_READ_ERROR", message: "Upstream stream read error" } })}\n\n`]), 502, "Upstream stream read error"],
+  ])("returns retryable JSON when the final candidate has a %s", async (_kind, makeStream, status, message) => {
+    const stream = makeStream();
+    const { response } = startCombo(sse(ROLE + EMPTY_STOP + DONE), sse(stream));
+    const res = await response;
+    expect(res.status).toBe(status);
+    expect(res.headers.get("content-type")).toBe("application/json");
+    expect(await res.json()).toMatchObject({ error: { message, type: "server_error", code: "bad_gateway" } });
+    expect(stream.locked).toBe(false);
+  });
+
+  it("treats a failed peek as a member failure", async () => {
+    const member = goodMember();
+    const reader = member.body.getReader();
+    try {
+      const { response, handleSingleModel } = startCombo(member, goodMember());
+      expect(await (await response).text()).toBe(CONTENT + DONE);
+      expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    } finally {
+      await reader.cancel();
+      reader.releaseLock();
+    }
+  });
+
+  it("discards an in-band error before later same-chunk content and cancels the failed stream", async () => {
+    const cancel = vi.fn(() => Promise.reject(new Error("cancel failed")));
+    const stream = new ReadableStream({
+      start(controller) { controller.enqueue(enc.encode(REASONING + errorFrame + CONTENT)); },
+      cancel,
+    });
+    const { response, handleSingleModel } = startCombo(sse(stream), goodMember());
+    expect(await (await response).text()).toBe(CONTENT + DONE);
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(stream.locked).toBe(false);
+  });
+
+  it.each([
+    ["Chat nested error", [REASONING, errorFrame.trimEnd()], 502, "Upstream disconnected"],
+    ["Claude named error split across CRLF chunks", ["event: error\r", "\n", 'data: {"message":"Stream broke"}\r\n\r\n'], 502, "Stream broke"],
+    ["Responses nested interruption", ["event: response.failed\n", `${ev({ response: { status: "failed", error: { status: 504, code: "stream_disconnected", message: "No response received" } } })}\n\n`], 502, "No response received"],
+    ["structured rate limit", [`${ev({ error: { code: 429, message: "Too many requests" } })}\n\n`], 429, "Too many requests"],
+    ["structured validation rejection", [`${ev({ type: "error", error: { type: "invalid_request_error", message: "Invalid tools" } })}\n\n`], 400, "Invalid tools"],
+  ])("returns a structured non-2xx for final %s", async (_name, frames, status, message) => {
+    const { response } = startCombo(sse(sseStream(frames)));
+    const res = await response;
+    expect(res.status).toBe(status);
+    expect(res.headers.get("content-type")).toBe("application/json");
+    expect(await res.json()).toMatchObject({ error: { message } });
+  });
+
+  it("preserves the first HTTP request rejection when a later stream fails", async () => {
+    const rejection = Response.json({ error: { message: "Unsupported parameter" } }, { status: 400 });
+    const { response, handleSingleModel } = startCombo(rejection, sse(errorFrame));
+    expect(await response).toBe(rejection);
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves a no-retry terminal even if the reader subsequently rejects", async () => {
+    const stream = sseStream([ROLE, FILTER_STOP], [], new TypeError("terminated"));
+    const { response, handleSingleModel } = startCombo(sse(stream), goodMember());
+    expect(await (await response).text()).toBe(ROLE + FILTER_STOP);
+    expect(handleSingleModel).toHaveBeenCalledTimes(1);
+    expect(stream.locked).toBe(false);
+  });
+
+  it("returns a clean empty final candidate byte-for-byte", async () => {
+    const frames = ROLE + EMPTY_STOP + DONE;
+    const { response } = startCombo(sse(errorFrame), sse(frames));
+    const res = await response;
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(frames);
+  });
+
+  it("keeps same-chunk in-band errors on the selected stream after content", async () => {
+    const frames = ROLE + CONTENT + errorFrame + DONE;
+    const { response, handleSingleModel } = startCombo(sse(frames), goodMember());
+    expect(await (await response).text()).toBe(frames);
+    expect(handleSingleModel).toHaveBeenCalledTimes(1);
+  });
+
+  it("delivers content before surfacing a late read rejection without switching", async () => {
+    const stream = sseStream([ROLE, CONTENT], [], new TypeError("terminated"));
+    const { response, handleSingleModel } = startCombo(sse(stream), goodMember());
+    const res = await response;
+    expect(res.status).toBe(200);
+    const reader = res.body.getReader();
+    expect(dec.decode((await reader.read()).value)).toBe(ROLE);
+    expect(dec.decode((await reader.read()).value)).toBe(CONTENT);
+    await expect(reader.read()).rejects.toThrow("terminated");
+    expect(handleSingleModel).toHaveBeenCalledTimes(1);
+    expect(stream.locked).toBe(false);
+  });
+
+  it("commits at the deadline with unconfirmed content and forwards a late error frame", async () => {
+    vi.useFakeTimers();
+    try {
+      let upstream;
+      const stream = new ReadableStream({ start(controller) { upstream = controller; controller.enqueue(enc.encode(ROLE)); } });
+      const { response, handleSingleModel, log } = startCombo(sse(stream), goodMember());
+      await vi.advanceTimersByTimeAsync(EMPTY_PEEK_DEADLINE_MS);
+      const res = await response;
+      expect(res.status).toBe(200);
+      expect(log.info).toHaveBeenCalledWith("COMBO", expect.stringContaining("committed after peek deadline (content unconfirmed)"));
+      expect(log.info).not.toHaveBeenCalledWith("COMBO", expect.stringContaining("succeeded"));
+      upstream.enqueue(enc.encode(errorFrame));
+      upstream.close();
+      expect(await res.text()).toBe(ROLE + errorFrame);
+      expect(handleSingleModel).toHaveBeenCalledTimes(1);
+      expect(stream.locked).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -279,7 +431,6 @@ describe("inspectSSELine — OpenAI Responses client format", () => {
 describe("combo fall-through per client format (real combo.js + streaming pipeline)", async () => {
   const { createStreamController } = await import("../../open-sse/utils/streamHandler.js");
   const { handleStreamingResponse, buildOnStreamComplete } = await import("../../open-sse/handlers/chatCore/streamingHandler.js");
-  const { handleComboChat } = await import("../../open-sse/services/combo.js");
   const { initTranslators } = await import("../../open-sse/translator/index.js");
   const { FORMATS } = await import("../../open-sse/translator/formats.js");
   await initTranslators();

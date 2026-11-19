@@ -8,10 +8,8 @@
 // maps to finish_reason "stop". The combo's HTTP-status check then logs "succeeded" and
 // the empty response reaches the client.
 //
-// The signal is STRUCTURAL, not an enum: "the stream ended and no content frame was ever
-// released". That covers MALFORMED_FUNCTION_CALL, any future Gemini abort reason, and a
-// stream that simply dies — with no reason vocabulary to keep in sync. The finish-reason
-// enum is used only in the inverse: to NOT retry a legitimately-empty content-filter block.
+// A clean end without a content frame covers MALFORMED_FUNCTION_CALL and future Gemini
+// abort reasons. Explicit SSE failures and rejected reads are distinct from clean emptiness.
 
 import {
   NO_RETRY_EMPTY_FINISH, OPENAI_FINISH, RESPONSES_STATUS, RESPONSES_INCOMPLETE_REASON,
@@ -21,7 +19,8 @@ import { CLAUDE_EVENT, CLAUDE_DELTA, RESPONSES_EVENT, RESPONSES_EVENT_PREFIX } f
 import { toOpenAIFinish } from "../translator/concerns/finishReason.js";
 import { FORMATS } from "../translator/formats.js";
 import { EMPTY_PEEK_DEADLINE_MS } from "../config/runtimeConfig.js";
-import { parseSSELine } from "../utils/streamHelpers.js";
+import { describeUpstreamDisconnect, getUpstreamDisconnectStatus } from "../utils/error.js";
+import { detectSseEventError, parseSSELine } from "../utils/streamHelpers.js";
 
 // OpenAI chat content test. A chunk counts as content only if it carries
 // assistant output the caller can consume:
@@ -53,17 +52,17 @@ export function deltaHasClientContent(delta) {
 const nonEmptyString = (s) => typeof s === "string" && s.length > 0;
 
 // Anthropic Messages event.
-function inspectClaudeEvent(obj) {
+function inspectClaudeEvent(obj, type) {
   let content = false, finishReason = null;
-  if (obj.type === CLAUDE_EVENT.CONTENT_BLOCK_DELTA) {
+  if (type === CLAUDE_EVENT.CONTENT_BLOCK_DELTA) {
     const d = obj.delta || {};
     if (d.type === CLAUDE_DELTA.TEXT && nonEmptyString(d.text)) content = true;
     if (d.type === CLAUDE_DELTA.INPUT_JSON && nonEmptyString(d.partial_json)) content = true;
-  } else if (obj.type === CLAUDE_EVENT.CONTENT_BLOCK_START) {
+  } else if (type === CLAUDE_EVENT.CONTENT_BLOCK_START) {
     const b = obj.content_block || {};
     if (b.type === CLAUDE_BLOCK.TOOL_USE) content = true;
     if (b.type === CLAUDE_BLOCK.TEXT && nonEmptyString(b.text)) content = true;
-  } else if (obj.type === CLAUDE_EVENT.MESSAGE_DELTA && obj.delta?.stop_reason) {
+  } else if (type === CLAUDE_EVENT.MESSAGE_DELTA && obj.delta?.stop_reason) {
     // refusal → content_filter (the translator renders content_filter as refusal for Claude clients)
     finishReason = toOpenAIFinish(obj.delta.stop_reason, FORMATS.CLAUDE);
   }
@@ -71,16 +70,16 @@ function inspectClaudeEvent(obj) {
 }
 
 // OpenAI Responses event. Tool calls are function_call / custom_tool_call output items or
-// their argument deltas. Terminal events: completed → stop; incomplete → content_filter
-// (no-retry) or length by incomplete_details.reason; failed → "failed" (retryable).
+// their argument deltas. An incomplete event can mean a no-retry content filter or
+// an output limit, depending on incomplete_details.reason.
 const RESPONSES_TOOL_ITEMS = new Set([RESPONSES_ITEM.FUNCTION_CALL, RESPONSES_ITEM.CUSTOM_TOOL_CALL]);
 const RESPONSES_INCOMPLETE_FINISH = {
   [RESPONSES_INCOMPLETE_REASON.CONTENT_FILTER]: OPENAI_FINISH.CONTENT_FILTER,
   [RESPONSES_INCOMPLETE_REASON.MAX_OUTPUT_TOKENS]: OPENAI_FINISH.LENGTH,
 };
-function inspectResponsesEvent(obj) {
+function inspectResponsesEvent(obj, type) {
   let content = false, finishReason = null;
-  switch (obj.type) {
+  switch (type) {
     case RESPONSES_EVENT.OUTPUT_TEXT_DELTA:
     case RESPONSES_EVENT.FUNCTION_CALL_ARGUMENTS_DELTA:
     case RESPONSES_EVENT.CUSTOM_TOOL_CALL_INPUT_DELTA:
@@ -99,39 +98,60 @@ function inspectResponsesEvent(obj) {
     case RESPONSES_EVENT.INCOMPLETE:
       finishReason = RESPONSES_INCOMPLETE_FINISH[obj.response?.incomplete_details?.reason] || RESPONSES_STATUS.INCOMPLETE;
       break;
-    case RESPONSES_EVENT.FAILED:
-      finishReason = RESPONSES_STATUS.FAILED;
-      break;
   }
   return { content, finishReason };
 }
 
-// Inspect one complete client-format SSE line (parsed with the shared parseSSELine) and report
-// whether it carries content and/or a finish reason. Non-data lines and "[DONE]" carry nothing.
-export function inspectSSELine(line) {
-  const parsed = parseSSELine(line.trimStart());
+// Inspect one complete client-format data line using the event name, when present.
+export function inspectSSELine(line, eventName) {
+  const trimmed = line.trimStart();
+  const parsed = trimmed.startsWith("data:") ? parseSSELine(trimmed) : null;
   if (!parsed || parsed.done) return { content: false, finishReason: null };
-  if (typeof parsed.type === "string" && !Array.isArray(parsed.choices)) {
-    return parsed.type.startsWith(RESPONSES_EVENT_PREFIX) ? inspectResponsesEvent(parsed) : inspectClaudeEvent(parsed);
+  const type = eventName || parsed.type;
+  const isResponsesFailure = type === RESPONSES_EVENT.FAILED || parsed.response?.status === RESPONSES_STATUS.FAILED;
+  if (!isResponsesFailure && Array.isArray(parsed.choices)) {
+    for (const choice of parsed.choices) {
+      if (deltaHasClientContent(choice?.delta || choice?.message)) return { content: true, finishReason: null };
+    }
+  }
+  const error = detectSseEventError(parsed, eventName);
+  if (error) {
+    return { content: false, finishReason: type === RESPONSES_EVENT.FAILED ? RESPONSES_STATUS.FAILED : null, error };
+  }
+  if (typeof type === "string" && !Array.isArray(parsed.choices)) {
+    return type.startsWith(RESPONSES_EVENT_PREFIX) ? inspectResponsesEvent(parsed, type) : inspectClaudeEvent(parsed, type);
   }
   let content = false, finishReason = null;
-  for (const choice of parsed.choices || []) {
-    if (deltaHasClientContent(choice.delta || choice.message || {})) content = true;
-    if (choice.finish_reason) finishReason = choice.finish_reason;
+  for (const choice of Array.isArray(parsed.choices) ? parsed.choices : []) {
+    if (deltaHasClientContent(choice?.delta || choice?.message)) content = true;
+    if (choice?.finish_reason) finishReason = choice.finish_reason;
   }
   return { content, finishReason };
 }
 
-// Scan the COMPLETE lines of a decoded SSE buffer and update the running decision.
-// The trailing fragment (a line still being received) is not parsed — it is returned in
-// `state.pending` for the caller to prepend to the next chunk. `sawContent` latches true.
+// Scan complete lines in wire order. Keep the event name across reads and reset it at
+// a blank line. Leave a partial line in state.pending for the next read.
 export function scanSSEBuffer(text, state = { sawContent: false, finishReason: null }) {
   const lines = text.split("\n");
   state.pending = lines.pop();
   for (const line of lines) {
-    const info = inspectSSELine(line);
-    if (info.content) state.sawContent = true;
+    if (state.sawContent || state.error) break;
+    const trimmed = line.trim();
+    if (!trimmed) {
+      state.eventName = undefined;
+      continue;
+    }
+    if (trimmed.startsWith("event:")) {
+      state.eventName = trimmed.slice(6).trim();
+      continue;
+    }
+    const info = inspectSSELine(trimmed, state.eventName);
+    if (info.error) {
+      if (!isNoRetryFinish(state.finishReason)) state.error = info.error;
+      continue;
+    }
     if (info.finishReason) state.finishReason = info.finishReason;
+    if (info.content) state.sawContent = true;
   }
   return state;
 }
@@ -144,11 +164,19 @@ export function isNoRetryFinish(finishReason) {
   return NO_RETRY_EMPTY_FINISH.has(String(finishReason).toLowerCase());
 }
 
-// Peek a streaming Response body: read frames until the first content frame (→ "content"),
-// the stream ends (→ "empty"), or the deadline elapses (→ "content", fail-open: never hold a
-// possibly-valid slow stream). Returns the decision, the buffered head bytes, the live reader,
-// and — if the deadline fired mid-read — the still-pending read() (`pendingRead`) so the caller
-// can resume from it WITHOUT abandoning the chunk it will deliver.
+// Cancel without blocking fallback on the upstream's cleanup. A reader may already be errored.
+export function cancelStreamReader(reader, reason, pendingRead = null) {
+  if (!reader) return;
+  try {
+    void reader.cancel(reason).catch(() => {});
+  } catch { /* best effort */ }
+  const release = () => { try { reader.releaseLock(); } catch { /* read is still settling */ } };
+  if (pendingRead) pendingRead.then(release, release);
+  else release();
+}
+
+// Read until content, clean EOF, failure, or the fail-open deadline. Replayable outcomes
+// carry the original bytes and, on deadline, the in-flight read that owns the next chunk.
 export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADLINE_MS } = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -159,40 +187,48 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
   // Clamp: 0 / NaN / negative would otherwise disable the timeout and let a stalled-but-open
   // upstream hang the request forever in the hot path. There is no "disable" via this value.
   const validDeadline = Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : EMPTY_PEEK_DEADLINE_MS;
-  let timer = null;
+  let timer;
   const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve("__deadline__"), validDeadline); });
-  const settle = (ret) => { if (timer) { clearTimeout(timer); timer = null; } return ret; };
+  let handedOff = false;
+  const replay = (outcome, liveReader = null, pendingRead = null) => {
+    handedOff = liveReader !== null;
+    return { outcome, head: headChunks, reader: liveReader, pendingRead, finishReason: state.finishReason };
+  };
 
-  let pendingRead = null;
-  while (true) {
-    if (!pendingRead) pendingRead = reader.read();
-    let res;
-    try {
-      res = await Promise.race([pendingRead, deadline]);
-    } catch (err) {
-      // Upstream errored mid-peek. Body is locked to this reader; hand it back so the caller
-      // can reconstruct (the replay will surface the same error). The failed read is consumed.
-      pendingRead = null;
-      return settle({ outcome: state.sawContent ? "content" : "empty", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason, error: err });
+  try {
+    while (true) {
+      const read = reader.read();
+      const result = await Promise.race([read, deadline]);
+      if (result === "__deadline__") return replay("deadline", reader, read);
+
+      const { done, value } = result;
+      if (done) {
+        scanSSEBuffer(textBuf + decoder.decode() + "\n", state);
+      } else {
+        headChunks.push(value);
+        scanSSEBuffer(textBuf + decoder.decode(value, { stream: true }), state);
+        textBuf = state.pending;
+      }
+
+      if (state.error) return { outcome: "error", error: state.error };
+      if (state.sawContent) return replay("content", done ? null : reader);
+      if (done) return replay("empty");
     }
-    if (res === "__deadline__") {
-      // Fail-open: commit whatever we have. Hand the STILL-PENDING read to the caller so its
-      // chunk is replayed, not dropped (fixes the content-dropping deadline race).
-      return settle({ outcome: "content", timedOut: true, head: headChunks, reader, pendingRead, finishReason: state.finishReason });
-    }
-    const { done, value } = res;
-    pendingRead = null;
-    if (done) {
-      if (textBuf) scanSSEBuffer(textBuf + "\n", state); // final line without a trailing newline
-      return settle({ outcome: state.sawContent ? "content" : "empty", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
-    }
-    headChunks.push(value);
-    textBuf += decoder.decode(value, { stream: true });
-    scanSSEBuffer(textBuf, state);
-    textBuf = state.pending; // only the not-yet-complete line carries over
-    if (state.sawContent) {
-      return settle({ outcome: "content", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
-    }
+  } catch (error) {
+    // A read failure after a legitimate no-retry terminal must not replace that terminal.
+    if (isNoRetryFinish(state.finishReason)) return replay("empty");
+    return {
+      outcome: "error",
+      error: {
+        message: describeUpstreamDisconnect(error),
+        status: getUpstreamDisconnectStatus(error),
+        transport: true,
+        cause: error,
+      },
+    };
+  } finally {
+    clearTimeout(timer);
+    if (!handedOff) cancelStreamReader(reader);
   }
 }
 
@@ -201,20 +237,41 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
 // only ever one outstanding reader.read() at a time.
 export function reconstructStream(head, reader, pendingRead = null) {
   let pending = pendingRead;
+  let activeRead = null;
   return new ReadableStream({
     start(controller) {
       for (const chunk of head) controller.enqueue(chunk);
+      if (!reader) controller.close();
     },
     async pull(controller) {
-      let result;
-      if (pending) { result = await pending; pending = null; }
-      else { result = await reader.read(); }
-      const { done, value } = result;
-      if (done) { controller.close(); return; }
-      controller.enqueue(value);
+      try {
+        const read = activeRead = pending || reader.read();
+        pending = null;
+        const { done, value } = await read;
+        activeRead = null;
+        if (!reader) return; // cancelled during the read
+        if (done) {
+          reader.releaseLock();
+          reader = null;
+          controller.close();
+        } else {
+          controller.enqueue(value);
+        }
+      } catch (error) {
+        activeRead = null;
+        if (!reader) return;
+        reader.releaseLock();
+        reader = null;
+        throw error;
+      }
     },
     cancel(reason) {
-      try { reader.cancel(reason); } catch { /* already closed */ }
+      const pendingRead = activeRead || pending;
+      pending = null;
+      const activeReader = reader;
+      reader = null;
+      activeRead = null;
+      cancelStreamReader(activeReader, reason, pendingRead);
     },
   });
 }

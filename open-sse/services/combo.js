@@ -3,11 +3,14 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
-import { unavailableResponse } from "../utils/error.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import {
+  errorResponse, getClientErrorStatus, getStreamErrorStatus, isTransientStreamError, normalizeErrorMessage, unavailableResponse,
+} from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { parseModel } from "./model.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
-import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
+import { cancelStreamReader, peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
 import {
   getStickyComboModel,
   setStickyComboModel,
@@ -15,19 +18,30 @@ import {
   orderModelsByChoice,
 } from "./systemoneRouter.js";
 
-// Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
-// them untouched). For SSE, returns { outcome: "content"|"empty", finishReason, response }
-// where `response` is a faithful replay of the original stream (head buffer + live reader).
-async function peekComboResponse(result, log) {
+// For an SSE response, return the peek decision and a byte-faithful replay if usable.
+async function peekComboResponse(result) {
   const ct = (result.headers.get("content-type") || "").toLowerCase();
   if (!result.body || !ct.includes("text/event-stream")) return null;
-  const peeked = await peekStreamForContent(result.body);
-  const response = new Response(reconstructStream(peeked.head, peeked.reader, peeked.pendingRead), {
-    status: result.status,
-    statusText: result.statusText,
-    headers: result.headers,
-  });
-  return { outcome: peeked.outcome, finishReason: peeked.finishReason, timedOut: peeked.timedOut, response };
+  let peeked;
+  try {
+    peeked = await peekStreamForContent(result.body);
+    if (peeked.outcome === "error") return peeked;
+    const response = new Response(reconstructStream(peeked.head, peeked.reader, peeked.pendingRead), result);
+    return { outcome: peeked.outcome, finishReason: peeked.finishReason, response };
+  } catch (error) {
+    // A failed replay must not leave a held reader or its pending read behind.
+    cancelStreamReader(peeked?.reader, error, peeked?.pendingRead);
+    return { outcome: "error", error: { message: normalizeErrorMessage(error) || "Could not read upstream stream" } };
+  }
+}
+
+function comboStreamErrorStatus(error) {
+  const status = getStreamErrorStatus(error) ?? HTTP_STATUS.BAD_GATEWAY;
+  const detail = [error.message, error.code, error.type].filter(Boolean).join(" ");
+  // A named transport failure can carry a misleading 4xx/5xx status. A validation
+  // failure remains a request rejection and follows existing combo policy.
+  if (status === HTTP_STATUS.BAD_REQUEST && !isTransientStreamError(detail)) return status;
+  return getClientErrorStatus(status, detail);
 }
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
@@ -474,32 +488,20 @@ export async function handleComboChat({
 
     try {
       const result = await handleSingleModel(body, modelStr);
+      if (result.status === HTTP_STATUS.CLIENT_CLOSED_REQUEST) return result;
       
       // Success (2xx). A 2xx is necessary but NOT sufficient: Gemini aborts (e.g.
       // MALFORMED_FUNCTION_CALL) still return 200 and stream empty content, which would
       // otherwise be delivered as a successful empty answer with no failover.
       // Peek the stream for real content before committing to this candidate.
       if (result.ok) {
-        let peeked = null;
-        try {
-          peeked = await peekComboResponse(result, log);
-        } catch (peekErr) {
-          // peekStreamForContent is written not to throw; if reconstruction/Response
-          // construction ever does, result.body is already locked by getReader() and can no
-          // longer be streamed. Returning `result` would hand the client a locked, unreadable
-          // body. Degrade to a clean, valid (empty) SSE stream instead.
-          log.warn("COMBO", `empty-peek error on ${modelStr}, returning empty SSE: ${peekErr?.message || peekErr}`);
-          return new Response("data: [DONE]\n\n", {
-            status: 200,
-            headers: { "Content-Type": "text/event-stream" },
-          });
-        }
+        const peeked = await peekComboResponse(result);
+        const isLast = i === rotatedModels.length - 1;
 
         if (!peeked) {
           // Non-streaming (or non-SSE) response — not this peek's job. The zero-content
           // JSON check still applies on a non-final seat.
-          const isLastModel = i === rotatedModels.length - 1;
-          if (!isLastModel) {
+          if (!isLast) {
             const contentType = result.headers?.get?.("content-type") || "";
             if (contentType.includes("application/json")) {
               try {
@@ -510,7 +512,6 @@ export async function handleComboChat({
                     clearStickyComboSession(comboName, sessionId);
                   }
                   lastError = "Zero usable content";
-                  lastStatus = 200;
                   continue;
                 }
               } catch {
@@ -523,16 +524,40 @@ export async function handleComboChat({
           return result;
         }
 
-        if (peeked.outcome === "content") {
-          log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
+        if (peeked.outcome === "deadline") {
+          log.info("COMBO", `Model ${modelStr} committed after peek deadline (content unconfirmed)`);
           return peeked.response;
+        }
+
+        if (peeked.outcome === "content") {
+          log.info("COMBO", `Model ${modelStr} selected after first content`);
+          return peeked.response;
+        }
+
+        if (peeked.outcome === "error") {
+          if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+            clearStickyComboSession(comboName, sessionId);
+          }
+          const { error } = peeked;
+          const status = error.transport ? HTTP_STATUS.BAD_GATEWAY : comboStreamErrorStatus(error);
+          const { provider } = parseModel(modelStr);
+          const { shouldFallback, requestScoped } = checkFallbackError(status, error.message, 0, provider);
+          const canAdvance = shouldFallback || requestScoped;
+          const tryNext = canAdvance && !isLast;
+          log.warn("COMBO", `Model ${modelStr} stream failed before content${tryNext ? ", trying next" : ""}`, { status, error: error.message });
+          if (!canAdvance) return errorResponse(status, error.message);
+          if (requestScoped) requestScopedResult ??= errorResponse(status, error.message);
+          if (isLast) return requestScopedResult ?? errorResponse(status, error.message);
+
+          lastError = error.message;
+          if (!lastStatus || lastStatus < HTTP_STATUS.BAD_REQUEST) lastStatus = status;
+          continue;
         }
 
         // Empty generation. Fall through to the next candidate unless this is a legitimately
         // empty class (content filter) or the last candidate — in which case return the
         // (empty) response as-is, preserving prior behaviour rather than manufacturing a 5xx.
         const reasonLabel = peeked.finishReason || "no-content";
-        const isLast = i === rotatedModels.length - 1;
         if (isNoRetryFinish(peeked.finishReason) || isLast) {
           log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
           return peeked.response;
@@ -542,8 +567,7 @@ export async function handleComboChat({
         if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
           clearStickyComboSession(comboName, sessionId);
         }
-        // Drain/close the discarded stream in the background so its usage logging still runs.
-        peeked.response.body?.cancel?.().catch(() => {});
+        // The peek already drained the empty stream to EOF and released its reader.
         lastError = `empty generation (${reasonLabel})`;
         if (!lastStatus) lastStatus = 502;
         continue;
