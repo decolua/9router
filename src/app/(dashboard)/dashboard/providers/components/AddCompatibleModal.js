@@ -3,6 +3,10 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Badge, Button, Input, Modal, Select } from "@/shared/components";
+import {
+  OPENAI_COMPATIBLE_API_TYPE_OPTIONS,
+  OPENAI_COMPATIBLE_DEFAULT_API_TYPE,
+} from "open-sse/config/openAICompatible.js";
 
 const VARIANT_CONFIG = {
   openai: {
@@ -29,17 +33,12 @@ const VARIANT_CONFIG = {
   },
 };
 
-const API_TYPE_OPTIONS = [
-  { value: "chat", label: "Chat Completions" },
-  { value: "responses", label: "Responses API" },
-];
-
 function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   const config = VARIANT_CONFIG[variant];
   const initialFormData = () => ({
     name: "",
     prefix: "",
-    ...(config.hasApiType ? { apiType: "chat" } : {}),
+    ...(config.hasApiType ? { apiType: OPENAI_COMPATIBLE_DEFAULT_API_TYPE } : {}),
     baseUrl: config.defaultBaseUrl,
   });
 
@@ -153,7 +152,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         {config.hasApiType && (
           <Select
             label="API Type"
-            options={API_TYPE_OPTIONS}
+            options={OPENAI_COMPATIBLE_API_TYPE_OPTIONS}
             value={formData.apiType}
             onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
           />
