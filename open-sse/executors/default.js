@@ -1,9 +1,10 @@
 import { BaseExecutor } from "./base.js";
 import { randomUUID } from "node:crypto";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta, mergeAnthropicBeta } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, CLAUDE_CODE_BETA, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta, mergeAnthropicBeta, isOfficialAnthropicUpstream, isAnthropicApiKeyUpstream } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
-import { OAUTH_ENDPOINTS, buildKimiHeaders, NOUS_ATTRIBUTION } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, buildKimiHeaders, NOUS_ATTRIBUTION, CLAUDE_SYSTEM_PROMPT } from "../config/appConstants.js";
+import { CLAUDE_BLOCK } from "../translator/schema/index.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
@@ -97,6 +98,9 @@ export class DefaultExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     let transformed = this.applyJsonSchemaFallback(this.applyNousAttribution(model, body, stream, credentials));
+    if (isAnthropicApiKeyUpstream(this.provider, credentials)) {
+      transformed = this.stripClaudeCodeSystemIdentity(transformed);
+    }
 
     if (transformed && typeof transformed === "object") {
       // OpenAI-compatible upstreams (NVIDIA NIM, DeepSeek) reject `stream_options` on
@@ -113,6 +117,46 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
+  }
+
+  // Run at the outbound boundary so translated and native Claude requests agree.
+  stripClaudeCodeSystemIdentity(body) {
+    if (!body?.system) return body;
+    const stripLeadingIdentity = (text) => {
+      const lines = text.match(/[^\n]*\n|[^\n]+$/g) || [];
+      const prefix = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].replace(/\r?\n$/, "");
+        if (line === CLAUDE_SYSTEM_PROMPT) continue;
+        if (/^x-anthropic-billing-header:/i.test(line)) prefix.push(lines[i]);
+        else return prefix.join("") + lines.slice(i).join("");
+      }
+      return prefix.join("");
+    };
+    let system = body.system;
+    if (typeof system === "string") system = stripLeadingIdentity(system);
+    else if (Array.isArray(system)) {
+      const parts = [];
+      let leading = true;
+      for (const block of system) {
+        if (!leading || block?.type !== CLAUDE_BLOCK.TEXT || typeof block.text !== "string" || block.text === "") {
+          parts.push(block);
+          leading = false;
+          continue;
+        }
+        const text = stripLeadingIdentity(block.text);
+        if (!text) continue;
+        parts.push(text === block.text ? block : { ...block, text });
+        leading = /^x-anthropic-billing-header:[^\n]*(?:\r?\n)?$/i.test(text);
+      }
+      if (parts.length === system.length && parts.every((block, index) => block === system[index])) return body;
+      system = parts;
+    }
+    if (system === body.system) return body;
+    const result = { ...body };
+    if (system === "" || (Array.isArray(system) && system.length === 0)) delete result.system;
+    else result.system = system;
+    return result;
   }
 
   applyNousAttribution(model, body, stream, credentials) {
@@ -222,11 +266,28 @@ export class DefaultExecutor extends BaseExecutor {
     // gateways that would choke on unknown beta flags are left untouched.
     const isClaudeModel = typeof model === "string" && /^claude-/.test(model);
     const clientBeta = credentials?.rawHeaders?.["anthropic-beta"];
+    const runtimeBeta = isAnthropicApiKeyUpstream(this.provider, credentials) && rt?.headers
+      ? new Headers(rt.headers).get("anthropic-beta") : null;
     if (model && (this.provider === "claude"
       || (this.provider?.startsWith?.("anthropic-compatible-") && isClaudeModel))) {
-      headers["Anthropic-Beta"] = mergeAnthropicBeta(selectAnthropicBeta(model, body), clientBeta);
-    } else if (this.provider === "anthropic" && clientBeta) {
+      headers["Anthropic-Beta"] = mergeAnthropicBeta(selectAnthropicBeta(model, body), runtimeBeta, clientBeta);
+    } else if (this.provider === "anthropic") {
       headers["Anthropic-Beta"] = mergeAnthropicBeta(headers["Anthropic-Beta"], clientBeta);
+    }
+    if (isAnthropicApiKeyUpstream(this.provider, credentials)) {
+      const betaValues = [];
+      for (const name of Object.keys(headers)) {
+        const lower = name.toLowerCase();
+        if (lower === "anthropic-beta") {
+          betaValues.push(headers[name]);
+          delete headers[name];
+        } else if (lower === "x-app" || lower === "anthropic-dangerous-direct-browser-access") {
+          delete headers[name];
+        }
+      }
+      const filtered = mergeAnthropicBeta(...betaValues).split(",")
+        .filter(flag => flag !== CLAUDE_CODE_BETA).join(",");
+      if (filtered) headers["Anthropic-Beta"] = filtered;
     }
 
     // Claude OAuth: align x-claude-code-session-id with metadata.user_id.session_id if missing
@@ -240,9 +301,7 @@ export class DefaultExecutor extends BaseExecutor {
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
-      const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
-      if (!isOfficialAnthropic) {
+      if (!isOfficialAnthropicUpstream(this.provider, credentials)) {
         // Some third-party Anthropic-compatible gateways require Bearer auth in
         // addition to x-api-key. Send both (x-api-key already set above) so
         // gateways that read either header succeed.

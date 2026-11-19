@@ -23,6 +23,7 @@ export function mapStainlessArch() {
 
 // Anthropic API version (single source — reused across claude-format providers/executors)
 export const ANTHROPIC_API_VERSION = "2023-06-01";
+export const CLAUDE_CODE_BETA = "claude-code-20250219";
 // Floor version only; the live value comes from npm (utils/claudeCliVersion.js)
 // and outbound claude-cli/x.y.z headers are rewritten in proxyAwareFetch.
 export const CLAUDE_CLI_VERSION = "2.1.322";
@@ -92,6 +93,24 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 // Default base for dynamic compat providers (openai-compatible-* / anthropic-compatible-*) when user gives no baseUrl
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
+
+export function isOfficialAnthropicUpstream(provider, credentials) {
+  if (provider !== "anthropic" && !provider?.startsWith?.("anthropic-compatible-")) return false;
+  try {
+    const baseUrl = credentials?.runtimeTransport?.baseUrl
+      || (provider === "anthropic" ? ANTHROPIC_COMPAT_BASE : credentials?.providerSpecificData?.baseUrl)
+      || ANTHROPIC_COMPAT_BASE;
+    return new URL(baseUrl).hostname === new URL(ANTHROPIC_COMPAT_BASE).hostname;
+  } catch {
+    return false;
+  }
+}
+
+export function isAnthropicApiKeyUpstream(provider, credentials) {
+  return typeof credentials?.apiKey === "string" && Boolean(credentials.apiKey)
+    && !credentials.accessToken && !credentials.apiKey.startsWith("sk-ant-oat")
+    && isOfficialAnthropicUpstream(provider, credentials);
+}
 
 // Official Antigravity Hub Desktop 2.24.0 fingerprint captured from macOS arm64.
 // Keep this static even when 9router runs on Linux: the provider profile is

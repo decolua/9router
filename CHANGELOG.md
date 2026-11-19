@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Anthropic**: omit the Claude Code beta and leading system identity from official API-key requests, including compatible endpoints; preserve OAuth and third-party gateway behavior (#4739)
+
 # v0.5.119 (2026-11-11)
 
 ## Features

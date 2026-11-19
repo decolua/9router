@@ -99,20 +99,20 @@ exports[`GOLDEN buildHeaders (default executor providers) > anthropic → header
 {
   "apiKey": {
     "Accept": "text/event-stream",
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+    "Anthropic-Beta": "interleaved-thinking-2025-05-14",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+    "Anthropic-Beta": "interleaved-thinking-2025-05-14",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
   },
   "oauth": {
     "Accept": "text/event-stream",
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+    "Anthropic-Beta": "interleaved-thinking-2025-05-14",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
