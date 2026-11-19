@@ -8,22 +8,32 @@ const endpoint = readFileSync(new URL("../../src/app/(dashboard)/dashboard/endpo
 const modal = readFileSync(new URL("../../src/app/(dashboard)/dashboard/endpoint/components/AccountSelectModal.js", import.meta.url), "utf8");
 const require = createRequire(import.meta.url);
 const { transformSync } = require("next/dist/build/swc");
-const compiled = transformSync(modal, {
-  filename: "AccountSelectModal.js",
-  jsc: { parser: { syntax: "ecmascript", jsx: true }, transform: { react: { runtime: "classic" } } },
-  module: { type: "commonjs" },
-}).code;
+function compile(source, filename) {
+  return transformSync(source, {
+    filename,
+    jsc: { parser: { syntax: "ecmascript", jsx: true }, transform: { react: { runtime: "classic" } } },
+    module: { type: "commonjs" },
+  }).code;
+}
+const compiled = compile(modal, "AccountSelectModal.js");
+const picker = readFileSync(new URL("../../src/shared/components/SelectionPicker.js", import.meta.url), "utf8");
+const compiledPicker = compile(picker, "SelectionPicker.js");
 
 function renderModal(overrides = {}, search = "") {
-  const createElement = (type, props, ...children) => ({ type, props: { ...props, children } });
+  const createElement = (type, props, ...children) => typeof type === "function"
+    ? type({ ...props, children })
+    : ({ type, props: { ...props, children } });
+  const shared = { exports: {}, React: { createElement } };
+  runInNewContext(compiledPicker, shared);
   const context = {
     exports: {},
     React: { createElement },
     require: (id) => {
+      if (id.endsWith("/SelectionPicker")) return shared.exports;
       if (id === "react") return { useState: () => [search, () => {}] };
       if (id === "prop-types") return require("prop-types");
       if (id.endsWith("/providers")) return { AI_PROVIDERS: { openai: { name: "OpenAI", color: "#10A37F" }, anthropic: { name: "Anthropic" } } };
-      return () => null;
+      return ({ children }) => ({ type: id, props: { children } });
     },
   };
   runInNewContext(compiled, context);
@@ -47,6 +57,22 @@ function renderModal(overrides = {}, search = "") {
 }
 
 describe("API key account access UI contract", () => {
+  it("shares presentation without catalog or selection state", () => {
+    const models = readFileSync(new URL("../../src/shared/components/ModelSelectModal.js", import.meta.url), "utf8");
+    for (const source of [modal, models]) {
+      for (const component of ["SelectionToolbar", "SelectionGroup", "SelectionChip", "SelectionAction"]) {
+        expect(source).toContain(`<${component}`);
+      }
+    }
+    expect(picker).not.toMatch(/\b(fetch|useState|useEffect|useMemo)\s*\(/);
+    const { nodes } = renderModal();
+    const search = nodes.find((node) => node.type === "input");
+    expect(search.props.type).toBe("search");
+    expect(nodes.some((node) => node.type === "span" && node.props.className === "sr-only")).toBe(true);
+    expect(nodes.filter((node) => node.props["aria-pressed"] !== undefined).every((node) => node.props.type === "button" && node.props.className.includes("rounded-xl"))).toBe(true);
+    expect(nodes.some((node) => node.type === "section" && node.props["aria-label"] === "OpenAI accounts")).toBe(true);
+  });
+
   it("keeps account restrictions independent and feeds model account scope", () => {
     expect(controls).toContain('label="Restrict accounts"');
     expect(controls).toContain("checked={access.accountsRestricted}");
