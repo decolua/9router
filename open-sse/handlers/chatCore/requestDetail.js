@@ -1,10 +1,11 @@
-import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { saveRequestUsage } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
 
+const OUTPUT_LIMIT_PARAMS = ["max_tokens", "max_completion_tokens", "max_output_tokens"];
 const OPTIONAL_PARAMS = [
   "temperature", "top_p", "top_k",
-  "max_tokens", "max_completion_tokens",
+  ...OUTPUT_LIMIT_PARAMS,
   "thinking", "reasoning", "enable_thinking",
   "presence_penalty", "frequency_penalty",
   "seed", "stop", "tools", "tool_choice",
@@ -19,6 +20,12 @@ export function extractRequestConfig(body, stream) {
     if (body[param] !== undefined) config[param] = body[param];
   }
   return config;
+}
+
+export function extractOutputLimits(body) {
+  return Object.fromEntries(OUTPUT_LIMIT_PARAMS.flatMap((key) =>
+    Number.isFinite(body?.[key]) ? [[key, body[key]]] : [],
+  ));
 }
 
 export function extractUsageFromResponse(responseBody) {
@@ -92,13 +99,14 @@ export function buildRequestDetail(base, overrides = {}) {
     providerResponse: base.providerResponse || null,
     response: base.response || {},
     pxpipe: base.pxpipe || undefined,
+    streamTelemetry: base.streamTelemetry,
     status: base.status || "success",
     ...overrides
   };
 }
 
 // Build the "done" summary: duration, ttft, in/out tokens with cache breakdown
-export function formatDoneLine({ usage, latency }) {
+export function formatDoneLine({ usage, latency, finishReason, usageEstimated, providerRequest }) {
   const u = usage || {};
   const inTok = u.prompt_tokens ?? u.input_tokens ?? 0;
   const outTok = u.completion_tokens ?? u.output_tokens ?? 0;
@@ -112,7 +120,13 @@ export function formatDoneLine({ usage, latency }) {
     inStr += ` (CACHE ${parts.join(" ")})`;
   }
   const ttftStr = latency?.ttft ? ` · TTFT ${latency.ttft}ms` : "";
-  return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
+  let line = `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
+  const reasoning = u.reasoning_tokens ?? u.completion_tokens_details?.reasoning_tokens ?? u.output_tokens_details?.reasoning_tokens;
+  if (reasoning != null) line += ` · REASONING ${reasoning}`;
+  if (finishReason) line += ` · FINISH ${finishReason}`;
+  if (usageEstimated || u.estimated) line += " · USAGE estimated";
+  for (const [key, value] of Object.entries(extractOutputLimits(providerRequest))) line += ` · ${key}=${value}`;
+  return line;
 }
 
 export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {

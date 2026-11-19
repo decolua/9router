@@ -3,13 +3,12 @@ import { once } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleChatCore } from "../../open-sse/handlers/chatCore.js";
 
-const { logTargetRequest, trackPendingRequest } = vi.hoisted(() => ({
-  logTargetRequest: vi.fn(), trackPendingRequest: vi.fn(),
+const { logTargetRequest, trackPendingRequest, saveRequestDetail } = vi.hoisted(() => ({
+  logTargetRequest: vi.fn(), trackPendingRequest: vi.fn(), saveRequestDetail: vi.fn(async () => {}),
 }));
 
 vi.mock("@/lib/usageDb.js", () => ({
-  trackPendingRequest,
-  saveRequestDetail: async () => {},
+  trackPendingRequest, saveRequestDetail,
   appendRequestLog: async () => {},
   saveRequestUsage: async () => {},
 }));
@@ -142,6 +141,9 @@ describe("loopback 9router stream resets", () => {
       expect(trackPendingRequest.mock.calls).toEqual([
         [model, provider, connectionId, true], [model, provider, connectionId, false, !recovers],
       ]);
+      expect(saveRequestDetail).toHaveBeenLastCalledWith(expect.objectContaining({
+        status: recovers ? "success" : "error", streamTelemetry: expect.objectContaining({ attemptCount: 2 }),
+      }));
     });
   });
 
@@ -166,6 +168,10 @@ describe("loopback 9router stream resets", () => {
       expect(attempts).toHaveLength(1);
       expect(onRequestSuccess).not.toHaveBeenCalled();
       expect(log.errorLine).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.stringContaining("UPSTREAM ERROR"));
+      expect(saveRequestDetail).toHaveBeenLastCalledWith(expect.objectContaining({
+        status: "interrupted",
+        streamTelemetry: expect.objectContaining({ attemptCount: 1, phase: "committed" }),
+      }));
     });
   });
 
@@ -182,6 +188,9 @@ describe("loopback 9router stream resets", () => {
       expect(log.line).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.stringContaining("DOWNSTREAM CANCELLED"));
       expect(log.errorLine).not.toHaveBeenCalled();
       expect(onRequestSuccess).not.toHaveBeenCalled();
+      expect(saveRequestDetail).toHaveBeenLastCalledWith(expect.objectContaining({
+        status: "cancelled", streamTelemetry: expect.objectContaining({ phase: "downstream" }),
+      }));
     });
   });
 });

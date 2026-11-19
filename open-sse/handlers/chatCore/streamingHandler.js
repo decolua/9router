@@ -9,7 +9,7 @@ import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamH
 import { buildStreamErrorBytes } from "../../utils/streamHelpers.js";
 import { createErrorResult, getClientErrorStatus, getStreamErrorStatus, getUpstreamDisconnectStatus, isTransientStreamError, readErrorResponseText } from "../../utils/error.js";
 import { prepareStreamingResponse } from "../../utils/preContentRetry.js";
-import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { buildRequestDetail, extractRequestConfig, extractOutputLimits, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
@@ -148,7 +148,7 @@ export async function handleStreamingResponse({
     providerResponse: "[Streaming - raw response not captured]",
     response: { content: "[Streaming in progress...]", thinking: null, type: "streaming" },
     pxpipe,
-    status: "success"
+    status: "streaming"
   }, { id: streamDetailId })).catch(err => {
     console.error("[RequestDetail] Failed to save streaming request:", err.message);
   });
@@ -164,35 +164,52 @@ export async function handleStreamingResponse({
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, getProviderBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, getProviderBody, getAttemptCount, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const writeDetail = ({ status, content, thinking, usage, firstOutputAt, metadata, error }) => {
+    const providerRequest = getProviderBody?.() || finalBody || translatedBody || null;
     const latency = {
-      ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
+      ttft: firstOutputAt == null ? 0 : firstOutputAt - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
-    const safeThinking = contentObj?.thinking || null;
-
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency,
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
-      providerRequest: getProviderBody?.() || finalBody || translatedBody || null,
-      providerResponse: safeContent,
-      response: { content: safeContent, thinking: safeThinking, type: "streaming" },
+      providerRequest,
+      providerResponse: content,
+      response: { content, thinking, type: "streaming", ...(error && { error: error.message, status: error.status }) },
+      streamTelemetry: {
+        attemptCount: getAttemptCount?.() ?? 1,
+        outputLimits: extractOutputLimits(providerRequest),
+        finishReason: metadata.finishReason,
+        terminalEventType: metadata.terminalEventType,
+        usageEstimated: Boolean(metadata.usageEstimated || usage?.estimated),
+        phase: metadata.phase,
+        upstreamResponseId: metadata.upstreamResponseId,
+      },
       pxpipe,
-      status: "success"
+      status,
     }, { id: streamDetailId })).catch(err => {
-      console.error("[RequestDetail] Failed to update streaming content:", err.message);
+      console.error("[RequestDetail] Failed to save stream outcome:", err.message);
     });
-
-    // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE", silent: true });
-    if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
+    return { latency, providerRequest };
   };
 
-  return { onStreamComplete, streamDetailId };
+  const onStreamComplete = (contentObj, usage, firstOutputAt, metadata = {}) => {
+    const { latency, providerRequest } = writeDetail({
+      status: "success", content: contentObj?.content || "[Empty streaming response]",
+      thinking: contentObj?.thinking || null, usage, firstOutputAt, metadata,
+    });
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE", silent: true });
+    log?.line?.(reqTag, "📊", formatDoneLine({ usage, latency, providerRequest, ...metadata }));
+  };
+  const onStreamFailure = (failure) => {
+    const status = failure.status === HTTP_STATUS.CLIENT_CLOSED_REQUEST ? "cancelled" : failure.phase === "preflight" ? "error" : "interrupted";
+    writeDetail({ status, usage: failure.usage, firstOutputAt: failure.firstOutputAt, metadata: failure, error: failure });
+  };
+
+  return { onStreamComplete, onStreamFailure, streamDetailId };
 }

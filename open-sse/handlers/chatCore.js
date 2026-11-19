@@ -366,9 +366,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     settled = true;
     trackPendingRequest(model, provider, connectionId, false, error);
   };
+  let recordStreamFailure;
   const streamController = createStreamController({
     onDisconnect: (reason) => {
       settlePending();
+      recordStreamFailure?.({ message: "Downstream connection closed", status: HTTP_STATUS.CLIENT_CLOSED_REQUEST, phase: "downstream" });
       onDisconnect?.(reason);
     },
     onComplete: settlePending,
@@ -418,6 +420,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Most executors return their registry format. Cursor AgentService is an
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
+  // Body of the attempt that produced providerResponse (pre-content retries resend it).
+  let attemptCount = 1;
   try {
     const result = await executor.execute({
       model,
@@ -447,6 +451,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log?.warn?.("HEADROOM", "upstream rejected compressed Responses payload with 400; retrying once without Headroom");
       void providerResponse.body?.cancel?.().catch(() => {});
       translatedBody = headroomFallbackBody;
+      attemptCount++;
       const fallbackResult = await executor.execute({
         model, body: translatedBody, stream, credentials, providerSessionId: sessionSeed,
         clientTool, signal: streamController.signal, log, proxyOptions, providerOverrides, skipBadRequestRetry: true,
@@ -508,6 +513,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
         }
         try {
+          attemptCount++;
           const retryResult = await executor.execute({
             model,
             body: translatedBody,
@@ -593,6 +599,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   const reexecute = provider === "codex" ? undefined : async (retrySignal) => {
+    attemptCount++;
     const result = await executor.execute({
       model, body: translatedBody, stream, credentials, providerSessionId: sessionSeed, clientTool,
       signal: retrySignal, log, proxyOptions: { ...proxyOptions, forceFreshSocket: true }, providerOverrides,
@@ -603,10 +610,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return result.response;
   };
   const getProviderBody = () => finalBody;
-  const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx, getProviderBody });
+  const { onStreamComplete, onStreamFailure, streamDetailId } = buildOnStreamComplete({
+    ...sharedCtx, getProviderBody, getAttemptCount: () => attemptCount,
+  });
+  recordStreamFailure = onStreamFailure;
   return handleStreamingResponse({
     ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap,
-    customToolNames, streamController, onStreamComplete, streamDetailId, credentials, getProviderBody, reexecute, executor,
+    customToolNames, streamController, onStreamComplete, onStreamFailure, streamDetailId, credentials, getProviderBody, reexecute, executor,
   });
 }
 

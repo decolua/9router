@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: () => { },
   appendRequestLog: async () => { },
-  saveRequestDetail: async () => { },
+  saveRequestDetail: vi.fn(async () => { }),
   saveRequestUsage: async () => { },
 }));
 
@@ -18,8 +18,9 @@ vi.mock("../../open-sse/config/runtimeConfig.js", async (load) => ({
   resolveStreamStallTimeoutMs: () => 50,
 }));
 
-import { handleStreamingResponse } from "../../open-sse/handlers/chatCore/streamingHandler.js";
+import { buildOnStreamComplete, handleStreamingResponse } from "../../open-sse/handlers/chatCore/streamingHandler.js";
 import { createStreamController } from "../../open-sse/utils/streamHandler.js";
+import { saveRequestDetail } from "@/lib/usageDb.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
 const encoder = new TextEncoder();
@@ -312,6 +313,30 @@ describe("handleStreamingResponse pre-flight peek", () => {
     expect(result).toMatchObject({ success: false, status: 502, accountStatus: 524 });
     expect(await result.response.json()).toMatchObject({ error: { message: "[502]: Upstream timed out" } });
     expect(reexecute).toHaveBeenCalledOnce();
+  });
+
+  it("logs actual usage separately from the finish reason and request limit", async () => {
+    const log = { line: vi.fn() };
+    const getProviderBody = () => ({ max_completion_tokens: 65536 });
+    const callbacks = buildOnStreamComplete({ ...base, log, getProviderBody, getAttemptCount: () => 2 });
+    const result = await handleStreamingResponse({
+      ...base, ...callbacks, log, getProviderBody, streamController: makeController(),
+      providerResponse: sse(partial + length + data({
+        choices: [], usage: { prompt_tokens: 100, completion_tokens: 32000, completion_tokens_details: { reasoning_tokens: 1200 } },
+      }) + done),
+    });
+    expect(await result.response.text()).toContain('"finish_reason":"length"');
+    const line = log.line.mock.lastCall[2];
+    expect(line).toContain("OUT 32000");
+    expect(line).toContain("REASONING 1200");
+    expect(line).toContain("FINISH length");
+    expect(line).toContain("max_completion_tokens=65536");
+    expect(line).not.toContain("USAGE estimated");
+    expect(saveRequestDetail).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: callbacks.streamDetailId, status: "success", streamTelemetry: expect.objectContaining({
+        attemptCount: 2, finishReason: "length", terminalEventType: "chat.finish_reason", usageEstimated: false,
+      }),
+    }));
   });
 
   describe("stream termination", () => {
