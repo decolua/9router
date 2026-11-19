@@ -10,5 +10,14 @@ export async function register() {
 
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();
+
+    // Start quota-only polling before dashboard/auth traffic. No inference sent.
+    try {
+      const { getSettings } = await import("@/lib/localDb");
+      const { configureAccountQuotaWindows } = await import("@/shared/services/accountQuotaWindows");
+      configureAccountQuotaWindows(await getSettings());
+    } catch (error) {
+      console.warn("[AccountQuotaWindows] startup failed:", error.message);
+    }
   }
 }
