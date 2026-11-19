@@ -84,6 +84,7 @@ export default function ProviderDetailPage() {
   const [strategySaving, setStrategySaving] = useState(false);
   const [strategyLoaded, setStrategyLoaded] = useState(false);
   const [strategyError, setStrategyError] = useState("");
+  const strategyDetailsRef = useRef(null);
   const strategySavingRef = useRef(false);
   const [quotaSnapshots, setQuotaSnapshots] = useState({});
   const [quotaRefreshing, setQuotaRefreshing] = useState(false);
@@ -490,6 +491,24 @@ export default function ProviderDetailPage() {
     const interval = setInterval(refresh, 15000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [providerId, windowStrategy, supportsWindowStrategies]);
+
+  useEffect(() => {
+    const closeSettings = (event) => {
+      const details = strategyDetailsRef.current;
+      if (!details?.open) return;
+      if (event.type === "keydown") {
+        if (event.key !== "Escape") return;
+        details.querySelector("summary")?.focus();
+      } else if (details.contains(event.target)) return;
+      details.open = false;
+    };
+    document.addEventListener("pointerdown", closeSettings);
+    document.addEventListener("keydown", closeSettings);
+    return () => {
+      document.removeEventListener("pointerdown", closeSettings);
+      document.removeEventListener("keydown", closeSettings);
+    };
+  }, []);
 
   const saveThinkingConfig = async (mode) => {
     try {
@@ -1144,6 +1163,7 @@ export default function ProviderDetailPage() {
                 connection={conn}
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
+                showOrdering={effectiveStrategy === "fill-first"}
                 isFirst={!canReorder || index === 0}
                 isLast={!canReorder || index === connections.length - 1}
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
@@ -1624,9 +1644,9 @@ export default function ProviderDetailPage() {
         <NoAuthProxyCard providerId={providerId} />
       ) : (
         <Card>
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">Connections</h2>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               {connections.length > 0 && proxyPools.length > 0 && (
                 <Button
                   size="sm"
@@ -1671,8 +1691,10 @@ export default function ProviderDetailPage() {
                   )}
                 </>
               )}
-              <div className="flex flex-wrap items-end gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <Select
+                  className="w-48 max-w-full sm:w-56"
+                  selectClassName="h-7 !py-0 !text-xs !rounded-[8px]"
                   aria-label="Account selection strategy"
                   value={providerStrategy}
                   disabled={!strategyLoaded || strategySaving}
@@ -1695,8 +1717,14 @@ export default function ProviderDetailPage() {
                   ]}
                   onChange={(event) => saveProviderStrategy(event.target.value, providerStickyLimit || "1")}
                 />
-                {providerStrategy === "round-robin" && (
-                  <>
+                <details ref={strategyDetailsRef} className="relative shrink-0">
+                  <summary aria-label="Account selection settings" title="Account selection settings" className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-lg text-text-muted hover:bg-surface-2 hover:text-text-main focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 [&::-webkit-details-marker]:hidden">
+                    <span className="material-symbols-outlined text-[18px]">settings</span>
+                  </summary>
+                  <div className="fixed inset-x-4 top-24 z-30 max-h-[min(70vh,480px)] overflow-y-auto rounded-xl border border-border bg-surface p-4 shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 sm:max-w-[calc(100vw-2rem)]">
+                    <h3 className="mb-3 text-sm font-semibold">Account selection settings</h3>
+                {effectiveStrategy === "round-robin" && (
+                  <div className="mb-3 flex items-end gap-2">
                   <Input
                     id="provider-sticky-limit"
                     label="Consecutive uses"
@@ -1709,16 +1737,11 @@ export default function ProviderDetailPage() {
                     onChange={(event) => setProviderStickyLimit(event.target.value)}
                   />
                   <Button size="sm" variant="secondary" disabled={strategySaving} onClick={() => saveProviderStrategy("round-robin", providerStickyLimit)}>
-                    Save consecutive uses
+                    Save
                   </Button>
-                  </>
+                  </div>
                 )}
-                {strategySaving && <span role="status" className="text-xs text-text-muted">Saving strategy...</span>}
-              </div>
-            </div>
-          </div>
-
-          <div className="mb-3 space-y-1 text-xs text-text-muted">
+          <div className="space-y-2 text-xs leading-relaxed text-text-muted">
             <p>Account selection strategy: {effectiveStrategy}{!providerStrategy ? " (global setting)" : ""}.</p>
             {!supportsWindowStrategies && <p>Quota-window ordering is available for Claude and Codex only.</p>}
             {!canReorder && <p>Manual reordering is disabled. Your saved manual priorities are preserved.</p>}
@@ -1734,9 +1757,15 @@ export default function ProviderDetailPage() {
                 </ol>
               </>
             )}
-            {strategyError && <p role="alert" className="text-red-500">{strategyError}</p>}
             {windowStrategy && quotaError && <p role="alert" className="text-red-500">{quotaError} Last available data is kept until it expires.</p>}
           </div>
+                  </div>
+                </details>
+                {strategySaving && <span role="status" className="sr-only">Saving strategy...</span>}
+              </div>
+            </div>
+          </div>
+          {strategyError && <p role="alert" className="mb-3 text-xs text-red-500">{strategyError}</p>}
 
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

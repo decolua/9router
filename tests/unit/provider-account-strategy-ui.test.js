@@ -75,7 +75,7 @@ describe("provider account strategy UI controls", () => {
     expect(source).toContain("disabled: isWindowStrategy(value) && !supportsWindowStrategies");
     expect(selectSource).toContain("disabled={option.disabled}");
     expect(selectSource).toContain('!options.some((option) => option.value === "")');
-    expect(source).toContain('providerStrategy === "round-robin" && (');
+    expect(source).toContain('effectiveStrategy === "round-robin" && (');
     expect(source).not.toContain("handleRoundRobinToggle");
   });
 
@@ -91,7 +91,7 @@ describe("provider account strategy UI controls", () => {
 
   it("refreshes snapshots without discarding data when HTTP refresh fails", async () => {
     const start = source.lastIndexOf("  useEffect(() => {", source.indexOf("    setQuotaSnapshots({});"));
-    const effectSource = source.slice(start, source.indexOf("  const saveThinkingConfig", start));
+    const effectSource = source.slice(start, source.indexOf("\n  useEffect(() => {", start + 1));
     const state = { snapshots: null, error: "", refreshing: false };
     const fetch = vi.fn().mockResolvedValueOnce(ok({ snapshots: { account: { fetchedAt: 123, quotas: [] } }, refreshing: false })).mockResolvedValueOnce({ ok: false, status: 503 });
     let cleanup;
@@ -125,6 +125,10 @@ describe("provider account strategy UI controls", () => {
     expect(source).toContain("if (!canReorder || index1 < 0");
     expect(source).toContain("isFirst={!canReorder || index === 0}");
     expect(source).toContain("isLast={!canReorder || index === connections.length - 1}");
+    expect(source).toContain('showOrdering={effectiveStrategy === "fill-first"}');
+    expect(source).toContain('selectClassName="h-7 !py-0 !text-xs !rounded-[8px]"');
+    expect(source).toContain('aria-label="Account selection settings"');
+    expect(source).toContain('event.key !== "Escape"');
     expect(saveSource).not.toContain("priority");
   });
 });
