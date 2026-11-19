@@ -27,20 +27,29 @@ export function normalizeAllowList(list) {
 }
 
 /**
- * Build the access object from the two apiKeys columns.
+ * Build independent model/account policies from apiKeys columns.
  *
  * Fails CLOSED: the restricted flag has its own INTEGER column, so a corrupt or
  * unparsable allow list can only ever shrink what a restricted key may call
  * (to nothing); it can never turn a restricted key into an unrestricted one.
  */
-export function keyAccessFromColumns(restrictedCol, allowCol) {
+export function keyAccessFromColumns(restrictedCol, allowCol, accountsRestrictedCol, accountIdsCol) {
   const restricted = restrictedCol === 1 || restrictedCol === true;
-  if (!restricted) return { restricted: false, allow: [] };
   let parsed = [];
-  if (typeof allowCol === "string" && allowCol) {
+  if (restricted && typeof allowCol === "string" && allowCol) {
     try { parsed = JSON.parse(allowCol); } catch { parsed = []; }
   }
-  return { restricted: true, allow: normalizeAllowList(parsed) };
+  const accountsRestricted = accountsRestrictedCol === 1 || accountsRestrictedCol === true;
+  let accountIds = [];
+  if (accountsRestricted && typeof accountIdsCol === "string" && accountIdsCol) {
+    try { accountIds = JSON.parse(accountIdsCol); } catch { accountIds = []; }
+  }
+  return { restricted, allow: normalizeAllowList(parsed), accountsRestricted, accountIds: normalizeAccountIds(accountIds) };
+}
+
+// Connection IDs are opaque and case-sensitive, unlike model names.
+export function normalizeAccountIds(list) {
+  return Array.isArray(list) ? [...new Set(list.filter((id) => typeof id === "string").map((id) => id.trim()).filter(Boolean))] : [];
 }
 
 /** Columns to persist for an access object (already validated/normalized). */
@@ -49,19 +58,21 @@ export function keyAccessToColumns(access) {
   return {
     accessRestricted: value.restricted ? 1 : 0,
     accessAllow: JSON.stringify(value.restricted ? normalizeAllowList(value.allow) : []),
+    accessAccountsRestricted: value.accountsRestricted ? 1 : 0,
+    accessAccountIds: JSON.stringify(value.accountsRestricted ? normalizeAccountIds(value.accountIds) : []),
   };
 }
 
 /**
- * Validate client input for an access update ({ restricted, allow }).
+ * Validate client input for independent model/account policies.
  * Rejects rather than repairs: wrong types, too many entries, overlong entries.
- * @returns {{ ok: true, value: {restricted: boolean, allow: string[]} } | { ok: false, error: string }}
+ * Missing account fields retain legacy unrestricted behavior.
  */
 export function validateKeyAccessInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, error: "access must be an object { restricted, allow }" };
   }
-  const extra = Object.keys(input).filter((k) => k !== "restricted" && k !== "allow");
+  const extra = Object.keys(input).filter((k) => !["restricted", "allow", "accountsRestricted", "accountIds"].includes(k));
   if (extra.length) return { ok: false, error: `access: unexpected field(s) ${extra.join(", ")}` };
   if (typeof input.restricted !== "boolean") {
     return { ok: false, error: "access.restricted must be a boolean" };
@@ -76,5 +87,18 @@ export function validateKeyAccessInput(input) {
   if (allow.some((e) => e.trim().length > KEY_ACCESS_MAX_ENTRY_LENGTH)) {
     return { ok: false, error: `access.allow entries must be at most ${KEY_ACCESS_MAX_ENTRY_LENGTH} characters` };
   }
-  return { ok: true, value: { restricted: input.restricted, allow: normalizeAllowList(allow) } };
+  if (input.accountsRestricted !== undefined && typeof input.accountsRestricted !== "boolean") {
+    return { ok: false, error: "access.accountsRestricted must be a boolean" };
+  }
+  const accountIds = input.accountIds === undefined ? [] : input.accountIds;
+  if (!Array.isArray(accountIds) || accountIds.some((id) => typeof id !== "string")) {
+    return { ok: false, error: "access.accountIds must be an array of strings" };
+  }
+  if (accountIds.length > KEY_ACCESS_MAX_ENTRIES) {
+    return { ok: false, error: `access.accountIds has more than ${KEY_ACCESS_MAX_ENTRIES} entries` };
+  }
+  if (accountIds.some((id) => id.trim().length > KEY_ACCESS_MAX_ENTRY_LENGTH)) {
+    return { ok: false, error: `access.accountIds entries must be at most ${KEY_ACCESS_MAX_ENTRY_LENGTH} characters` };
+  }
+  return { ok: true, value: { restricted: input.restricted, allow: normalizeAllowList(allow), accountsRestricted: input.accountsRestricted ?? false, accountIds: normalizeAccountIds(accountIds) } };
 }

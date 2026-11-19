@@ -34,6 +34,10 @@ export async function PUT(request, { params }) {
     if (access !== undefined) {
       const checked = validateKeyAccessInput(access);
       if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+      // Older clients know only model restrictions. Never clear account policy
+      // unless the corresponding fields were explicitly supplied.
+      if (access.accountsRestricted === undefined) checked.value.accountsRestricted = existing.access?.accountsRestricted ?? false;
+      if (access.accountIds === undefined) checked.value.accountIds = existing.access?.accountIds ?? [];
       updateData.access = checked.value;
     }
 
