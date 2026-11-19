@@ -4,13 +4,16 @@
 // "Restrict access" toggle per key; when on, the key may call only the listed
 // combos/models, shown as removable badges. Entries are picked with the same
 // shared ModelSelectModal the combo editor uses (combos first, then models).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { Toggle, ModelSelectModal } from "@/shared/components";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
+import AccountSelectModal from "./AccountSelectModal";
 
 export default function KeyAccessControls({ apiKey, onChange: onSave, onRequestRestrict }) {
   const access = { restricted: false, allow: [], accountsRestricted: false, accountIds: [], ...apiKey.access };
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [accountPickerOpen, setAccountPickerOpen] = useState(false);
   const [activeProviders, setActiveProviders] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
   const [accounts, setAccounts] = useState([]);
@@ -18,11 +21,15 @@ export default function KeyAccessControls({ apiKey, onChange: onSave, onRequestR
   const [accountsError, setAccountsError] = useState(false);
   const [accountsRetry, setAccountsRetry] = useState(0);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const onChange = async (nextAccess) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       await onSave(nextAccess);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -113,57 +120,54 @@ export default function KeyAccessControls({ apiKey, onChange: onSave, onRequestR
           }}
         />
         {access.accountsRestricted && (
-          <fieldset className="mt-2 space-y-2">
-            <legend className="text-xs text-text-muted">Allowed provider accounts (independent of model restrictions)</legend>
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-text-muted">Allowed provider accounts (independent of model restrictions)</p>
             {access.accountIds.length === 0 && (
               <p className="text-xs text-orange-500">No accounts allowed. Select at least one account to allow provider connections.</p>
             )}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {access.accountIds.map((id) => {
+                const account = accounts.find((entry) => entry.id === id);
+                const label = account
+                  ? `${AI_PROVIDERS[account.provider]?.name || account.provider}: ${account.name || account.email || "Unnamed account"}`
+                  : `${accountsLoading || accountsError ? "Account" : "Unavailable account"} (${id})`;
+                return (
+                  <span key={id} title={account?.email || id} className="flex max-w-full items-center gap-1 rounded-xl border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs text-text-main">
+                    <span className="truncate">{label}</span>
+                    <button type="button" aria-label={`Remove ${label}`} onClick={() => onChange({ ...access, accountIds: access.accountIds.filter((accountId) => accountId !== id) })} className="shrink-0 rounded text-text-muted hover:text-red-500">
+                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "12px" }}>close</span>
+                    </button>
+                  </span>
+                );
+              })}
+              <button type="button" onClick={() => setAccountPickerOpen(true)} className="flex items-center gap-0.5 rounded-xl border border-dashed border-border-subtle px-2 py-0.5 text-xs font-medium text-primary hover:border-primary/50">
+                <span className="material-symbols-outlined leading-none" style={{ fontSize: "14px" }}>add</span>
+                Add account
+              </button>
+            </div>
             {accountsLoading && <p role="status" className="text-xs text-text-muted">Loading accounts...</p>}
-            {accountsError && (
-              <p role="alert" className="text-xs text-red-500">
-                Could not load accounts.{" "}
-                <button type="button" onClick={() => {
-                  setAccountsLoading(true);
-                  setAccountsError(false);
-                  setAccountsRetry((value) => value + 1);
-                }} className="underline">Retry</button>
-              </p>
-            )}
-            {!accountsLoading && !accountsError && (
-              <div className="max-h-48 space-y-1 overflow-y-auto">
-                {accounts.length === 0 && <p className="text-xs text-text-muted">No provider accounts found.</p>}
-                {accounts.map((account) => (
-                  <label key={account.id} className="flex items-center gap-2 text-xs text-text-main">
-                    <input
-                      type="checkbox"
-                      checked={access.accountIds.includes(account.id)}
-                      onChange={(event) => onChange({
-                        ...access,
-                        accountIds: event.target.checked
-                          ? [...access.accountIds, account.id]
-                          : access.accountIds.filter((id) => id !== account.id),
-                      })}
-                      className="accent-primary"
-                    />
-                    <span>{account.provider}: {account.name || account.email || "Unnamed account"}{account.name && account.email && account.name !== account.email ? ` (${account.email})` : ""}</span>
-                  </label>
-                ))}
-                {access.accountIds.filter((id) => !accounts.some((account) => account.id === id)).map((id) => (
-                  <label key={id} className="flex items-center gap-2 text-xs text-text-muted">
-                    <input
-                      type="checkbox"
-                      checked
-                      onChange={() => onChange({ ...access, accountIds: access.accountIds.filter((accountId) => accountId !== id) })}
-                      className="accent-primary"
-                    />
-                    <span>Unavailable account ({id})</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </fieldset>
+            {accountsError && <p role="alert" className="text-xs text-red-500">Could not load accounts. Open Add account to retry.</p>}
+            <p className="text-xs text-text-muted">Model choices show only allowed accounts. Combos stay available, with fallback limited to allowed accounts.</p>
+          </div>
         )}
       </div>
+      {accountPickerOpen && access.accountsRestricted && (
+        <AccountSelectModal
+          isOpen={accountPickerOpen}
+          onClose={() => setAccountPickerOpen(false)}
+          accounts={accounts}
+          selectedIds={access.accountIds}
+          onChange={(accountIds) => onChange({ ...access, accountIds })}
+          loading={accountsLoading}
+          error={accountsError}
+          onRetry={() => {
+            setAccountsLoading(true);
+            setAccountsError(false);
+            setAccountsRetry((value) => value + 1);
+          }}
+          saving={saving}
+        />
+      )}
       {pickerOpen && (
         <ModelSelectModal
           isOpen={pickerOpen}
@@ -171,6 +175,7 @@ export default function KeyAccessControls({ apiKey, onChange: onSave, onRequestR
           onSelect={add}
           onDeselect={(model) => remove(access.allow.find((e) => e.toLowerCase() === String(model?.value).toLowerCase()))}
           activeProviders={activeProviders}
+          allowedConnectionIds={access.accountsRestricted ? access.accountIds : null}
           modelAliases={modelAliases}
           title={`Allowed for "${apiKey.name}"`}
           addedModelValues={access.allow}
