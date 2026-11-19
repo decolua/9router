@@ -28,6 +28,7 @@ import AutoPingScheduleModal from "./AutoPingScheduleModal";
 import WebLoginButton, { WEB_LOGIN_PROVIDERS } from "../components/WebLoginButton.js";
 import MinimaxLeaseButton from "../components/MinimaxLeaseButton.js";
 import { getScheduleSlotLabels } from "@/shared/services/quotaPingSchedule";
+import { ACCOUNT_SELECTION_STRATEGIES, isWindowStrategy, orderAccountsByWindow, getAccountWindowReset } from "@/shared/utils/accountOrdering";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -77,8 +78,20 @@ export default function ProviderDetailPage() {
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
-  const [providerStrategy, setProviderStrategy] = useState(null);
+  const [providerStrategy, setProviderStrategy] = useState("");
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [globalStrategy, setGlobalStrategy] = useState("fill-first");
+  const [strategySaving, setStrategySaving] = useState(false);
+  const [strategyLoaded, setStrategyLoaded] = useState(false);
+  const [strategyError, setStrategyError] = useState("");
+  const strategySavingRef = useRef(false);
+  const [quotaSnapshots, setQuotaSnapshots] = useState({});
+  const [quotaRefreshing, setQuotaRefreshing] = useState(false);
+  const [quotaError, setQuotaError] = useState("");
+  const effectiveStrategy = providerStrategy || globalStrategy;
+  const windowStrategy = isWindowStrategy(effectiveStrategy);
+  const canReorder = strategyLoaded && effectiveStrategy === "fill-first" && !strategySaving;
+  const supportsWindowStrategies = providerId === "claude" || providerId === "codex";
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {}, schedules: {} });
   const [scheduleConnection, setScheduleConnection] = useState(null);
@@ -325,7 +338,7 @@ export default function ProviderDetailPage() {
       const connectionsData = await connectionsRes.json();
       const nodesData = await nodesRes.json();
       const proxyPoolsData = await proxyPoolsRes.json();
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const settingsData = settingsRes.ok ? await settingsRes.json() : null;
       if (connectionsRes.ok) {
         const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
         setConnections(filtered);
@@ -334,14 +347,20 @@ export default function ProviderDetailPage() {
         setProxyPools(proxyPoolsData.proxyPools || []);
       }
       // Load per-provider strategy override
-      const override = (settingsData.providerStrategies || {})[providerId] || {};
-      setProviderStrategy(override.fallbackStrategy || null);
-      setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      if (settingsData) {
+        setStrategyLoaded(true);
+        const override = (settingsData.providerStrategies || {})[providerId] || {};
+        setProviderStrategy(override.fallbackStrategy || "");
+        setGlobalStrategy(settingsData.fallbackStrategy || "fill-first");
+        setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      } else {
+        setStrategyError(`Unable to load account selection settings (HTTP ${settingsRes.status}).`);
+      }
       // Load per-provider thinking config
-      const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
+      const thinkingCfg = (settingsData?.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
-      const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
+      const apCfg = autoPingSettingsKey ? settingsData?.[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {}, schedules: apCfg.schedules || {} });
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
@@ -363,6 +382,7 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error fetching connections:", error);
+      setStrategyError(error.message || "Unable to load account selection settings.");
     } finally {
       setLoading(false);
     }
@@ -387,16 +407,26 @@ export default function ProviderDetailPage() {
   };
 
   const saveProviderStrategy = async (strategy, stickyLimit) => {
+    if (strategySavingRef.current) return;
+    if (strategy === "round-robin" && (!Number.isInteger(Number(stickyLimit)) || Number(stickyLimit) < 1)) {
+      setStrategyError("Consecutive uses must be a positive integer.");
+      return;
+    }
+    strategySavingRef.current = true;
+    setStrategySaving(true);
     try {
       const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      if (!settingsRes.ok) throw new Error(`Unable to load account selection settings (HTTP ${settingsRes.status}).`);
+      const settingsData = await settingsRes.json();
       const current = settingsData.providerStrategies || {};
 
-      // Build override: null strategy means remove override, use global
-      const override = {};
+      // Clear only selection fields, keeping proxy and other provider overrides.
+      const override = { ...current[providerId] };
+      delete override.fallbackStrategy;
+      delete override.stickyRoundRobinLimit;
       if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") {
-        override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
+      if (strategy === "round-robin") {
+        override.stickyRoundRobinLimit = Number(stickyLimit);
       }
 
       const updated = { ...current };
@@ -406,28 +436,60 @@ export default function ProviderDetailPage() {
         updated[providerId] = override;
       }
 
-      await fetch("/api/settings", {
+      const response = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerStrategies: updated }),
       });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Unable to save account selection strategy (HTTP ${response.status}).`);
+      }
+      setProviderStrategy(strategy);
+      setStrategyLoaded(true);
+      setGlobalStrategy(settingsData.fallbackStrategy || "fill-first");
+      setStrategyError("");
     } catch (error) {
-      console.log("Error saving provider strategy:", error);
+      setStrategyError(error.message || "Unable to save account selection strategy.");
+    } finally {
+      strategySavingRef.current = false;
+      setStrategySaving(false);
     }
   };
 
-  const handleRoundRobinToggle = (enabled) => {
-    const strategy = enabled ? "round-robin" : null;
-    const sticky = enabled ? (providerStickyLimit || "1") : providerStickyLimit;
-    if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
-    setProviderStrategy(strategy);
-    saveProviderStrategy(strategy, sticky);
-  };
-
-  const handleStickyLimitChange = (value) => {
-    setProviderStickyLimit(value);
-    saveProviderStrategy("round-robin", value);
-  };
+  useEffect(() => {
+    setQuotaSnapshots({});
+    setQuotaRefreshing(false);
+    setQuotaError("");
+    if (!windowStrategy || !supportsWindowStrategies) return;
+    let cancelled = false;
+    let pending = false;
+    const refresh = async () => {
+      if (pending) return;
+      pending = true;
+      setQuotaRefreshing(true);
+      try {
+        const response = await fetch(`/api/provider-quota-windows?provider=${encodeURIComponent(providerId)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Unable to refresh quota windows (HTTP ${response.status}).`);
+        const data = await response.json();
+        if (!cancelled) {
+          setQuotaSnapshots(data.snapshots || {});
+          setQuotaRefreshing(data.refreshing === true);
+          setQuotaError("");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setQuotaError(error.message || "Unable to refresh quota windows.");
+          setQuotaRefreshing(false);
+        }
+      } finally {
+        pending = false;
+      }
+    };
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [providerId, windowStrategy, supportsWindowStrategies]);
 
   const saveThinkingConfig = async (mode) => {
     try {
@@ -932,13 +994,16 @@ export default function ProviderDetailPage() {
   };
 
   const handleSwapPriority = async (index1, index2) => {
+    if (!canReorder || index1 < 0 || index2 < 0 || index1 >= connections.length || index2 >= connections.length) return;
     // Optimistic update state
     const newConnections = [...connections];
     [newConnections[index1], newConnections[index2]] = [newConnections[index2], newConnections[index1]];
+    newConnections[index1] = { ...newConnections[index1], priority: index1 };
+    newConnections[index2] = { ...newConnections[index2], priority: index2 };
     setConnections(newConnections);
 
     try {
-      await Promise.all([
+      const responses = await Promise.all([
         fetch(`/api/providers/${newConnections[index1].id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -950,6 +1015,7 @@ export default function ProviderDetailPage() {
           body: JSON.stringify({ priority: index2 }),
         }),
       ]);
+      if (responses.some((response) => !response.ok)) throw new Error("Unable to save manual order.");
     } catch (error) {
       console.log("Error swapping priority:", error);
       await fetchConnections();
@@ -1053,10 +1119,16 @@ export default function ProviderDetailPage() {
 
 
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
+  const previewNow = Date.now();
+  const displayConnections = windowStrategy
+    ? orderAccountsByWindow(connections, effectiveStrategy, quotaSnapshots, null, previewNow)
+    : connections;
+  const hasWindowData = windowStrategy && connections.some((connection) =>
+    getAccountWindowReset(quotaSnapshots[connection.id], effectiveStrategy, null, previewNow) != null);
 
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03] max-h-[500px] overflow-y-auto pr-1">
-      {connections
+      {displayConnections
         .map((conn, index) => (
           <div key={conn.id} className="flex min-w-0 items-stretch">
             <div className="flex shrink-0 items-center pl-1 sm:pl-2">
@@ -1072,8 +1144,8 @@ export default function ProviderDetailPage() {
                 connection={conn}
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
+                isFirst={!canReorder || index === 0}
+                isLast={!canReorder || index === connections.length - 1}
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
@@ -1599,28 +1671,71 @@ export default function ProviderDetailPage() {
                   )}
                 </>
               )}
-              {/* Round Robin toggle */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-text-muted font-medium">Round Robin</span>
-                <Toggle
-                  checked={providerStrategy === "round-robin"}
-                  onChange={handleRoundRobinToggle}
+              <div className="flex flex-wrap items-end gap-2">
+                <Select
+                  aria-label="Account selection strategy"
+                  value={providerStrategy}
+                  disabled={strategySaving}
+                  placeholder="Use global setting"
+                  options={[
+                    { value: "", label: "Use global setting" },
+                    ...ACCOUNT_SELECTION_STRATEGIES.map((value) => ({
+                      value,
+                      label: ({
+                        "fill-first": "Manual order",
+                        "weekly-reset-asc": "7-day window: resets first",
+                        "weekly-reset-desc": "7-day window: resets last",
+                        "session-reset-asc": "5-hour window: resets first",
+                        "session-reset-desc": "5-hour window: resets last",
+                        "round-robin": "Round-robin",
+                        random: "Random",
+                      })[value],
+                      disabled: isWindowStrategy(value) && !supportsWindowStrategies,
+                    })),
+                  ]}
+                  onChange={(event) => saveProviderStrategy(event.target.value, providerStickyLimit || "1")}
                 />
                 {providerStrategy === "round-robin" && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-text-muted">Sticky:</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={providerStickyLimit}
-                      onChange={(e) => handleStickyLimitChange(e.target.value)}
-                      placeholder="1"
-                      className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                    />
-                  </div>
+                  <>
+                  <Input
+                    id="provider-sticky-limit"
+                    label="Consecutive uses"
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="w-32"
+                    disabled={strategySaving}
+                    value={providerStickyLimit}
+                    onChange={(event) => setProviderStickyLimit(event.target.value)}
+                  />
+                  <Button size="sm" variant="secondary" disabled={strategySaving} onClick={() => saveProviderStrategy("round-robin", providerStickyLimit)}>
+                    Save consecutive uses
+                  </Button>
+                  </>
                 )}
+                {strategySaving && <span role="status" className="text-xs text-text-muted">Saving strategy...</span>}
               </div>
             </div>
+          </div>
+
+          <div className="mb-3 space-y-1 text-xs text-text-muted">
+            <p>Account selection strategy: {effectiveStrategy}{!providerStrategy ? " (global setting)" : ""}.</p>
+            {!supportsWindowStrategies && <p>Quota-window ordering is available for Claude and Codex only.</p>}
+            {!canReorder && <p>Manual reordering is disabled. Your saved manual priorities are preserved.</p>}
+            {windowStrategy && (
+              <>
+                <p>Preview uses future reset times, not usage percentage. Order can vary by model. Missing, stale or expired windows fall back to manual priority after accounts with valid windows.</p>
+                <p role="status">{quotaRefreshing ? "Refreshing quota windows... " : ""}{!hasWindowData ? "No valid window data. Using manual order." : "Account list previews quota-window order."}</p>
+                <ol aria-label="Quota-window order preview" className="list-decimal pl-5">
+                  {displayConnections.map((connection) => {
+                    const reset = getAccountWindowReset(quotaSnapshots[connection.id], effectiveStrategy, null, previewNow);
+                    return <li key={connection.id}>{connection.name || connection.email || connection.id}: {reset == null ? "No valid window, manual fallback" : `Resets ${new Date(reset).toLocaleString()}`}</li>;
+                  })}
+                </ol>
+              </>
+            )}
+            {strategyError && <p role="alert" className="text-red-500">{strategyError}</p>}
+            {windowStrategy && quotaError && <p role="alert" className="text-red-500">{quotaError} Last available data is kept until it expires.</p>}
           </div>
 
           {connections.length === 0 ? (
