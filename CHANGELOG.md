@@ -1,3 +1,8 @@
+# Unreleased
+
+## Chores
+- Commit `package-lock.json` for the root and `gitbook/` packages (removed from `.gitignore`)
+
 # v0.5.119 (2026-11-11)
 
 ## Features
