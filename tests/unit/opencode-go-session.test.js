@@ -157,7 +157,8 @@ describe("chatCore provider session forwarding", () => {
     );
     const calls = [...source.matchAll(/executor\.execute\(\{([\s\S]*?)\}\)/g)].map((match) => match[1]);
 
-    expect(calls).toHaveLength(2);
+    // Initial execute, rejected Headroom retry and token-refresh retry.
+    expect(calls).toHaveLength(3);
     for (const call of calls) {
       expect(call).toMatch(/providerSessionId:\s*sessionSeed/);
       expect(call).toMatch(/\bclientTool\b/);
