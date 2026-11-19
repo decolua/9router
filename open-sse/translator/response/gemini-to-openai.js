@@ -7,6 +7,7 @@ import { reasoningDelta } from "../concerns/reasoning.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
 import { storeGeminiThoughtSignature } from "../../services/thoughtSignatureStore.js";
+import { SYNTHETIC_MIMICRY_TEXTS } from "../formats/gemini.js";
 
 // Build chunk meta for current gemini state
 function chunkMeta(state) {
@@ -43,7 +44,20 @@ export function geminiToOpenAIResponse(chunk, state) {
   
   // Handle Antigravity wrapper
   const response = chunk.response || chunk;
-  if (!response || !response.candidates?.[0]) return null;
+  if (!response || !response.candidates?.[0]) {
+    if (response?.promptFeedback?.blockReason) {
+      const blockReason = response.promptFeedback.blockReason;
+      const msgText = `The model could not generate output because the input violates Google's Generative AI Prohibited Use policy (${blockReason}).`;
+      if (!state.messageId) {
+        state.messageId = response.responseId || `msg_${Date.now()}`;
+        state.model = response.modelVersion || state.model || "gemini";
+      }
+      return [
+        buildChunk(chunkMeta(state), { role: ROLE.ASSISTANT, content: msgText }, OPENAI_FINISH.CONTENT_FILTER)
+      ];
+    }
+    return null;
+  }
 
   const results = [];
   const candidate = response.candidates[0];
@@ -78,11 +92,14 @@ export function geminiToOpenAIResponse(chunk, state) {
         }
 
         if (hasTextContent) {
-          results.push(buildChunk(
-            chunkMeta(state),
-            isThought ? reasoningDelta(part.text) : { content: part.text },
-            null
-          ));
+          const trimmed = String(part.text || "").trim();
+          if (isThought || !SYNTHETIC_MIMICRY_TEXTS.has(trimmed)) {
+            results.push(buildChunk(
+              chunkMeta(state),
+              isThought ? reasoningDelta(part.text) : { content: part.text },
+              null
+            ));
+          }
         }
 
         if (hasFunctionCall) {
@@ -97,11 +114,14 @@ export function geminiToOpenAIResponse(chunk, state) {
       // can also stream thought parts without a signature; those must not be
       // surfaced as normal assistant content in OpenAI-compatible clients.
       if (part.text !== undefined && part.text !== "") {
-        results.push(buildChunk(
-          chunkMeta(state),
-          isThought ? reasoningDelta(part.text) : { content: part.text },
-          null
-        ));
+        const trimmed = String(part.text || "").trim();
+        if (isThought || !SYNTHETIC_MIMICRY_TEXTS.has(trimmed)) {
+          results.push(buildChunk(
+            chunkMeta(state),
+            isThought ? reasoningDelta(part.text) : { content: part.text },
+            null
+          ));
+        }
       }
 
       // Function call
@@ -134,22 +154,39 @@ export function geminiToOpenAIResponse(chunk, state) {
   const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
   if (geminiUsage) state.usage = geminiUsage;
 
+  // Grounding metadata (web search)
+  const groundingMeta = candidate.groundingMetadata || response.groundingMetadata;
+  if (groundingMeta) {
+    state.groundingMetadata = groundingMeta;
+  }
+
   // Finish reason - include usage in final chunk
   if (candidate.finishReason) {
     let finishReason = toOpenAIFinish(candidate.finishReason, "gemini");
     if (finishReason === OPENAI_FINISH.STOP && state.geminiToolCallCount > 0) {
       finishReason = OPENAI_FINISH.TOOL_CALLS;
     }
-    
+
     const finalChunk = buildChunk(chunkMeta(state), {}, finishReason);
-    
+
     // Include usage in final chunk for downstream translators
     if (state.usage) {
       finalChunk.usage = state.usage;
     }
-    
+    if (state.groundingMetadata) {
+      finalChunk.groundingMetadata = state.groundingMetadata;
+    }
+
     results.push(finalChunk);
     state.finishReason = finishReason;
+  }
+
+  if (state.groundingMetadata) {
+    for (const r of results) {
+      if (!r.groundingMetadata) {
+        r.groundingMetadata = state.groundingMetadata;
+      }
+    }
   }
 
   return results.length > 0 ? results : null;

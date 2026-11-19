@@ -86,4 +86,24 @@ describe("cleanJSONSchemaForAntigravity handles array items and type predicates"
     expect(cleaned.properties.tags.items.type).toBe("string");
     expect(cleaned.properties.tags.items).not.toHaveProperty("properties");
   });
+
+  it("preserves tool parameters named items, properties, or required inside properties maps", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        items: { type: "array", items: { type: "string" } },
+        properties: { type: "object", properties: { key: { type: "string" } } },
+        required: { type: "boolean" }
+      },
+      required: ["items"]
+    };
+
+    const cleaned = cleanJSONSchemaForAntigravity(structuredClone(schema));
+    expect(cleaned.properties.items).toBeDefined();
+    expect(cleaned.properties.items.type).toBe("array");
+    expect(cleaned.properties.properties).toBeDefined();
+    expect(cleaned.properties.properties.type).toBe("object");
+    expect(cleaned.properties.required).toBeDefined();
+    expect(cleaned.properties.required.type).toBe("boolean");
+  });
 });

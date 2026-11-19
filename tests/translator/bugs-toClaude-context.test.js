@@ -22,7 +22,7 @@ describe("OpenAI → Claude context mapping", () => {
   // the mapping was never implemented (the test fails at c4f80d30 itself). An unsigned
   // thinking block is only valid for compatible providers (Anthropic requires a
   // signature), so a fix has to be provider-aware.
-  it.fails("assistant reasoning_content becomes a thinking block", () => {
+  it("assistant reasoning_content becomes a thinking block", () => {
     const out = T({
       messages: [
         { role: "user", content: "q" },
@@ -38,9 +38,8 @@ describe("OpenAI → Claude context mapping", () => {
     }));
   });
 
-  // openai-to-claude.js:298 — tool_choice "none" mapped to {type:"auto"} (loses "do not call" intent)
-  // KNOWN BUG
-  it.fails("tool_choice=none is not turned into auto", () => {
+  // openai-to-claude.js — tool_choice "none" mapped to {type:"none"}
+  it("tool_choice=none is not turned into auto", () => {
     const out = T({
       messages: [{ role: "user", content: "hi" }],
       tools: [{ type: "function", function: { name: "f", parameters: { type: "object", properties: {} } } }],

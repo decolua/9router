@@ -226,13 +226,30 @@ const PROVIDER_MODELS_CONFIG = {
     })
   },
   antigravity: {
-    url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
+    // Live per-account catalog. fetchAvailableModels returns an object map
+    // { models: { "<id>": { displayName, maxTokens, ... } } }.
+    // Requires the Hub client fingerprint headers, otherwise Google returns 403.
+    url: "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "antigravity/hub/2.24.0 darwin/arm64",
+      "X-Client-Name": "antigravity",
+      "X-Client-Version": "2.24.0",
+    },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     body: {},
-    parseResponse: (data) => data.models || []
+    parseResponse: (data) => Object.entries(data?.models || {})
+      .filter(([id, info]) => !info?.isInternal && !id.includes("-disabled") && !id.startsWith("tab_"))
+      .map(([id, info]) => ({
+        id,
+        name: info?.displayName || id,
+        contextLength: info?.maxTokens,
+        maxOutputTokens: info?.maxOutputTokens,
+        isVL: !!info?.supportsImages,
+        isReasoning: !!info?.supportsThinking,
+      }))
   },
   github: {
     url: "https://api.githubcopilot.com/models",
