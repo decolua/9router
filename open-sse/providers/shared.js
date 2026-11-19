@@ -94,6 +94,24 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
+export function isOfficialAnthropicUpstream(provider, credentials) {
+  if (provider !== "anthropic" && !provider?.startsWith?.("anthropic-compatible-")) return false;
+  try {
+    const baseUrl = credentials?.runtimeTransport?.baseUrl
+      || (provider === "anthropic" ? ANTHROPIC_COMPAT_BASE : credentials?.providerSpecificData?.baseUrl)
+      || ANTHROPIC_COMPAT_BASE;
+    return new URL(baseUrl).hostname === new URL(ANTHROPIC_COMPAT_BASE).hostname;
+  } catch {
+    return false;
+  }
+}
+
+export function isAnthropicApiKeyUpstream(provider, credentials) {
+  return typeof credentials?.apiKey === "string" && Boolean(credentials.apiKey)
+    && !credentials.accessToken && !credentials.apiKey.startsWith("sk-ant-oat")
+    && isOfficialAnthropicUpstream(provider, credentials);
+}
+
 // Official Antigravity Hub Desktop 2.24.0 fingerprint captured from macOS arm64.
 // Keep this static even when 9router runs on Linux: the provider profile is
 // intentionally matching the Hub client, not the server host.

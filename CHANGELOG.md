@@ -1,7 +1,7 @@
 # Unreleased
 
 ## Fixes
-- **Anthropic**: omit the Claude Code beta from API-key defaults and merged client headers, avoiding the misleading insufficient-credit error reported in #4739
+- **Anthropic**: omit the Claude Code beta and leading system identity from official API-key requests, including compatible endpoints; preserve OAuth and third-party gateway behavior (#4739)
 
 # v0.5.119 (2026-11-11)
 
