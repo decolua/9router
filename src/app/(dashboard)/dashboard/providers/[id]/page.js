@@ -1675,7 +1675,7 @@ export default function ProviderDetailPage() {
                 <Select
                   aria-label="Account selection strategy"
                   value={providerStrategy}
-                  disabled={strategySaving}
+                  disabled={!strategyLoaded || strategySaving}
                   placeholder="Use global setting"
                   options={[
                     { value: "", label: "Use global setting" },
@@ -1729,7 +1729,7 @@ export default function ProviderDetailPage() {
                 <ol aria-label="Quota-window order preview" className="list-decimal pl-5">
                   {displayConnections.map((connection) => {
                     const reset = getAccountWindowReset(quotaSnapshots[connection.id], effectiveStrategy, null, previewNow);
-                    return <li key={connection.id}>{connection.name || connection.email || connection.id}: {reset == null ? "No valid window, manual fallback" : `Resets ${new Date(reset).toLocaleString()}`}</li>;
+                    return <li key={connection.id}>{connection.name || connection.email || connection.id}: {connection.isActive === false ? "Inactive, not eligible for consumption" : reset == null ? "No valid window, manual fallback" : `Resets ${new Date(reset).toLocaleString()}`}</li>;
                   })}
                 </ol>
               </>
