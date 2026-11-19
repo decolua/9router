@@ -8,7 +8,12 @@ import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
-import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
+import {
+  ROLE, OPENAI_BLOCK, OPENAI_FINISH, RESPONSES_ITEM, RESPONSES_EVENT,
+  RESPONSES_STATUS, RESPONSES_INCOMPLETE_REASON, MODEL_FALLBACK,
+} from "../schema/index.js";
+import { normalizeResponsesErrorEvent } from "../../utils/responsesStreamHelpers.js";
+import { extractUsage } from "../../utils/usageTracking.js";
 
 /**
  * Translate OpenAI chunk to Responses API events
@@ -58,8 +63,10 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (responseUsage) state.responsesUsage = responseUsage;
 
   if (!chunk.choices?.length) {
-    return state.completionPending && state.responsesUsage ? flushEvents(state) : [];
+    const trailerUsage = state.responsesIncompleteReason ? responseUsage : state.responsesUsage;
+    return state.completionPending && trailerUsage ? flushEvents(state) : [];
   }
+
 
   const events = [];
   const nextSeq = () => ++state.seq;
@@ -72,11 +79,13 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   const choice = chunk.choices[0];
   const idx = choice.index || 0;
   const delta = choice.delta || {};
+  const hitOutputLimit = choice.finish_reason === OPENAI_FINISH.LENGTH;
 
   // Emit initial events
   if (!state.started) {
     state.started = true;
     state.responseId = chunk.id ? `resp_${chunk.id}` : state.responseId;
+    state.model = chunk.model || state.model || MODEL_FALLBACK;
     
     emit("response.created", {
       type: "response.created",
@@ -84,6 +93,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
         id: state.responseId,
         object: "response",
         created_at: state.created,
+        model: state.model,
         status: "in_progress",
         background: false,
         error: null,
@@ -97,6 +107,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
         id: state.responseId,
         object: "response",
         created_at: state.created,
+        model: state.model,
         status: "in_progress"
       }
     });
@@ -131,10 +142,8 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
 
     if (state.inThinking && content) {
       emitReasoningDelta(state, emit, content);
-      return events;
-    }
-
-    if (content) {
+      if (!hitOutputLimit) return events;
+    } else if (content) {
       // The answer starts, so thinking is over. Upstreams that send reasoning via
       // reasoning_content never emit "</think>", so close it here rather than at finish.
       closeReasoning(state, emit);
@@ -151,25 +160,22 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     }
   }
 
-  // Handle finish_reason
+  // Close open items and retain the terminal reason across a usage trailer or flush.
   if (choice.finish_reason) {
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-    // Upstreams report usage either on the finish chunk itself or on a trailing chunk
-    // whose `choices` array is empty (OpenAI does the latter). Emitting
-    // response.completed here would freeze the payload before that trailing chunk is
-    // parsed, so when usage is not known yet we leave completion to flushEvents(),
-    // which runs once the upstream stream ends and by then has seen every chunk.
-    //
-    // That only holds on the direct openai:openai-responses route. When this converter
-    // runs as the second hop of a pivot (Claude/Gemini/Kiro upstream), translateResponse()
-    // drops the terminal null chunk before reaching us — the first hop returns null for
-    // it, leaving nothing to iterate — so flushEvents() is never called and deferring
-    // would swallow the terminal event entirely. Keep the old behaviour there.
+    if (hitOutputLimit) state.responsesIncompleteReason = RESPONSES_INCOMPLETE_REASON.MAX_OUTPUT_TOKENS;
+
+    // Direct Chat streams can report final usage in a choices-less trailer. A
+    // generic pivot drops the null flush, so only defer it with an explicit flag.
     const flushReachesUs = state.targetFormat === FORMATS.OPENAI;
-    if (state.responsesUsage || !flushReachesUs) sendCompleted(state, emit);
-    else state.completionPending = true;
+    const terminalUsage = state.responsesIncompleteReason ? responseUsage : state.responsesUsage;
+    if (state.deferResponsesTerminal || (flushReachesUs && !terminalUsage)) {
+      state.completionPending = true;
+    } else {
+      sendTerminal(state, emit);
+    }
   }
 
   return events;
@@ -418,7 +424,8 @@ function closeToolCall(state, emit, idx) {
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
       call_id: callId,
-      name: state.funcNames[idx] || ""
+      name: state.funcNames[idx] || "",
+      status: "completed"
     };
 
     emit("response.output_item.done", {
@@ -434,7 +441,7 @@ function closeToolCall(state, emit, idx) {
   }
 }
 
-// response.completed carries the finished Response object, so response.output has
+// The terminal event carries the final Response object, so response.output has
 // to repeat the items already delivered in response.output_item.done. Clients that
 // build their final result from the terminal event (GitHub Copilot CLI, the OpenAI
 // SDK "final response" helpers) otherwise treat the turn as empty even though the
@@ -458,19 +465,23 @@ function collectCompletedOutputItems(state) {
     .map(([, item]) => item);
 }
 
-function sendCompleted(state, emit) {
+function sendTerminal(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
-    emit("response.completed", {
-      type: "response.completed",
+    const reason = state.responsesIncompleteReason;
+    const type = reason ? RESPONSES_EVENT.INCOMPLETE : RESPONSES_EVENT.COMPLETED;
+    emit(type, {
+      type,
       response: {
         id: state.responseId,
         object: "response",
         created_at: state.created,
-        status: "completed",
+        model: state.model || MODEL_FALLBACK,
+        status: reason ? RESPONSES_STATUS.INCOMPLETE : RESPONSES_STATUS.COMPLETED,
         background: false,
         error: null,
         output: collectCompletedOutputItems(state),
+        incomplete_details: reason ? { reason } : null,
         ...(state.responsesUsage ? { usage: state.responsesUsage } : {})
       }
     });
@@ -478,7 +489,7 @@ function sendCompleted(state, emit) {
 }
 
 function flushEvents(state) {
-  if (state.completedSent) return [];
+  if (state.completedSent || state.deferResponsesTerminal) return [];
   
   const events = [];
   const nextSeq = () => ++state.seq;
@@ -490,7 +501,7 @@ function flushEvents(state) {
   for (const i in state.msgItemAdded) closeMessage(state, emit, i);
   closeReasoning(state, emit);
   for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-  sendCompleted(state, emit);
+  sendTerminal(state, emit);
   
   return events;
 }
@@ -633,11 +644,16 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
-  // Response completed
-  if (eventType === "response.completed" || eventType === "response.done") {
-    // Extract usage from response.completed event
+  const hitOutputLimit = eventType === RESPONSES_EVENT.INCOMPLETE &&
+    data.response?.incomplete_details?.reason === RESPONSES_INCOMPLETE_REASON.MAX_OUTPUT_TOKENS;
+  if (eventType === RESPONSES_EVENT.COMPLETED || eventType === "response.done" || hitOutputLimit) {
+    if (state.finishReasonSent && (hitOutputLimit || state.finishReason === OPENAI_FINISH.LENGTH)) return null;
+
     const responseUsage = data.response?.usage;
-    if (responseUsage && typeof responseUsage === "object") {
+    if (hitOutputLimit) {
+      const usage = extractUsage({ type: eventType, response: data.response });
+      if (usage) state.usage = { ...state.usage, ...usage };
+    } else if (responseUsage && typeof responseUsage === "object") {
       const inputTokens = responseUsage.input_tokens || responseUsage.prompt_tokens || 0;
       const outputTokens = responseUsage.output_tokens || responseUsage.completion_tokens || 0;
       // OpenAI Responses API: input_tokens already includes cached_tokens
@@ -648,7 +664,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     }
     
     if (!state.finishReasonSent) {
-      const finishReason = computeFinishReason(state);
+      const finishReason = hitOutputLimit ? OPENAI_FINISH.LENGTH : computeFinishReason(state);
 
       state.finishReasonSent = true;
       state.finishReason = finishReason; // Mark for usage injection in stream.js
@@ -661,7 +677,14 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
 
       // Include usage in final chunk if available
       if (state.usage && typeof state.usage === "object") {
-        finalChunk.usage = state.usage;
+        if (hitOutputLimit) {
+          // The top-level aliases are for accounting; Chat reports them in details.
+          finalChunk.usage = { ...state.usage };
+          delete finalChunk.usage.cached_tokens;
+          delete finalChunk.usage.reasoning_tokens;
+        } else {
+          finalChunk.usage = state.usage;
+        }
       }
       
       return finalChunk;
@@ -674,7 +697,9 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     // Avoid emitting duplicate errors (error + response.failed arrive back-to-back)
     if (state.finishReasonSent) return null;
 
-    const error = data.error || data.response?.error;
+    // Upstreams also report errors flat ({ message, type, code }) or double-encoded;
+    // canonicalizing first keeps those from being dropped as unrecognized payloads.
+    const error = normalizeResponsesErrorEvent(data).error || data.response?.error;
     if (error) {
       state.error = error;
       state.finishReasonSent = true;

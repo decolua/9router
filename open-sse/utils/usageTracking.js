@@ -3,6 +3,7 @@
  */
 
 import { FORMATS } from "../translator/formats.js";
+import { RESPONSES_EVENT, RESPONSES_INCOMPLETE_REASON } from "../translator/schema/index.js";
 
 // Legacy per-chunk usage console line; off by default (superseded by "📊 done")
 const DEBUG_USAGE = process.env.LOG_USAGE_VERBOSE === "1";
@@ -259,6 +260,26 @@ export function extractUsage(chunk) {
       completion_tokens: chunk.usage.output_tokens || 0,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
       cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+    });
+  }
+
+  if (chunk.type === RESPONSES_EVENT.INCOMPLETE &&
+      chunk.response?.incomplete_details?.reason === RESPONSES_INCOMPLETE_REASON.MAX_OUTPUT_TOKENS) {
+    const usage = chunk.response.usage;
+    if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
+
+    const inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? usage.completion_tokens ?? 0;
+    const cachedTokens = usage.input_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens;
+    const reasoningTokens = usage.output_tokens_details?.reasoning_tokens;
+    return normalizeUsage({
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: usage.total_tokens ?? (Number(inputTokens) + Number(outputTokens)),
+      cached_tokens: cachedTokens,
+      reasoning_tokens: reasoningTokens,
+      prompt_tokens_details: cachedTokens == null ? undefined : { cached_tokens: cachedTokens },
+      completion_tokens_details: reasoningTokens == null ? undefined : { reasoning_tokens: reasoningTokens },
     });
   }
 
