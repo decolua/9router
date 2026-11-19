@@ -10,7 +10,7 @@ import { escapeUri, signAwsRequest } from "../utils/awsSigv4.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { FORMATS } from "../translator/formats.js";
-import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { FETCH_CONNECT_TIMEOUT_MS, resolveStreamFetchTimeouts } from "../config/runtimeConfig.js";
 
 /**
  * BedrockExecutor — Amazon Bedrock runtime.
@@ -123,10 +123,13 @@ export class BedrockExecutor extends BaseExecutor {
       credentials: resolved,
     });
 
+    const streamTimeouts = stream ? resolveStreamFetchTimeouts(this.config) : {};
+    const headerTimeoutMs = streamTimeouts.streamHeadersTimeoutMs ??
+      (this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS);
     const connectCtrl = new AbortController();
     const connectTimer = setTimeout(
       () => connectCtrl.abort(new Error("Bedrock fetch connect timeout")),
-      this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS,
+      headerTimeoutMs,
     );
     const fetchSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
     let response;
@@ -138,6 +141,7 @@ export class BedrockExecutor extends BaseExecutor {
           headers,
           body: payload,
           signal: fetchSignal,
+          ...streamTimeouts,
           // Bedrock never redirects. Following one would replay the body and the signed
           // x-amz-security-token at whatever origin the redirect names, so refuse instead.
           redirect: "error",

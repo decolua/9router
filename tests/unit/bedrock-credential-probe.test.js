@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // execute() fetches through proxyAwareFetch; capture what it actually sends to AWS.
 vi.mock("../../open-sse/utils/proxyFetch.js", async (importOriginal) => ({
@@ -102,6 +102,9 @@ describe("BedrockExecutor.execute request-log headers", () => {
   beforeEach(() => {
     proxyAwareFetch.mockReset();
   });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
 
   it("sends real credentials to AWS but returns redacted ones for the request logger", async () => {
     proxyAwareFetch.mockResolvedValue(new Response("{}", { status: 200 }));
@@ -131,19 +134,32 @@ describe("BedrockExecutor.execute request-log headers", () => {
     expect(logged.Authorization).toContain("SignedHeaders=");
   });
 
-  it("aborts a request that stalls before response headers", async () => {
+  it.each([
+    { stream: false, override: "100", providerTimeoutMs: 25, headerTimeoutMs: 25 },
+    { stream: true, override: "100", providerTimeoutMs: 25, headerTimeoutMs: 100 },
+    { stream: true, override: undefined, providerTimeoutMs: 25, headerTimeoutMs: 25 },
+    { stream: true, override: undefined, providerTimeoutMs: undefined, headerTimeoutMs: 50 },
+  ])("aborts at $headerTimeoutMs ms (stream=$stream, override=$override, provider=$providerTimeoutMs)", async ({
+    stream, override, providerTimeoutMs, headerTimeoutMs,
+  }) => {
+    vi.stubEnv("STREAM_HEADERS_TIMEOUT_MS", override);
+    vi.stubEnv("FETCH_CONNECT_TIMEOUT_MS", "50");
+    vi.stubEnv("STREAM_FIRST_CHUNK_TIMEOUT_MS", "300");
+    vi.stubEnv("STREAM_STALL_TIMEOUT_MS", "200");
+    vi.stubEnv("STREAM_TERMINAL_GRACE_MS", "0");
+    vi.resetModules();
+    const { BedrockExecutor: ConfiguredExecutor } = await import("../../open-sse/executors/bedrock.js");
     vi.useFakeTimers();
-    const executor = new BedrockExecutor("bedrock");
-    executor.config = { ...executor.config, timeoutMs: 25 };
+    const executor = new ConfiguredExecutor("bedrock");
+    executor.config = { ...executor.config, timeoutMs: providerTimeoutMs };
     const client = new AbortController();
     let markStarted;
     const started = new Promise((resolve) => { markStarted = resolve; });
-    proxyAwareFetch.mockImplementation((...args) => {
-      const init = args[1];
+    proxyAwareFetch.mockImplementation((_url, init) => {
       if (!init?.signal) {
         throw new Error("Bedrock fetch was sent without an abort signal");
       }
-      markStarted(init.signal);
+      markStarted(init);
       return new Promise((_resolve, reject) => {
         init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
       });
@@ -152,16 +168,24 @@ describe("BedrockExecutor.execute request-log headers", () => {
     const pending = executor.execute({
       model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
       body: { messages: [{ role: "user", content: "hi" }], max_tokens: 16 },
-      stream: false,
+      stream,
       credentials: STATIC_CREDS,
       signal: client.signal,
     });
     pending.catch(() => {});
 
     try {
-      const sentSignal = await started;
-      await vi.advanceTimersByTimeAsync(25);
-      expect(sentSignal.aborted).toBe(true);
+      const init = await Promise.race([started, pending]);
+      if (stream) {
+        expect(init).toMatchObject({ streamHeadersTimeoutMs: headerTimeoutMs, streamBodyTimeoutMs: 300 });
+      } else {
+        expect(init).not.toHaveProperty("streamHeadersTimeoutMs");
+        expect(init).not.toHaveProperty("streamBodyTimeoutMs");
+      }
+      await vi.advanceTimersByTimeAsync(headerTimeoutMs - 1);
+      expect(init.signal.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(init.signal.aborted).toBe(true);
       await expect(pending).rejects.toThrow(/timeout/i);
     } finally {
       client.abort();

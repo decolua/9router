@@ -124,6 +124,10 @@ export function resolveStreamFetchTimeouts(provider = {}) {
   };
 }
 
+export function resolveStreamRequestTimeoutMs(headersMs, bodyMs) {
+  return Math.min(MAX_TIMER_MS, headersMs + bodyMs);
+}
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 

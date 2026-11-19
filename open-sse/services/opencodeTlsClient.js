@@ -11,6 +11,7 @@
 // wreq-js is an optional dependency; when absent the caller keeps its native
 // fetch and stays subject to the gate rather than failing the request here.
 
+import { resolveStreamRequestTimeoutMs } from "../config/runtimeConfig.js";
 import { loadRuntimeDep } from "./lazyRuntime.js";
 
 // BoringSSL/Chrome-family cipher list the upstream accepts, in the order Bun
@@ -116,7 +117,11 @@ export function resetOpencodeTlsSession() {
  * selected proxy. wreq-js owns the transport, so no undici dispatcher is
  * involved. Omit it for the direct path.
  */
-export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS, proxyUrl = "" } = {}) {
+export async function opencodeTlsFetch(
+  url,
+  init = {},
+  { signal, timeoutMs = DEFAULT_TIMEOUT_MS, proxyUrl = "", streamHeadersTimeoutMs, streamBodyTimeoutMs } = {},
+) {
   let session;
   try {
     session = await loadSession(proxyUrl);
@@ -130,7 +135,10 @@ export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEF
     method: init.method || "GET",
     headers: init.headers,
     redirect: "follow",
-    timeout: timeoutMs,
+    // wreq-js has one total deadline, so allow the header and body waits in sequence.
+    timeout: streamHeadersTimeoutMs != null && streamBodyTimeoutMs != null
+      ? resolveStreamRequestTimeoutMs(streamHeadersTimeoutMs, streamBodyTimeoutMs)
+      : timeoutMs,
   };
   if (init.body !== undefined) options.body = init.body;
   if (signal) options.signal = signal;
