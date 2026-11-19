@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { recordRequestMetrics } from "../../observability/metrics.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -307,6 +308,7 @@ export async function saveRequestUsage(entry) {
     });
 
     if (inserted) {
+      await recordRequestMetrics(entry); // after the insert, so a de-duplicated row is not counted twice; never throws
       pushToRing(entry);
       scheduleStatsEvent("update", 250);
     }
