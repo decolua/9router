@@ -35,8 +35,9 @@ export function addBufferToUsage(usage) {
 
   const result = { ...usage };
 
-  // Claude format
-  if (result.input_tokens !== undefined) {
+  // Claude format: real upstream tokens should never be inflated with an arbitrary buffer
+  // Only add estimation buffer when explicitly marked as estimated
+  if (result.input_tokens !== undefined && result.estimated) {
     result.input_tokens += BUFFER_TOKENS;
   }
 
@@ -75,8 +76,7 @@ export function filterUsageForFormat(usage, targetFormat) {
     [FORMATS.CLAUDE]: [
       'input_tokens', 'output_tokens',
       'cache_read_input_tokens', 'cache_creation_input_tokens',
-      'server_tool_use',
-      'estimated'
+      'server_tool_use'
     ],
     [FORMATS.GEMINI]: [
       'promptTokenCount', 'candidatesTokenCount', 'totalTokenCount',

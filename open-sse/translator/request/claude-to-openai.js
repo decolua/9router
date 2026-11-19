@@ -283,6 +283,10 @@ function convertClaudeMessage(msg, opts = {}) {
 
         case CLAUDE_BLOCK.DOCUMENT:
         case "document":
+          if (block.title || block.context) {
+            const meta = [block.title && `Document title: ${block.title}`, block.context && `Document context: ${block.context}`].filter(Boolean).join("\n");
+            parts.push({ type: OPENAI_BLOCK.TEXT, text: `[${meta}]` });
+          }
           if (block.source?.type === "base64" && block.source.data) {
             parts.push({
               type: OPENAI_BLOCK.FILE,
@@ -290,6 +294,18 @@ function convertClaudeMessage(msg, opts = {}) {
                 file_data: encodeDataUri(block.source.media_type || "application/pdf", block.source.data)
               }
             });
+          } else if (block.source?.type === "text" && typeof block.source.data === "string") {
+            parts.push({
+              type: OPENAI_BLOCK.TEXT,
+              text: block.source.data
+            });
+          } else if (block.source?.type === "content" && block.source.content) {
+            const contentText = Array.isArray(block.source.content)
+              ? block.source.content.map(c => c?.text || "").filter(Boolean).join("\n")
+              : String(block.source.content);
+            if (contentText) {
+              parts.push({ type: OPENAI_BLOCK.TEXT, text: contentText });
+            }
           }
           break;
 
@@ -364,11 +380,16 @@ function convertClaudeMessage(msg, opts = {}) {
                   type: OPENAI_BLOCK.IMAGE_URL,
                   image_url: { url: encodeDataUri(c.source.media_type, c.source.data) }
                 });
-              } else if ((c?.type === CLAUDE_BLOCK.DOCUMENT || c?.type === "document") && c.source?.type === "base64") {
-                resultImages.push({
-                  type: OPENAI_BLOCK.FILE,
-                  file: { file_data: encodeDataUri(c.source.media_type || "application/pdf", c.source.data) }
-                });
+              } else if (c?.type === CLAUDE_BLOCK.DOCUMENT || c?.type === "document") {
+                if (c.source?.type === "base64" && c.source.data) {
+                  resultImages.push({
+                    type: OPENAI_BLOCK.FILE,
+                    file: { file_data: encodeDataUri(c.source.media_type || "application/pdf", c.source.data) }
+                  });
+                } else if (c.source?.type === "text" && typeof c.source.data === "string") {
+                  const header = c.title ? `[Document: ${c.title}]\n` : "";
+                  parts.push({ type: OPENAI_BLOCK.TEXT, text: `${header}${c.source.data}` });
+                }
               }
             }
             const textOnly = block.content.filter(c => c?.type === CLAUDE_BLOCK.TEXT);

@@ -345,10 +345,13 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
-    if (isGemini4Model(body.model || model)) {
-      delete generationConfig.temperature;
-      delete generationConfig.topP;
-      delete generationConfig.topK;
+    const isLevelThinkingModel = isGemini4Model(body.model || model) || /(?:^|\/)gemini-3\.8(?:$|[-.(])/i.test(String(body.model || model || ""));
+    if (isLevelThinkingModel) {
+      if (isGemini4Model(body.model || model)) {
+        delete generationConfig.temperature;
+        delete generationConfig.topP;
+        delete generationConfig.topK;
+      }
       if (generationConfig.thinkingConfig) {
         const tc = generationConfig.thinkingConfig;
         if (tc.thinkingBudget !== undefined || tc.thinkingLevel === "minimal") {

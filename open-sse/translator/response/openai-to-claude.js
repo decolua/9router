@@ -402,13 +402,15 @@ export function openaiToClaudeResponse(chunk, state) {
     if (state.webSearchUsage?.server_tool_use) {
       finalUsage.server_tool_use = state.webSearchUsage.server_tool_use;
     }
+    const cleanUsage = { ...finalUsage };
+    delete cleanUsage.estimated;
     results.push({
       type: "message_delta",
       delta: {
         stop_reason: stopReason,
         stop_sequence: null
       },
-      usage: finalUsage
+      usage: cleanUsage
     });
     results.push({ type: "message_stop" });
   }
