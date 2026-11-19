@@ -11,7 +11,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
-import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
+import { getDeactivatedProviderIds, filterConnectionsByIds } from "@/shared/utils/connectionStatus";
 import { NO_AUTH_PROVIDER_IDS } from "@/shared/utils/selectableModels";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
@@ -81,6 +81,7 @@ export default function ModelSelectModal({
   onDeselectBatch,
   selectedModel,
   activeProviders = [],
+  allowedConnectionIds = null,
   title = "Select Model",
   size = "lg",
   modelAliases = {},
@@ -110,8 +111,8 @@ export default function ModelSelectModal({
   }, [isOpen]);
 
   const effectiveConnections = useMemo(() => {
-    return fetchedConnections !== null ? fetchedConnections : (activeProviders || []);
-  }, [fetchedConnections, activeProviders]);
+    return filterConnectionsByIds(fetchedConnections !== null ? fetchedConnections : (activeProviders || []), allowedConnectionIds);
+  }, [fetchedConnections, activeProviders, allowedConnectionIds]);
 
   // Filter effectiveConnections by active state and serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
@@ -274,7 +275,7 @@ export default function ModelSelectModal({
       ...activeConnectionIds,  // Only connected providers
       ...noAuthIds,            // No-auth providers (kind-filtered)
       ...compatibleNodeIds,    // Compatible nodes with user-added models
-    ].filter((id) => !deactivatedProviderIds.has(id)));
+    ].filter((id) => !deactivatedProviderIds.has(id) && (allowedConnectionIds === null || activeConnectionIds.includes(id))));
 
     // Sort by PROVIDER_ORDER
     const sortedProviderIds = [...providerIdsToShow].sort((a, b) => {
@@ -500,7 +501,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels, allowedConnectionIds]);
 
   // Parse search query into structured query (regex, positive tokens, negative tokens)
   const parsedQuery = useMemo(() => parseSearchQuery(searchQuery), [searchQuery]);
@@ -872,6 +873,7 @@ ModelSelectModal.propTypes = {
       provider: PropTypes.string.isRequired,
     })
   ),
+  allowedConnectionIds: PropTypes.arrayOf(PropTypes.string),
   title: PropTypes.string,
   size: PropTypes.string,
   modelAliases: PropTypes.object,
