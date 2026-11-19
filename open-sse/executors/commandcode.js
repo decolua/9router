@@ -1,6 +1,6 @@
-import { randomUUID } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { buildCommandCodeHeaders } from "../shared/commandCodeHeaders.js";
 import { commandCodeToOpenAIResponse } from "../translator/response/commandcode-to-openai.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 
@@ -8,7 +8,8 @@ import { SSE_DONE } from "../utils/sseConstants.js";
  * CommandCodeExecutor — talks to https://api.commandcode.ai/alpha/generate
  *
  * Auth: Bearer <user_xxx> API key (stored as the connection's apiKey).
- * Adds the per-request `x-session-id` header expected by CommandCode upstream.
+ * Sends the official CLI's header set (shared/commandCodeHeaders.js); `x-session-id`
+ * matches the body's conversation-stable threadId.
  *
  * Upstream returns AI SDK v5 NDJSON (one JSON event per line, no `data:` prefix).
  * We translate each event to an OpenAI chat.completion.chunk and emit it as SSE so
@@ -21,22 +22,21 @@ export class CommandCodeExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    body.stream = true;
+    if (!body || typeof body !== "object") return body || {};
+    if (body.params) {
+      body.params.stream = true;
+    } else {
+      body.stream = true;
+    }
     return body;
   }
 
-  buildHeaders(credentials, stream = true) {
-    const headers = {
-      "Content-Type": "application/json",
-      ...(this.config.headers || {}),
-      "x-session-id": randomUUID(),
-    };
-
-    const token = credentials?.apiKey || credentials?.accessToken;
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-
-    if (stream) headers["Accept"] = "text/event-stream";
-    return headers;
+  buildHeaders(credentials, stream = true, url, model, transformedBody) {
+    return buildCommandCodeHeaders({
+      apiKey: credentials?.apiKey || credentials?.accessToken,
+      sessionId: transformedBody?.threadId,
+      accept: stream ? "text/event-stream" : null,
+    });
   }
 
   async execute(opts) {

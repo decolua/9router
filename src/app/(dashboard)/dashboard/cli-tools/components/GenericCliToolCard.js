@@ -7,7 +7,39 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
-import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { buildModelGroups, collectModelValues, LIVE_CATALOG_PROVIDERS } from "@/shared/utils/selectableModels";
+
+const PI_CONTEXT_WINDOWS = [200000, 400000, 600000, 1000000];
+const PI_MAX_TOKENS = [16000, 32000, 64000, 128000];
+const PI_DEFAULT_CAPS = { contextWindow: 200000, maxTokens: 64000 };
+const PI_CAP_LIMITS = { contextWindow: 2000000, maxTokens: 200000 };
+const formatTokens = (n) =>
+  n >= 1000000 ? `${+(n / 1000000).toFixed(2)}M` : `${Math.round(n / 1000)}k`;
+
+const sanitizeCap = (v, fallback, max) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
+};
+
+const capOptions = (values, current) =>
+  values.includes(current) ? values : [...values, current].sort((a, b) => a - b);
+
+const readPiModels = (cfg) => {
+  const list = cfg?.providers?.["9router"]?.models;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const caps = {};
+  const ids = list.map((m) => {
+    const id = typeof m === "string" ? m : m.id;
+    if (typeof m !== "string") {
+      caps[id] = {
+        contextWindow: sanitizeCap(m.contextWindow, PI_DEFAULT_CAPS.contextWindow, PI_CAP_LIMITS.contextWindow),
+        maxTokens: sanitizeCap(m.maxTokens, PI_DEFAULT_CAPS.maxTokens, PI_CAP_LIMITS.maxTokens),
+      };
+    }
+    return id;
+  });
+  return { ids, caps };
+};
 
 export default function GenericCliToolCard({
   tool,
@@ -34,14 +66,10 @@ export default function GenericCliToolCard({
     const cfg = initialStatus?.config;
     return cfg?.model || cfg?.openai?.model || cfg?.providers?.["9router"]?.models?.[0]?.id || "";
   });
-  const [selectedModels, setSelectedModels] = useState(() => {
-    const cfg = initialStatus?.config;
-    const list = cfg?.providers?.["9router"]?.models;
-    if (Array.isArray(list) && list.length > 0) {
-      return list.map((m) => (typeof m === "string" ? m : m.id));
-    }
-    return [];
-  });
+  const initialPi = readPiModels(initialStatus?.config);
+  const [selectedModels, setSelectedModels] = useState(() => initialPi?.ids || []);
+  const [modelCaps, setModelCaps] = useState(() => initialPi?.caps || {});
+  const [addingAll, setAddingAll] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
@@ -58,10 +86,10 @@ export default function GenericCliToolCard({
             setStatus(data);
             const cfg = data?.config;
             if (tool.id === "pi") {
-              const list = cfg?.providers?.["9router"]?.models;
-              if (Array.isArray(list) && list.length > 0) {
-                const ids = list.map((m) => (typeof m === "string" ? m : m.id));
-                setSelectedModels(ids);
+              const pi = readPiModels(cfg);
+              if (pi) {
+                setSelectedModels(pi.ids);
+                setModelCaps(pi.caps);
               }
             } else {
               const mod = cfg?.model || cfg?.openai?.model || cfg?.providers?.["9router"]?.models?.[0]?.id;
@@ -86,10 +114,10 @@ export default function GenericCliToolCard({
       setStatus(data);
       const cfg = data?.config;
       if (tool.id === "pi") {
-        const list = cfg?.providers?.["9router"]?.models;
-        if (Array.isArray(list) && list.length > 0) {
-          const ids = list.map((m) => (typeof m === "string" ? m : m.id));
-          setSelectedModels(ids);
+        const pi = readPiModels(cfg);
+        if (pi) {
+          setSelectedModels(pi.ids);
+          setModelCaps(pi.caps);
         }
       } else {
         const mod = cfg?.model || cfg?.openai?.model || cfg?.providers?.["9router"]?.models?.[0]?.id;
@@ -144,7 +172,12 @@ export default function GenericCliToolCard({
       };
 
       if (tool.id === "pi") {
-        payload.models = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
+        payload.models = (selectedModels.length > 0 ? selectedModels : ["provider/model-id"]).map((id) => ({
+          id,
+          name: id,
+          ...PI_DEFAULT_CAPS,
+          ...modelCaps[id],
+        }));
       } else {
         payload.model = selectedModel;
       }
@@ -192,6 +225,7 @@ export default function GenericCliToolCard({
     if (tool.id === "pi") {
       if (!selectedModels.includes(model.value)) {
         setSelectedModels((prev) => [...prev, model.value]);
+        setModelCaps((prev) => ({ ...prev, [model.value]: { ...PI_DEFAULT_CAPS, ...prev[model.value] } }));
       }
     } else {
       setSelectedModel(model.value);
@@ -199,23 +233,95 @@ export default function GenericCliToolCard({
     setModalOpen(false);
   };
 
-  const handleAddAllActiveModels = () => {
-    const allModels = [];
-    activeProviders.forEach((conn) => {
-      const alias = PROVIDER_ID_TO_ALIAS[conn.provider] || conn.provider;
-      const providerModels = getModelsByProviderId(conn.provider);
-      providerModels.forEach((m) => {
-        const val = `${alias}/${m.id}`;
-        if (!allModels.includes(val)) allModels.push(val);
-      });
-    });
-    if (allModels.length > 0) {
+  // Resolve every model a user can currently route to, using the same rules as the
+  // model picker (shared builder). Walking the static registry alone missed
+  // anything the picker knows from other sources: no-auth free providers never own
+  // a connection row (OpenCode Free), models registered through /api/models/custom
+  // live outside PROVIDER_MODELS, user aliases and live per-account catalogs are
+  // runtime data, and disabled models must not be re-added.
+  const loadActiveModelValues = async () => {
+    const readJson = async (url) => {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        return res.ok ? await res.json() : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const [providersData, aliasData, customData, disabledData] = await Promise.all([
+      readJson("/api/providers"),
+      readJson("/api/models/alias"),
+      readJson("/api/models/custom"),
+      readJson("/api/models/disabled"),
+    ]);
+
+    const allConnections = providersData?.connections ?? activeProviders ?? [];
+    const connections = allConnections.filter((conn) => conn && conn.isActive !== false);
+
+    // Live per-account catalogs (cursor/cline/clinepass/zed) are not in the registry.
+    const liveModels = {};
+    await Promise.all(
+      LIVE_CATALOG_PROVIDERS.map(async (providerId) => {
+        const connectionIds = connections.filter((conn) => conn.provider === providerId).map((conn) => conn.id);
+        if (connectionIds.length === 0) return;
+        const lists = await Promise.all(connectionIds.map((id) => readJson(`/api/providers/${id}/models`)));
+        liveModels[providerId] = lists.flatMap((data) => (Array.isArray(data?.models) ? data.models : []));
+      })
+    );
+
+    return collectModelValues(
+      buildModelGroups({
+        connections,
+        allConnections,
+        modelAliases: aliasData?.aliases || {},
+        customModels: customData?.models || [],
+        disabledModels: disabledData?.disabled || {},
+        liveModels,
+      })
+    );
+  };
+
+  const handleAddAllActiveModels = async () => {
+    setAddingAll(true);
+    setMessage(null);
+    try {
+      const allModels = await loadActiveModelValues();
+      if (allModels.length === 0) {
+        setMessage({ type: "error", text: "No active models found to add." });
+        return;
+      }
       setSelectedModels((prev) => Array.from(new Set([...prev, ...allModels])));
+      setModelCaps((prev) => {
+        const next = { ...prev };
+        allModels.forEach((id) => { next[id] ||= { ...PI_DEFAULT_CAPS }; });
+        return next;
+      });
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setAddingAll(false);
     }
   };
 
   const handleRemoveModel = (modelToRemove) => {
     setSelectedModels((prev) => prev.filter((m) => m !== modelToRemove));
+    setModelCaps((prev) => {
+      const next = { ...prev };
+      delete next[modelToRemove];
+      return next;
+    });
+  };
+
+  const setModelCap = (modelId, key, value) => {
+    setModelCaps((prev) => ({
+      ...prev,
+      [modelId]: {
+        ...PI_DEFAULT_CAPS,
+        ...prev[modelId],
+        [key]: sanitizeCap(value, PI_DEFAULT_CAPS[key], PI_CAP_LIMITS[key]),
+      },
+    }));
   };
 
   const getInstallCommand = () => {
@@ -258,8 +364,8 @@ export default function GenericCliToolCard({
                     models: modelsList.map((id) => ({
                       id,
                       name: id,
-                      contextWindow: 128000,
-                      maxTokens: 16384,
+                      ...PI_DEFAULT_CAPS,
+                      ...modelCaps[id],
                     })),
                   },
                 },
@@ -477,21 +583,44 @@ export default function GenericCliToolCard({
                         {selectedModels.length === 0 ? (
                           <span className="text-xs text-text-muted italic">No models selected. Add models to use in Pi.</span>
                         ) : (
-                          selectedModels.map((modelId) => (
-                            <span
-                              key={modelId}
-                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-bg-secondary text-xs text-text-main border border-border"
-                            >
-                              <span>{modelId}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveModel(modelId)}
-                                className="text-text-muted hover:text-red-500 rounded p-0.5"
+                          selectedModels.map((modelId) => {
+                            const caps = { ...PI_DEFAULT_CAPS, ...modelCaps[modelId] };
+                            return (
+                              <div
+                                key={modelId}
+                                className="flex w-full flex-wrap items-center gap-1.5 rounded border border-border bg-bg-secondary px-2 py-1 text-xs text-text-main"
                               >
-                                <span className="material-symbols-outlined text-[12px]">close</span>
-                              </button>
-                            </span>
-                          ))
+                                <span className="min-w-0 flex-1 basis-40 truncate">{modelId}</span>
+                                <select
+                                  value={caps.contextWindow}
+                                  onChange={(e) => setModelCap(modelId, "contextWindow", e.target.value)}
+                                  title="Context window"
+                                  className="shrink-0 rounded border border-border bg-surface px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                >
+                                  {capOptions(PI_CONTEXT_WINDOWS, caps.contextWindow).map((n) => (
+                                    <option key={n} value={n}>{formatTokens(n)} ctx</option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={caps.maxTokens}
+                                  onChange={(e) => setModelCap(modelId, "maxTokens", e.target.value)}
+                                  title="Max output tokens"
+                                  className="rounded border border-border bg-surface px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                >
+                                  {capOptions(PI_MAX_TOKENS, caps.maxTokens).map((n) => (
+                                    <option key={n} value={n}>{formatTokens(n)} out</option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveModel(modelId)}
+                                  className="text-text-muted hover:text-red-500 rounded p-0.5"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">close</span>
+                                </button>
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -505,17 +634,16 @@ export default function GenericCliToolCard({
                           <span className="material-symbols-outlined text-[14px] mr-1">add</span>
                           Add Model
                         </Button>
-                        {activeProviders?.length > 0 && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={handleAddAllActiveModels}
-                            className="text-xs text-primary hover:text-primary-hover"
-                          >
-                            + Add All Active Models
-                          </Button>
-                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={handleAddAllActiveModels}
+                          disabled={addingAll}
+                          className="text-xs text-primary hover:text-primary-hover"
+                        >
+                          {addingAll ? "Adding..." : "+ Add All Active Models"}
+                        </Button>
                         {selectedModels.length > 0 && (
                           <button
                             type="button"

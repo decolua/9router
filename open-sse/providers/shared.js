@@ -1,3 +1,4 @@
+import { setClaudeCliFallback } from "../utils/claudeCliVersion.js";
 import { platform, arch } from "os";
 
 // === OS/Arch helpers (Stainless fingerprint) ===
@@ -22,7 +23,10 @@ export function mapStainlessArch() {
 
 // Anthropic API version (single source — reused across claude-format providers/executors)
 export const ANTHROPIC_API_VERSION = "2023-06-01";
-export const CLAUDE_CLI_VERSION = "2.1.280";
+// Floor version only; the live value comes from npm (utils/claudeCliVersion.js)
+// and outbound claude-cli/x.y.z headers are rewritten in proxyAwareFetch.
+export const CLAUDE_CLI_VERSION = "2.1.322";
+setClaudeCliFallback(CLAUDE_CLI_VERSION);
 
 // Shared Claude-compatible API headers (reused across claude-format providers)
 export const CLAUDE_API_HEADERS = {
@@ -89,12 +93,12 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
-// Official Antigravity IDE Desktop 2.22.0 fingerprint captured from macOS arm64.
+// Official Antigravity Hub Desktop 2.24.0 fingerprint captured from macOS arm64.
 // Keep this static even when 9router runs on Linux: the provider profile is
-// intentionally matching the IDE client, not the server host.
-export const ANTIGRAVITY_IDE_VERSION = "2.22.0";
+// intentionally matching the Hub client, not the server host.
+export const ANTIGRAVITY_IDE_VERSION = "2.24.0";
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
-export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
+export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/hub/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
 
 // Antigravity OAuth client credentials (public CLI client — duplicated in usage.js + src/lib/oauth)
 export const ANTIGRAVITY_OAUTH_CLIENT = {

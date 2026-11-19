@@ -9,6 +9,13 @@ const ICON_ALIASES = {
   // MiniMax Code rides the existing MiniMax brand mark
   "minimax-code": "minimax",
   "minimax-code-global": "minimax",
+  // Zen is the same opencode.ai brand
+  "opencode-zen": "opencode",
+  // Web-cookie variants ride their brand's existing mark
+  "deepseek-web": "deepseek",
+  "muse-web": "muse",
+  "gemini-web": "gemini",
+  "chatgpt-web": "openai",
 };
 
 // Runtime only — first 404 remembers id for the whole session

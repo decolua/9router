@@ -1,3 +1,164 @@
+# v0.5.119 (2026-11-11)
+
+## Features
+- **Synthetic**: add Synthetic (`syn`) — OpenAI-compatible upstream on `api.synthetic.new` with the always-on `hf:` models as a static fallback, model passthrough, live model discovery, and a usage tracker reading `GET /v2/quotas`
+- **Claude**: add Claude Fable 5.2 ($8/$40) as the Fable flagship and `claude-haiku-5-5` ($0.10/$0.50, 1M/128K); the advertised Claude Code version now auto-tracks the latest npm release (floor 2.1.322, pin with `CLAUDE_CLI_VERSION`), and the dashboard lists live models through the OAuth bearer
+- **Antigravity**: add Gemini 4 Carbon in low/medium/high tiers plus a bare alias resolving to medium, and track the tiers in the usage quota list
+- **CommandCode**: add `google/gemini-4-carbon` and `claude-fable-5-2`, and resolve the model list from the CLI's live catalog (`GET /provider/v1/models?view=client`) in the dashboard and `GET /v1/models`
+- **ClinePass**: add a quota tracker mapping the five-hour/weekly/monthly plan windows into the usage-limits dashboard
+- **Proxy Pools**: All/Enabled/Disabled status filter and Shift+click range selection; bulk actions and Select All now target only visible rows
+- **Models**: `/v1/models` publishes `thinking_levels`, and opencode settings derive the effort variants from the same source
+
+## Fixes
+- **Transport**: keep undici on 7.30.2 — undici 8 requires Node 22.19+, so 0.5.116 crashed every outbound `fetch` on older runtimes (`createZstdDecompress.bind` is undefined below Node 22.15). 7.30.2 carries the same security fixes and the stale-socket/happy-eyeballs transport work.
+- **Node floor**: declare `engines.node >= 20.18.1` in both packages (the root manifest had none, the CLI claimed `>=18`).
+- **SenseNova**: add `sensenova-intl` provider on `token.sensenova.ai` for international keys (the `.cn` host returns 401 Forbidden for them)
+- **Claude**: retire Fable 5.1 from the claude, GitHub Copilot and OpenCode Zen catalogs now that 5.2 replaces it; the capabilities and pricing rows stay so an existing `claude-fable-5-1` config still translates and bills correctly
+- **Claude**: rename `tool_reference` blocks when cloaking tools, so tool search stays enabled instead of 400-ing and resending every definition each turn
+- **Pricing**: bill gemini-4 models at their real rate ($2/$10 instead of the generic `gemini-*` $0.50/$3.00) across commandcode, antigravity and vertex ids
+- **Stream**: emit a single framed `[DONE]` sentinel in passthrough streams instead of `data: [DONE]data: [DONE]` (strict SSE clients errored out)
+- **OpenCode**: keep the selected Proxy Pool on the wreq-js transport, with the session cache keyed by proxy so rotation takes effect; retry the free-lane "overloaded" 429 with backoff and drop rejected session ids
+- **Qoder**: keep catalog entries marked `enable:false` (still usable in the IDE) and sync upstream display names
+- **Codex Image**: send GPT Image edits to the native `images/edits` endpoint, and fall back to `gpt-5.6-terra` when the account rejects `gpt-6-sol` before it locks the model
+- **Codex**: advertise Codex CLI 0.167.1 — the backend rejects `0.159.0` identities with 400
+- **STT**: build multipart bodies with undici's `FormData` so fetch serializes the file and model fields instead of sending `[object FormData]`
+- **Muse Web**: accept Cookie-Editor JSON exports for credentials, normalized on read
+- **Fal**: validate new API keys through the model catalog instead of failing with "Provider validation not supported"
+- **NVIDIA NIM**: strip the params NIM 400s on, enable `dropClientMetadata`, cap the connect timeout, add the current catalogue, and cool down degraded clusters for 15m
+- **Compatibility**: advertise zstd only when the runtime can decode it (Node < 22.15 returns raw compressed bytes)
+- **Translator**: always emit `tool_result.is_error` for the Zed Anthropic wire, which 400s without it
+- **Translator**: show SearXNG in the combo Web Search model picker by deriving the no-auth list from the full registry
+- **Antigravity**: drop `~optional` from tool schemas (400 Unknown name)
+- **Quota**: catch a Claude reset missed between auto-ping ticks and retry it after the failure cooldown
+- **Routing**: route bare `claude-*` ids to Claude OAuth when no anthropic connection is active
+- **Usage**: display Claude `output_tokens` in request details instead of 0
+- **Synthetic**: validate keys through `/v2/quotas` (the public `/openai/v1/models` answers 200 for any Bearer value, so a revoked key was stored as valid) and route the Test button through `validateUrl` instead of answering "Provider test not supported"
+- **Xiaomi Token Plan**: replace the retired catalog (`mimo-v2.5-pro/flash`, `mimo-v2-pro`, `mimo-v2-omni`, `mimo-v2-tts` and the `mimo-v2.5-pro-claude` alias) with `mimo-v2.6-pro`, `mimo-v2.6-flash`, `mimo-v2.5-asr` and the three TTS variants, whose ids resolve upstream
+- **Usage**: show usage for a MiniMax Code desktop lease connection (`authType: "mcode-lease"`) in Provider Limits and the usage route, and forward `authType` through the dispatch so lease mode is detected instead of answering "Usage API not implemented"
+- **Dashboard**: replace the custom model capability toggle with an explicit Model type selector (Chat / LLM by default) — enabling Speech to text no longer flips a chat model to STT and drops it from Available Models (#5602)
+- **UI**: link explicit input ids to their labels
+
+# v0.5.116 (2026-11-08)
+
+## Features
+- **CommandCode**: align data bridge with official CLI v1.88.5 and add credential auto-import
+- **Antigravity**: track and display a separate Gemini 4 Argon weekly/session quota
+- **Codex Image**: add GPT Image 2.6 models (`gpt-image-2.6-flare`, `gpt-image-2.6-sunburst`)
+- **SenseNova**: add `sensenova-6.8-flash` and `glm-5.3`
+
+## Fixes
+- **Transport**: claude provider survives DPI-shaped networks (happy-eyeballs, undici 8, configurable TLS curve)
+- **Lazy Runtime**: fix lost named exports when loading CJS deps from the runtime dir
+- **OpenCode Go**: send Claude reasoning on the Messages transport
+- **Codex Image**: use native OAuth image generation safely
+- **Thinking**: keep thinking config on OpenAI tool-result turns (#5171)
+- **OpenCode Free**: alias "terminal" tool names the free tier 429-rejects (#5319)
+- **TTS**: list public voices without dashboard self-fetch auth (#1551)
+- **Translator**: retain Claude cache markers for DashScope targets (#2069)
+- **CLI**: launcher startup ~2.5x faster via PID-file process handling
+- **Gemini**: send concrete MIME for remote images instead of `image/*`
+- **Translator**: keep all Gemini tool results and follow-up parts (#2393)
+- **Codex Image**: drop `reasoning.effort` on tool requests, surface real upstream errors
+- **CLI**: ship `deepseek-pow-hash.js` next to the PoW worker (#5460)
+- **Web Fetch**: forward the selected output format to Jina and Tavily (#2239)
+- **Kiro**: stop splicing unserved regions into service hostnames; add `KIRO_INTEGRITY_GATE=off`
+- **Thinking**: preserve explicit DeepSeek thinking budgets on compat nodes (#5108)
+- **Tray**: report a tray that never started instead of claiming success
+- **Fetch**: stop reusing dead keep-alive sockets silently dropped by upstream edges
+- **CodeBuddy**: preserve client system prompts and sanitize CLI agent identity (intl WAF)
+- **OpenCode Go**: use current inference endpoints (`/zen/go/v1` retired)
+- **CLI Tools**: Add All Active Models now includes no-auth, alias and custom models (#5449)
+- **Runtime**: pass `--global=false` so npm hooks can't create stray global installs (#5443)
+- **Dedupe**: drop `tool_reference` blocks naming tools stripped by MCP dedupe (z.ai 400)
+
+# v0.5.112 (2026-10-28)
+
+## Features
+- **MiniMax Code**: add lease auth mode that rides the desktop app's sign-in through a named-pipe/unix-socket broker (length-prefixed JSON protocol, broker-owned token refresh — no refresh token held locally since MiniMax tokens are single-use), with a dashboard lease button and usage attribution
+- **Nace Drex**: add the `nace` provider to the System One lane with `drex`, `drex-v2.0` and `drex-max`
+- **CommandCode**: align request headers with the official CLI 1.88.0 through a shared `commandCodeHeaders` service
+- **Codex**: add `gpt-6.1-terra` (responses-lite lane, GPT-6-Lite thinking levels)
+
+## Fixes
+- **NVIDIA NIM**: normalize assistant `reasoning` aliases to `reasoning_content` before forwarding, avoiding NIM's duplicate-field 400 when clients send both.
+- **Lazy Runtime**: make the on-demand wreq-js/playwright-core installer work inside published builds — fetch `createRequire` at runtime instead of the bundler-stubbed static import, mark the runtime-dir `import()` calls `webpackIgnore` so file URLs are not captured as bundle chunks, anchor npm to the runtime dir with a minimal `package.json`, and wipe + reinstall once when npm exits 0 on a partially-extracted package (#5245)
+- **Docker**: bake `wreq-js` and `playwright-core` into the runner image's `node_modules` (builder-stage isolated install) so OpenCode Free resolves without runtime downloads (#5245)
+- **Chat**: surface upstream SSE `error` frames in non-streaming responses — answer with the upstream status (4xx/5xx) and message instead of swallowing them into a generic 502
+- **Translator**: enforce Gemini protobuf type predicates on schema `items` and `properties` instead of forwarding shapes the upstream would silently mistype
+- **Providers**: keep full `LLM|id|secret` (Muse) key strings opaque in bulk-add instead of splitting on the first pipe into name/key, auto-naming them LLM 1, LLM 2, …
+- **DeepSeek**: replace the vendored PoW hash implementation with a noble-hashes keccak port (DeepSeekHashV1, SHA3-256 with round 0 skipped), shrinking `deepseek-pow-hash.js` by ~430 lines
+- **GitHub Copilot**: apply Claude 5.5 thinking rules to Copilot's dotted model ids (`claude-opus-5.5*`, `claude-sonnet-5.5`) and make `claude-haiku-5.5` adaptive-only on its Anthropic-native shim, whose budget-shaped thinking comes back 400
+
+# v0.5.111 (2026-10-26)
+
+## Features
+- **Ollama**: add `ollama-local` TTS provider serving the Phonon family (15 tags, 38 preset voices), normalizing the requested format to wav/pcm, falling back to an installed tag and the `default` voice, and wrapping raw PCM in a WAV header so the dashboard can preview it
+- **Ollama**: add `ollama-local` embedding adapter for `/v1/embeddings`, normalizing a saved host that carries a `/v1` or `/v1/embeddings` suffix and sending a bearer token only when an API key is configured; catalog the 14 embedding model families with their dimensions
+- **Providers**: add Runcrate (`rc`) — OpenAI-compatible upstream serving DeepSeek, GLM, Qwen and gpt-oss models, validated through `GET /api/v1/billing/balance` because the public `/v1/models` answers 200 for any key
+- **CommandCode**: add Kimi K3.1 Pro to the catalog with the upstream id kept verbatim, riding the existing NDJSON `/alpha/generate` lane
+- **OpenCode Go**: add Kimi K3.1 Pro on the chat lane with vision/video input, 1,048,576 context, 131,072 max output and dedicated K3 pricing
+
+## Fixes
+- **CLI Tools**: stop the Pi card from resetting every `contextWindow`/`maxTokens` in `~/.pi/agent/models.json` on Apply, add per-model context-window and max-output selectors, and sanitize corrupt cap values instead of writing them back
+- **CLI Tools**: treat `name === id` as unset on Apply so a hand-edited Pi model label is no longer overwritten
+- **OpenCode**: normalize a caller tool that collides with the OpenCode fingerprint in place (keeping the caller's name and adopting the fingerprint schema) instead of aliasing it to `<name>_client` and restoring it on the response (#4971, #5011)
+- **OpenCode Free**: restore the free tier by sending the TLS ClientHello the upstream accepts (via optional `wreq-js`, fail-open to native fetch), minting session ids from the current time instead of a sha256 digest, and always pairing the CLI `<env>` system marker with a declared tool list
+- **OpenCode Free**: cap the published context window of `oc/deepseek-v4.1-flash-free` at 330k so clients compact before the backend's limit (#5097)
+- **Translator**: convert `image_url` parts inside `role:"tool"` messages to Claude image blocks instead of forwarding them verbatim and failing with a 400 (#5125)
+- **Headroom**: compress only text leaves and copy them back into the original fields, preserving native Claude documents, tool-use ids/inputs, tool results, signed thinking, citations and cache controls (#4670)
+- **DeepSeek**: send `deepseek-flash` upstream for `deepseek-v4.1-flash`, whose catalog id the API rejects (#4940)
+- **Claude**: keep adaptive thinking for Haiku 5.5 and downgrade to `enabled/10000` only below major version 5 (#5183)
+- **Thinking**: keep `reasoning_effort: max` for GPT-5.6 / GPT-6 served through OpenAI Compatible nodes instead of clamping it to `xhigh` (#5186)
+- **Codex Image**: drive the `image_generation` tool call from `gpt-6-sol` instead of the legacy `gpt-5.6-terra` host, and add `cx/gpt-6-sol-image`; drop the `gpt-5.6-{sol,terra,luna}-image` aliases they supersede
+- **Capabilities**: match `*gpt-6*image*` before the generic `gpt-6` family pattern so `gpt-6-sol-image` resolves as an image model instead of inheriting the chat caps (vision/reasoning/1.05M window) and losing `imageOutput`
+
+# v0.5.109 (2026-10-23)
+
+## Features
+- **Combos**: add Smart Router (System One) evaluation with adaptive session stickiness (Smart Switch, Strict Lock, Per-Turn) to retain prompt cache; introduce SmartPolicyModal and System One router picker in dashboard (#4975)
+- **Combos**: add search box for combo list with case-insensitive filtering by name and model IDs, filtered count, clear action, and selective bulk actions (#9b4ea9e)
+- **Image & MITM**: support reference image inputs (base64 and data URIs) for Gemini and Antigravity image generation; ensure MITM directory is auto-created on startup (#4981)
+- **Web Providers**: add web provider executors (`deepseek-web`, `gemini-web`, `muse-web`, `chatgpt-web`, `uc-web`, `veoaifree-web`), shared browser pool (`browserPool`), TLS impersonation via `wreq-js` for `grok-web`, lazy runtime installer for Playwright/wreq-js, and browser session cookie capture (#38a0c44)
+- **Providers**: add SenseNova provider support (`sensenova-6.8-flash-lite`, U1.5 image models) with image configuration options and connection validation (#5079)
+- **Ollama**: support System One decision models (`clef`, `clef-flash`) with host path normalization (#4731)
+- **RTK**: support user-authored custom system prompt injected across OpenAI, Responses, Claude, Gemini, and Kiro request shapes (#8a84204)
+- **STT**: add Codex OAuth transcription provider (`cx/transcribe`), reusing existing Codex OAuth chat connections with 24 kHz PCM16 WAV conversion and bounded private temp files (#5074)
+
+## Fixes
+- **CodeBuddy**: send the plugin's request/conversation id headers (`X-Request-ID`, `X-Conversation-ID`, `X-Conversation-Request-ID`, `X-Conversation-Message-ID`) on CN and intl chat requests — without them the gateway's channel check rejects every call with `400 / 11128 "request illegal"`
+- **CodeBuddy**: align the `#5024` backoff tests with the current request-scoped contract — `checkFallbackError` reports `requestScoped: true` for unclassified 4xx, and a combo now advances past a malformed CodeBuddy body instead of stopping on the first member
+- **Combos**: advance past request-scoped 4xx rejections (validation, unsupported parameter, context overflow) instead of terminating combo (#5057)
+- **Combos**: fall through to next member when streaming response returns HTTP 200 but produces zero content frames (#ca7b540)
+- **Combos**: try next model when provider returns HTTP 400 for insufficient credits or balance too low (#4713)
+- **Antigravity**: dynamically resolve unadorned models to tiered variants from client `reasoning_effort` (#82aeb90)
+- **Antigravity**: update User-Agent to `hub/2.24.0` resolving HTTP 404 on Gemini 4 Argon; add `gemini-4-argon-medium` and `gemini-4-argon-low` tiers, including them in quota tracking (#4816)
+- **OpenCode**: send `reasoning_effort` instead of `thinking` object for `glm-5.3-flash-free` to prevent upstream 400 rejection (#32c5f30)
+- **OpenCode Free**: honor `low|high|max` reasoning efforts for `oc/deepseek-v4.1-flash-free` instead of collapsing `low` to `high` (#313559f)
+- **OpenCode Free**: full reasoning support for `oc/mimo-v2.6-flash-free` across plain OpenAI `reasoning_effort` enum and SSE aggregation / translators (#b833128)
+- **Transports**: allow transports to declare thinking format; nest `reasoning:{effort,summary}` for OpenCode Go and Muse on `/responses` routes (#3014)
+- **Streaming**: synthesize missing `id` on streamed tool-call fragments so strict OpenAI clients do not abort (#4992)
+- **Streaming**: restore original caller tool names on OpenAI passthrough path when renamed by OpenCode fingerprinting (#4986, #4994)
+- **DB**: strip NUL bytes from bound strings across all SQLite drivers to prevent write errors or truncation on raw binary values (#5055, #4917)
+- **Usage**: support `/api/balance` for Ollama Cloud quota tracking (session 5h, weekly 7d resets, allowance/credits) (#5026)
+- **CommandCode**: resolve short plan IDs (`go`, `individual-go-v1`) with 10-credit cap, colored percentages, and dedicated `/alpha/whoami` connection probe (#4a76b8d)
+- **CodeBuddy**: back off and advance combo on international connection errors (HTTP 400 "request illegal" / "conversation id missing") (#5024)
+- **Codex**: skip ChatGPT Free accounts for image generation and use Go-compatible `gpt-5.6-terra` main model (#b08f12d)
+- **Qoder**: treat 10605 queue capacity signals as transient rather than billing blocks; add static model config for Sonus/Cantus; restore `PROVIDER_CAPABILITIES` table (#2720cd2)
+- **Capabilities**: advertise 500k context window for Grok 4.7 matching upstream limit (#b065531)
+- **GitHub**: refresh Copilot fallback model catalog with current models and set default fallback to `gpt-5-mini` (#dbdbb64)
+- **OpenAI**: strip and rename `max_tokens` to `max_completion_tokens` to prevent 400 rejections on modern models (#7c42d8f)
+- **Kiro**: normalize Anthropic model IDs and snapshot dates to Kiro-accepted upstream aliases; fix MiniMax casing to `minimax-m2.5` (#3ce2b82)
+- **Headroom**: compress native Gemini, Antigravity, and Responses tool output text (#4070)
+- **Headroom**: support native CommandCode requests stored under `params.messages` (#4552)
+- **Security**: bump `undici` to 7.30.1 and bind Headroom port to `127.0.0.1` in docker-compose.yml (#08ef047)
+- **Docker**: pin `node:22.23.4-alpine` and `.nvmrc` to address October 2026 security CVEs (CVE-2026-111497) (#32a064e)
+- **Dependencies**: upgrade Monaco editor to 0.57.0 (DOMPurify 3.4.15) and pin CDN loader copy (#5883110)
+- **Dashboard**: clarify API Key Created modal guidance that keys can be viewed or copied later from the list (#a3ca2f9)
+- **Media Providers**: keep connection card for OAuth providers with API-key media lanes (#00dd3df)
+- **Search**: reset regex state between model matches in search filters (#5853a88)
+- **Pi Settings**: declare `existingProvider` before use in POST handler to prevent ReferenceError 500 (#342ecb0)
+- **Tests**: triage master test suite (GLM-5.2 effort, gpt-6.1-sol codex capabilities, image SSRF mocks, refresh known-fails) (#b6a9ca4)
+
 # v0.5.104 (2026-10-15)
 
 ## Features
@@ -9,6 +170,8 @@
 - **UI**: model picker regex/negation search, Select/Deselect All, provider filtering, and per-provider wildcards
 
 ## Fixes
+- **Streaming**: fill a missing `id` on streamed tool-call fragments so strict OpenAI-compatible clients stop aborting the turn with "Expected 'id' to be a string" (#4992)
+- **OpenCode**: restore the caller's tool name on the openai→openai passthrough path, so a fingerprint-renamed tool (`read` → `read_client`) no longer reaches the client as a tool it never declared (#4986, #4994)
 - **Nous**: add missing attribution tags to API-key requests through compatible Chat Completions connections, preserving caller tags and identities (#4745)
 - **Cursor**: recover long sessions from empty AgentService turns (#4690); hold strictProxy on the AgentService h2 path (#4696)
 - **OpenCode**: encode inverted timestamp in translated session IDs so non-OpenCode clients pass Zen free-tier checks (#4780); inject `reasoning_content` placeholder for Zen multi-turn chats (#4805); move free tier to `/inference/v1` with the v2 client fingerprint (#4842)

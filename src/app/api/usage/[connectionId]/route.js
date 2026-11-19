@@ -7,6 +7,7 @@ import { isUnrecoverableRefreshError } from "open-sse/services/tokenRefresh.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { isLeaseConnection } from "open-sse/services/minimaxCodeLease.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -151,8 +152,10 @@ export async function GET(request, { params }) {
       connection.authType === "apikey" || connection.authType === "api_key";
     const isApikeyEligible =
       isApikeyAuth && USAGE_APIKEY_PROVIDERS.includes(connection.provider);
+    // Lease connections borrow the desktop app's token inside the usage handler.
+    const isLease = isLeaseConnection(connection);
 
-    if (!isOAuth && !isApikeyEligible) {
+    if (!isOAuth && !isApikeyEligible && !isLease) {
       return Response.json({ message: "Usage not available for this connection" });
     }
 

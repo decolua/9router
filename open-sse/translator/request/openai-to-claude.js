@@ -197,16 +197,61 @@ Respond ONLY with the JSON object, no other text.`);
   return result;
 }
 
+// A tool message may carry an OpenAI content array (text + image_url parts).
+// Claude tool_result content accepts image blocks, but not OpenAI image_url parts.
+// Strings are passed through untouched.
+function convertToolResultContent(content) {
+  if (!Array.isArray(content)) return content;
+
+  const parts = [];
+  for (const part of content) {
+    if (part.type === OPENAI_BLOCK.TEXT && part.text) {
+      parts.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
+    } else if (part.type === OPENAI_BLOCK.IMAGE_URL && part.image_url && part.image_url.url) {
+      const url = part.image_url.url;
+      const parsed = parseDataUri(url);
+      if (parsed) {
+        parts.push({
+          type: CLAUDE_BLOCK.IMAGE,
+          source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 }
+        });
+      } else if (url.startsWith("http://") || url.startsWith("https://")) {
+        parts.push({ type: CLAUDE_BLOCK.IMAGE, source: { type: "url", url } });
+      }
+    } else if (part.type === CLAUDE_BLOCK.IMAGE && part.source) {
+      parts.push({ type: CLAUDE_BLOCK.IMAGE, source: part.source });
+    }
+  }
+
+  // Nothing convertible: keep the original payload rather than sending an empty result.
+  return parts.length > 0 ? parts : content;
+}
+
+// Zed's Anthropic wire types (and other strict serde parsers) require `is_error`
+// as a non-optional bool on every tool_result. Anthropic's public API treats it
+// as optional (default false), so always emitting is safe for all Claude targets.
+function resolveToolResultIsError(source) {
+  if (!source || typeof source !== "object") return false;
+  if (source.is_error === true) return true;
+  if (source.status === "error") return true;
+  return false;
+}
+
+function buildToolResultBlock(toolUseId, content, source) {
+  return {
+    type: CLAUDE_BLOCK.TOOL_RESULT,
+    tool_use_id: toolUseId,
+    content,
+    is_error: resolveToolResultIsError(source),
+  };
+}
+
 // Get content blocks from single message
 function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
   const blocks = [];
 
   if (msg.role === ROLE.TOOL) {
-    blocks.push({
-      type: CLAUDE_BLOCK.TOOL_RESULT,
-      tool_use_id: msg.tool_call_id,
-      content: msg.content
-    });
+    blocks.push(buildToolResultBlock(msg.tool_call_id, convertToolResultContent(msg.content), msg));
   } else if (msg.role === ROLE.USER) {
     if (typeof msg.content === "string") {
       if (msg.content) {
@@ -217,12 +262,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
           blocks.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
         } else if (part.type === CLAUDE_BLOCK.TOOL_RESULT) {
-          blocks.push({
-            type: CLAUDE_BLOCK.TOOL_RESULT,
-            tool_use_id: part.tool_use_id,
-            content: part.content,
-            ...(part.is_error && { is_error: part.is_error })
-          });
+          blocks.push(buildToolResultBlock(part.tool_use_id, part.content, part));
         } else if (part.type === OPENAI_BLOCK.IMAGE_URL) {
           const url = part.image_url.url;
           const parsed = parseDataUri(url);

@@ -111,3 +111,26 @@ describe("planBulkAdd: robustness", () => {
     expect(out[0].name).toBe("Key 1");
   });
 });
+
+describe("planBulkAdd: opaque LLM|id|secret tokens", () => {
+  it("treats LLM|id|secret as one opaque token, not name|key", () => {
+    const line = "LLM|1412752987604207|PYVRCdb9ZAnsZZk63RBlNQzApKk";
+    const out = planBulkAdd([line], []);
+    expect(out[0].name).toBe("LLM 1");
+    expect(out[0].apiKey).toBe(line);
+  });
+
+  it("treats lowercase llm|... as opaque too", () => {
+    const line = "llm|1412752987604207|PYVRCdb9ZAnsZZk63RBlNQzApKk";
+    const out = planBulkAdd([line], []);
+    expect(out[0].name).toBe("LLM 1");
+    expect(out[0].apiKey).toBe(line);
+  });
+
+  it("cloudflare mode still parses name|key|accountId", () => {
+    const out = planBulkAdd(["main|sk-key1|acc123"], [], { isCloudflareAi: true });
+    expect(out[0].name).toBe("main 1");
+    expect(out[0].apiKey).toBe("sk-key1");
+    expect(out[0].providerSpecificData).toEqual({ accountId: "acc123" });
+  });
+});

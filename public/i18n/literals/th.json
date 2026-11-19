@@ -1172,7 +1172,7 @@
   "Theme": "ธีม",
   "Thinking": "Thinking",
   "Thinking Process": "Thinking Process",
-  "This is the only time you will see this key. Store it securely.": "นี่เป็นครั้งเดียวที่คุณจะเห็น key นี้ กรุณาจัดเก็บอย่างปลอดภัย",
+  "Store this key securely. You can view or copy it later from the API Keys list.": "กรุณาจัดเก็บ key นี้อย่างปลอดภัย คุณสามารถดูหรือคัดลอกได้ในภายหลังจากรายการ API Keys",
   "This provider is ready to use.": "Provider นี้พร้อมใช้งาน",
   "This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.": "Provider นี้พร้อมใช้งาน ทางเลือกสามารถ route requests ผ่าน proxy pool เพื่อหลีกเลี่ยง IP-based limits",
   "This value is write-only after saving.": "ค่านี้จะเขียนได้เฉพาะหลังจากบันทึกแล้ว",

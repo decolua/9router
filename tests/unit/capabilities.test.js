@@ -50,8 +50,8 @@ describe("getCapabilitiesForModel", () => {
     }
   });
 
-  it("reports Claude Fable 5.1 as a permanent adaptive-thinking model", () => {
-    expect(getCapabilitiesForModel("claude", "claude-fable-5-1")).toMatchObject({
+  it("reports Claude Fable 5.2 as a permanent adaptive-thinking model", () => {
+    expect(getCapabilitiesForModel("claude", "claude-fable-5-2")).toMatchObject({
       ...claudeSonnet5Expected,
       thinkingCanDisable: false,
     });
@@ -265,10 +265,10 @@ describe("getCapabilitiesForModel — codebuddy-cn provider overrides", () => {
     expect(haiku55.contextWindow).toBe(1000000);
     expect(haiku55.maxOutput).toBe(128000);
 
-    // The override is provider-scoped: the global haiku pattern (claude-budget) still
-    // governs every other provider, including the bare/anthropic lookup.
-    expect(getCapabilitiesForModel(undefined, "claude-haiku-5-5").thinkingFormat).toBe("claude-budget");
-    expect(getCapabilitiesForModel("claude", "claude-haiku-5-5").thinkingFormat).toBe("claude-budget");
+    // The canonical 5.5 entry is adaptive everywhere else, while 4.5 keeps the
+    // extended-thinking shape the haiku pattern describes.
+    expect(getCapabilitiesForModel(undefined, "claude-haiku-5-5").thinkingFormat).toBe("claude-adaptive");
+    expect(getCapabilitiesForModel("claude", "claude-haiku-5-5").thinkingFormat).toBe("claude-adaptive");
     expect(getCapabilitiesForModel("opencode-go", "claude-haiku-4-5-20251001").thinkingFormat).toBe("claude-budget");
   });
 
@@ -307,6 +307,18 @@ describe("OpenCode Free ids newer than the capability tables", () => {
       contextWindow: 1048576,
       maxOutput: 524288,
     });
+  });
+
+  it("caps oc/deepseek-v4.1-flash-free at the real backend limit (~330k) instead of 1M", () => {
+    const caps = getCapabilitiesForModel("opencode", "deepseek-v4.1-flash-free");
+    // The OpenCode Free backend rejects requests above ~330k prompt tokens (issue #5097).
+    // The published context_length must not exceed the real window, otherwise clients
+    // (VS Code Copilot etc.) never compact and hard-fail mid-session.
+    expect(caps.contextWindow).toBeLessThanOrEqual(330000);
+    expect(caps.maxOutput).toBeLessThanOrEqual(caps.contextWindow);
+    // Vision and reasoning should still be reported correctly.
+    expect(caps.vision).toBe(true);
+    expect(caps.reasoning).toBe(true);
   });
 
   it("keeps per-id modalities and limits instead of a generic floor", () => {

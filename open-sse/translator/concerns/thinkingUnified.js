@@ -127,18 +127,25 @@ function openAIThinkingDisplay(body) {
 
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
 
+// Self-hosted gateways (vLLM/SGLang) validate thinking.budget_tokens; first-party
+// DeepSeek ignores it. Only dynamic compat nodes opt into the passthrough.
+const isOpenAICompatibleNode = (provider) => String(provider || "").startsWith("openai-compatible-");
+
 function resolveFormat(targetFormat, model, provider) {
   if (targetFormat === "commandcode") return "commandcode";
+  // A multi-endpoint provider can declare, per transports[] entry, the thinking shape that
+  // endpoint accepts. It wins over the model's thinkingFormat, which describes the Chat wire:
+  // strict /responses upstreams (Meta, OpenCode Go) reject Chat-shaped reasoning_effort /
+  // thinking:{type} and need reasoning:{effort,summary} instead.
+  const transportFmt = provider
+    ? PROVIDERS[provider]?.transports?.find((t) => t.format === targetFormat)?.thinkingFormat
+    : null;
+  if (transportFmt) return transportFmt;
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
   const isOpenAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
   if (caps.thinkingFormat && !(isOpenAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
-    // Muse (Meta) strict Responses API rejects top-level reasoning_effort and
-    // requires nested reasoning: { effort, summary }. Other upstreams keep Chat-shaped effort.
-    if (provider === "muse" && targetFormat === "openai-responses") {
-      return "openai-responses";
-    }
     return caps.thinkingFormat;
   }
   return FORMAT_TO_NATIVE[targetFormat] || "openai";
@@ -256,7 +263,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
+function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "", budgetPassthrough = false) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -287,11 +294,15 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
     }
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      // Models that can disable thinking need the explicit adaptive switch.
-      // Permanently adaptive models such as Fable 5.1 accept effort directly.
-      if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
-      else delete body.thinking;
       const level = toLevel(eff);
+      // Models that can disable thinking need the explicit adaptive switch.
+      // Permanently adaptive models such as Fable 5.1 accept effort directly. Claude
+      // ones still get the switch when it carries a requested display: display
+      // defaults to "omitted" there, so dropping it hides the thinking text. A
+      // thinking-off request (clamped to minimal) asks for no thinking text.
+      if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
+      else if (display && level !== "minimal" && /claude/i.test(model)) body.thinking = { type: "adaptive", display };
+      else delete body.thinking;
       // xhigh is model-gated (Opus/Sonnet 4.6 reject it) — clamp when not advertised.
       // Claude effort has no "minimal" (always-on models clamp "none" to it).
       body.output_config = { effort: level === "auto" ? "high"
@@ -348,12 +359,21 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
     }
     case "deepseek": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      body.thinking = { type: "enabled" };
-      // DeepSeek: low/medium→high, xhigh/max→max. Some backends (mimo v2.5-pro/v2.6
-      // on opencode-go, probed live) 400 on "max" — clamp to high when the declared
-      // levels exclude it.
+      // Keep an explicit budget captured before translation/stripAll; strict
+      // DeepSeek-compatible hosts validate it when thinking is enabled.
+      body.thinking = budgetPassthrough && cfg.mode === "budget" && Number.isFinite(cfg.budget) && cfg.budget > 0
+        ? { type: "enabled", budget_tokens: cfg.budget }
+        : { type: "enabled" };
+      // DeepSeek's own API collapses low/medium→high and xhigh/max→max, so the wire
+      // stays on {high,max} for it. The declared levels win where they disagree:
+      // zen's free deepseek-v4.1-flash publishes low|high|max and its upstream takes
+      // the level verbatim, so collapsing "low" would make that level unreachable.
+      // Some backends (mimo v2.5-pro/v2.6 on opencode-go, probed live) 400 on "max"
+      // — clamp to high when the declared levels exclude it.
       const level = toLevel(eff);
-      const want = level === "xhigh" || level === "max" ? "max" : "high";
+      const want = level === "xhigh" || level === "max" ? "max"
+        : (level === "low" || level === "minimal") && supportedLevels?.includes("low") ? "low"
+        : "high";
       body.reasoning_effort = want === "max" && supportedLevels && !supportedLevels.includes("max") ? "high" : want;
       break;
     }
@@ -411,8 +431,14 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
         delete body.params.reasoning_effort;
         break;
       }
-      const level = toLevel(eff);
-      if (level) body.params.reasoning_effort = level;
+      const rawLevel = toLevel(eff);
+      const level = rawLevel === "auto" ? "high"
+        : rawLevel === "minimal" ? "low"
+        : rawLevel;
+      const validLevels = ["off", "low", "medium", "high", "xhigh", "max"];
+      if (level && validLevels.includes(level)) {
+        body.params.reasoning_effort = level;
+      }
       break;
     }
     default:
@@ -445,6 +471,6 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // An OpenAI-shaped client's ask arrives via the captured intent instead.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels, display);
+  applyFormat(fmt, body, cfg, caps, supportedLevels, display, cleanModel, isOpenAICompatibleNode(provider));
   return body;
 }

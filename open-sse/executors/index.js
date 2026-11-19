@@ -16,6 +16,12 @@ import { OpenCodeZenExecutor } from "./opencode-zen.js";
 import { GrokWebExecutor } from "./grok-web.js";
 import { GrokCliExecutor } from "./grok-cli.js";
 import { PerplexityWebExecutor } from "./perplexity-web.js";
+import { DeepSeekWebExecutor } from "./deepseek-web.js";
+import { GeminiWebExecutor } from "./gemini-web.js";
+import { MuseWebExecutor } from "./muse-web.js";
+import { VeoAiFreeWebExecutor } from "./veoaifree-web.js";
+import { UcWebExecutor } from "./uc-web.js";
+import { ChatGptWebExecutor } from "./chatgpt-web.js";
 import { OllamaLocalExecutor } from "./ollama-local.js";
 import { CommandCodeExecutor } from "./commandcode.js";
 import { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
@@ -53,6 +59,13 @@ const executors = {
   gcli: new GrokCliExecutor(), // Alias
   gb: new GrokCliExecutor(), // Alias (Grok Build)
   "perplexity-web": new PerplexityWebExecutor(),
+  "deepseek-web": new DeepSeekWebExecutor(),
+  "gemini-web": new GeminiWebExecutor(),
+  "muse-web": new MuseWebExecutor(),
+  "veoaifree-web": new VeoAiFreeWebExecutor(),
+  "veo-free": new VeoAiFreeWebExecutor(), // Alias
+  "uc-web": new UcWebExecutor(),
+  "chatgpt-web": new ChatGptWebExecutor(),
   "ollama-local": new OllamaLocalExecutor(),
   commandcode: new CommandCodeExecutor(),
   "xiaomi-tokenplan": new XiaomiTokenplanExecutor(),
@@ -108,6 +121,10 @@ export { OpenCodeZenExecutor } from "./opencode-zen.js";
 export { GrokWebExecutor } from "./grok-web.js";
 export { GrokCliExecutor } from "./grok-cli.js";
 export { PerplexityWebExecutor } from "./perplexity-web.js";
+export { DeepSeekWebExecutor } from "./deepseek-web.js";
+export { GeminiWebExecutor } from "./gemini-web.js";
+export { MuseWebExecutor } from "./muse-web.js";
+export { ChatGptWebExecutor } from "./chatgpt-web.js";
 export { OllamaLocalExecutor } from "./ollama-local.js";
 export { CommandCodeExecutor } from "./commandcode.js";
 export { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
