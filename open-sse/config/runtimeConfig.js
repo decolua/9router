@@ -11,7 +11,8 @@ export const HTTP_STATUS = {
   SERVER_ERROR: 500,
   BAD_GATEWAY: 502,
   SERVICE_UNAVAILABLE: 503,
-  GATEWAY_TIMEOUT: 504
+  GATEWAY_TIMEOUT: 504,
+  CLIENT_CLOSED_REQUEST: 499
 };
 
 // Re-export error config (backward compat)
@@ -31,12 +32,12 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
-// Parse a positive integer env override, falling back to a default.
-function envMs(name, def) {
-  const raw = process.env[name];
-  if (raw == null || raw === "") return def;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : def;
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+function envMs(name, def, min = 1) {
+  const raw = process.env[name]?.trim();
+  const value = Number(raw);
+  return raw && Number.isInteger(value) && value >= min && value <= MAX_TIMER_MS ? value : def;
 }
 
 function envUrl(name, def) {
@@ -50,10 +51,18 @@ export const SEARXNG_URL = envUrl("SEARXNG_URL", "http://localhost:8888/search")
 
 // Inter-chunk stall timeout (once tokens are flowing). Generous headroom so
 // slow reasoning models aren't aborted mid-stream. Env: STREAM_STALL_TIMEOUT_MS.
-export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 360 * 1000);
+const streamStallOverride = envMs("STREAM_STALL_TIMEOUT_MS", undefined);
+export const STREAM_STALL_TIMEOUT_MS = streamStallOverride ?? 360_000;
+export const resolveStreamStallTimeoutMs = (providerStallTimeoutMs) =>
+  streamStallOverride ?? providerStallTimeoutMs ?? STREAM_STALL_TIMEOUT_MS;
 
-// Time-to-first-token timeout (prompt prefill). Env: STREAM_FIRST_CHUNK_TIMEOUT_MS.
-export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200 * 1000);
+// Downstream SSE comments keep idle connections open without counting as upstream activity.
+export const STREAM_HEARTBEAT_INTERVAL_MS = envMs("STREAM_HEARTBEAT_INTERVAL_MS", 15_000, 0);
+
+// Absolute wait for the first usable output after headers, including SSE metadata.
+export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200_000);
+export const STREAM_TERMINAL_GRACE_MS = envMs("STREAM_TERMINAL_GRACE_MS", 3000, 0);
+export const STREAM_PREFLIGHT_MAX_BYTES = 1024 * 1024;
 
 // Combo empty-content failover: how long a 2xx stream may be held while waiting for its first
 // content-bearing frame before committing to that model (fail-open on expiry).
@@ -108,6 +117,30 @@ export const STALE_SOCKET_ERROR_SUBSTRINGS = [
   "socket hang up",
 ];
 
+export const STREAM_HEADERS_TIMEOUT_MS = envMs("STREAM_HEADERS_TIMEOUT_MS", undefined);
+
+export function resolveStreamFetchTimeouts(provider = {}) {
+  return {
+    streamHeadersTimeoutMs: STREAM_HEADERS_TIMEOUT_MS ?? provider.timeoutMs ?? FETCH_CONNECT_TIMEOUT_MS,
+    // The transport guard must allow both handler phases. The handler applies
+    // the shorter, phase-specific deadline when appropriate.
+    streamBodyTimeoutMs: Math.max(STREAM_FIRST_CHUNK_TIMEOUT_MS, resolveStreamStallTimeoutMs(provider.stallTimeoutMs), STREAM_TERMINAL_GRACE_MS),
+  };
+}
+
+export function resolveStreamRequestTimeoutMs(headersMs, bodyMs) {
+  return Math.min(MAX_TIMER_MS, headersMs + bodyMs);
+}
+
+// In-router retry for streams that fail before any content reached the client
+// (in-band overload/HTTP2 frames, dropped connections, EOF with no output).
+// Pre-content events are held back, so a retry is invisible to the client.
+// Delay doubles per attempt. Env: STREAM_PRECONTENT_RETRY_ATTEMPTS (0 disables),
+// STREAM_PRECONTENT_RETRY_DELAY_MS.
+export const STREAM_PRECONTENT_RETRY_ATTEMPTS = envMs("STREAM_PRECONTENT_RETRY_ATTEMPTS", 3, 0);
+export const STREAM_PRECONTENT_RETRY_DELAY_MS = envMs("STREAM_PRECONTENT_RETRY_DELAY_MS", 2000, 0);
+export const STREAM_PRECONTENT_RETRY_MAX_DELAY_MS = envMs("STREAM_PRECONTENT_RETRY_MAX_DELAY_MS", 30_000, 0);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 
@@ -127,9 +160,11 @@ export const RETRY_CONFIG = {
 // Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
 export const DEFAULT_RETRY_CONFIG = {
   429: { attempts: 0, delayMs: 0 },
-  502: { attempts: 3, delayMs: 3000 },
-  503: { attempts: 3, delayMs: 2000 },
-  504: { attempts: 2, delayMs: 3000 }
+  400: { attempts: envMs("HTTP_400_RETRY_ATTEMPTS", 0, 0), delayMs: envMs("HTTP_400_RETRY_DELAY_MS", 1000, 0) },
+  500: { attempts: envMs("HTTP_500_RETRY_ATTEMPTS", 3, 0), delayMs: envMs("HTTP_500_RETRY_DELAY_MS", 2000, 0) },
+  502: { attempts: envMs("HTTP_502_RETRY_ATTEMPTS", 3, 0), delayMs: envMs("HTTP_502_RETRY_DELAY_MS", 3000, 0) },
+  503: { attempts: envMs("HTTP_503_RETRY_ATTEMPTS", 3, 0), delayMs: envMs("HTTP_503_RETRY_DELAY_MS", 2000, 0) },
+  504: { attempts: envMs("HTTP_504_RETRY_ATTEMPTS", 2, 0), delayMs: envMs("HTTP_504_RETRY_DELAY_MS", 3000, 0) }
 };
 
 // Normalize a retry entry to { attempts, delayMs }

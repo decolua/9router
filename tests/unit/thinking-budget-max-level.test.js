@@ -37,3 +37,16 @@ describe("applyThinking (openai-responses): large budgets map to max effort", ()
     expect(out?.reasoning_effort).toBe("max");
   });
 });
+
+describe("OpenAI-compatible provider option effort", () => {
+  it.each([
+    ["gpt-5.6-sol", "max"],
+    ["gpt-6.2-sol", "max"],
+    ["gpt-5.5", "xhigh"],
+  ])("applies the supported effort for %s", (model, effort) => {
+    const body = { reasoning_effort: "low", options: { reasoningEffort: "max", other: true } };
+    const result = applyThinking(FORMATS.OPENAI, model, body, "openai-compatible-chat-test");
+    expect(result.reasoning_effort).toBe(effort);
+    expect(result.options).toEqual({ other: true });
+  });
+});

@@ -3,6 +3,7 @@ import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadr
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("compressWithHeadroom", () => {
@@ -303,14 +304,15 @@ describe("compressWithHeadroom", () => {
       expect(calls).toContain(3000);
     });
 
-    it("falls back to the default timeout when timeoutMs is 0", async () => {
+    it("does not install an abort deadline when timeoutMs is 0", async () => {
       makeSuccessfulFetch();
       const calls = captureTimeoutCalls();
       const body = { messages: [{ role: "user", content: "hello" }] };
 
       await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: 0 });
 
-      expect(calls).toContain(3000);
+      expect(calls).toEqual([]);
+      expect(global.fetch.mock.calls[0][1]).not.toHaveProperty("signal");
     });
 
     it("falls back to the default timeout when timeoutMs is negative", async () => {
@@ -351,6 +353,36 @@ describe("compressWithHeadroom", () => {
       await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: "5000" });
 
       expect(calls).toContain(3000);
+    });
+
+    it("uses the environment timeout only when no saved timeout is provided", async () => {
+      vi.stubEnv("HEADROOM_TIMEOUT_MS", "0");
+      vi.resetModules();
+      const { compressWithHeadroom: compressWithEnvironmentDefault } = await import("../../open-sse/rtk/headroom.js");
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+
+      await compressWithEnvironmentDefault(
+        { messages: [{ role: "user", content: "hello" }] },
+        { enabled: true, url: "http://localhost:8787" }
+      );
+
+      expect(calls).toEqual([]);
+      expect(global.fetch.mock.calls[0][1]).not.toHaveProperty("signal");
+
+      vi.stubEnv("HEADROOM_TIMEOUT_MS", "9000");
+      vi.resetModules();
+      const { compressWithHeadroom: compressWithSavedTimeout } = await import("../../open-sse/rtk/headroom.js");
+      makeSuccessfulFetch();
+      const savedTimeoutCalls = captureTimeoutCalls();
+
+      await compressWithSavedTimeout(
+        { messages: [{ role: "user", content: "hello" }] },
+        { enabled: true, url: "http://localhost:8787", timeoutMs: 5000 }
+      );
+
+      expect(savedTimeoutCalls).toContain(5000);
+      expect(savedTimeoutCalls).not.toContain(9000);
     });
   });
 });

@@ -470,7 +470,12 @@ export class OpenCodeExecutor extends BaseExecutor {
       method: options.method,
       headers: options.headers,
       body: options.body,
-    }, { signal: options.signal, proxyUrl });
+    }, {
+      signal: options.signal,
+      proxyUrl,
+      streamHeadersTimeoutMs: options.streamHeadersTimeoutMs,
+      streamBodyTimeoutMs: options.streamBodyTimeoutMs,
+    });
     // wreq-js tunnels the proxy itself; adapters that cannot must stay on undici.
     directFetch.proxyCapable = true;
     const run = () => super.execute({ ...args, credentials, directFetch });

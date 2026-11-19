@@ -7,6 +7,7 @@ import {
   STALE_SOCKET_ERROR_SUBSTRINGS,
   resolveKeepAliveTimeouts,
   isFreshSocketReplayEnabled,
+  resolveStreamFetchTimeouts,
 } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 import { ensureClaudeCliVersion, applyClaudeCliVersion } from "./claudeCliVersion.js";
@@ -41,7 +42,22 @@ export function isStaleSocketError(error) {
 let undiciFetch = null;
 async function rawFetch(url, options) {
   undiciFetch ??= (await import("undici")).fetch;
-  return undiciFetch(url, options);
+  const { streamHeadersTimeoutMs, streamBodyTimeoutMs, ...init } = options ?? {};
+  if (streamHeadersTimeoutMs == null && streamBodyTimeoutMs == null) return undiciFetch(url, init);
+
+  // FetchInit does not expose header and body deadlines. Apply them per dispatch.
+  const agent = init.dispatcher ?? (await import("undici")).getGlobalDispatcher();
+  const defaults = resolveStreamFetchTimeouts();
+  return undiciFetch(url, {
+    ...init,
+    dispatcher: {
+      dispatch: (request, handler) => agent.dispatch({
+        ...request,
+        headersTimeout: streamHeadersTimeoutMs ?? defaults.streamHeadersTimeoutMs,
+        bodyTimeout: streamBodyTimeoutMs ?? defaults.streamBodyTimeoutMs,
+      }, handler),
+    },
+  });
 }
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
@@ -355,17 +371,23 @@ async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = fals
     return forceFreshSocket ? getFreshRetryDispatcher(insecure) : getDirectDispatcher(insecure);
   }
 
-  const key = `${normalized}::${insecure ? "insecure" : "secure"}`;
+  const key = `${normalized}::${insecure ? "insecure" : "secure"}::${forceFreshSocket ? "fresh" : "pooled"}`;
   if (!proxyDispatchers.has(key)) {
+    const { ProxyAgent } = await import("undici");
+    // Another request may have initialized this dispatcher during the import.
+    if (proxyDispatchers.has(key)) return proxyDispatchers.get(key);
     // Evict oldest entry if max size reached
     if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
-      proxyDispatchers.delete(proxyDispatchers.keys().next().value);
+      const oldest = proxyDispatchers.keys().next().value;
+      const dispatcher = proxyDispatchers.get(oldest);
+      proxyDispatchers.delete(oldest);
+      void dispatcher.close?.().catch(() => {});
     }
-    const { ProxyAgent } = await import("undici");
     const dispatcher = new ProxyAgent({
       uri: normalized,
       connect: EYEBALLS_CONNECT,
       requestTls: { ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) },
+      ...(forceFreshSocket ? { pipelining: 0 } : {}),
     });
     proxyDispatchers.set(key, dispatcher);
   }
@@ -382,9 +404,12 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
-    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket);
+    const dispatcher = !proxyUrl && !forceFreshSocket && options.dispatcher
+      ? options.dispatcher
+      : await getDispatcher(proxyUrl, false, forceFreshSocket);
     return await rawFetch(url, { ...options, dispatcher });
   } catch (err) {
+    options.signal?.throwIfAborted();
     const isStrictSsl = options.strictTls === true || process.env.STRICT_SSL === "true" || process.env.STRICT_SSL === "1";
     if (!isStrictSsl && isTlsCertError(err)) {
       if (!isBodyReplaySafe(options.body)) {
@@ -424,8 +449,12 @@ async function createBypassRequest(parsedUrl, realIP, options) {
   const https = httpsModule.default ?? httpsModule;
   const net = netModule.default ?? netModule;
 
+  options.signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
+    const onAbort = () => socket.destroy(options.signal.reason);
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    socket.once("close", () => options.signal?.removeEventListener("abort", onAbort));
 
     socket.connect(HTTPS_PORT, realIP, () => {
       const reqOptions = {
@@ -439,6 +468,7 @@ async function createBypassRequest(parsedUrl, realIP, options) {
         servername: parsedUrl.hostname,
         path: parsedUrl.pathname + parsedUrl.search,
         method: options.method || "POST",
+        signal: options.signal,
         headers: {
           ...options.headers,
           Host: parsedUrl.hostname,
@@ -474,6 +504,7 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 }
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  options.signal?.throwIfAborted();
   // Keep the spoofed Claude Code version current (new models require a minimum CLI version).
   // Refresh in the background: the request uses the version already known, so an
   // unreachable npm registry can never add latency to the chat path.
@@ -482,6 +513,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     options = { ...options, headers: applyClaudeCliVersion(options.headers) };
   }
   const targetUrl = typeof url === "string" ? url : url.toString();
+  const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options.forceFreshSocket === true;
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
@@ -495,13 +527,13 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    return await rawFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    const dispatcher = forceFreshSocket ? await getFreshRetryDispatcher() : options.dispatcher;
+    return rawFetch(vercelRelayUrl, { ...options, headers: relayHeaders, ...(dispatcher && { dispatcher }) });
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
-  const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options?.forceFreshSocket === true;
 
   // Protocol adapters that own their transport (wreq-js TLS impersonation)
   // cannot use an undici dispatcher: they must drive the proxy themselves.
@@ -516,6 +548,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       dbg("PROXY", `PROXY ROUTING VERIFIED | ${safeTargetHost(targetUrl)} | transport=adapter | proxy=${via || safeProxyHost(proxyUrl)} | status=${res?.status}`);
       return res;
     } catch (err) {
+      options.signal?.throwIfAborted();
       if (proxyOptions?.strictProxy === true) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${err.message}`);
       }
@@ -530,6 +563,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       try {
         return await fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket);
       } catch (proxyError) {
+        options.signal?.throwIfAborted();
         if (proxyOptions?.strictProxy === true) {
           throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
         }
@@ -540,8 +574,10 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     try {
       const parsedUrl = new URL(targetUrl);
       const realIP = await resolveRealIP(parsedUrl.hostname);
+      options.signal?.throwIfAborted();
       if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
     } catch (error) {
+      options.signal?.throwIfAborted();
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
     }
   }
@@ -550,6 +586,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     try {
       return await fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket);
     } catch (proxyError) {
+      options.signal?.throwIfAborted();
       // If strictProxy is enabled, fail hard instead of falling back to direct
       if (proxyOptions?.strictProxy === true) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);

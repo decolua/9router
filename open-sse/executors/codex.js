@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
 import { PROVIDERS } from "../config/providers.js";
@@ -10,21 +11,13 @@ import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId, getProviderModels } from "../config/providerModels.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { ACCOUNT_SCOPE_STREAM_ERROR_PATTERNS } from "../config/errorConfig.js";
+import { getStreamErrorStatus } from "../utils/error.js";
+import { inspectStreamingPrelude, isRetryablePreContentError } from "../utils/preContentRetry.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { stripCodexUnsupportedPatterns } from "../utils/codexToolSchema.js";
 
-// SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
-const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
-const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
-const CODEX_SSE_USER_OUTPUT_PATTERNS = [
-  "event: response.output_text.delta",
-  "event: response.function_call_arguments.delta",
-  '"type":"response.output_text.delta"',
-  '"type":"response.function_call_arguments.delta"',
-];
-const CODEX_SSE_PEEK_BYTES = 256 * 1024;
-const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
 function isCodexResponsesLiteModel(model) {
   const baseId = String(model || "").replace(/\([^()]+\)\s*$/, "");
   return getProviderModels("cx").some((entry) => entry.id === baseId && entry.responsesLite === true);
@@ -151,46 +144,11 @@ function normalizeReasoningEffort(model, value) {
   return value;
 }
 
-function findNestedMessage(value, depth = 0) {
-  if (!value || depth > 6 || typeof value === "string") return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findNestedMessage(item, depth + 1);
-      if (found) return found;
-    }
-    return null;
-  }
-  if (typeof value !== "object") return null;
-  if (typeof value.message === "string" && value.message.trim()) return value.message;
-  if (typeof value.error?.message === "string" && value.error.message.trim()) return value.error.message;
-  if (typeof value.response?.error?.message === "string" && value.response.error.message.trim()) return value.response.error.message;
-  for (const child of Object.values(value)) {
-    const found = findNestedMessage(child, depth + 1);
-    if (found) return found;
-  }
-  return null;
-}
-
-function extractSseErrorMessage(text, fallback) {
-  const exact = text?.match(/Selected model is at capacity\. Please try a different model\./i)?.[0];
-  if (exact) return exact;
-
-  for (const line of String(text || "").split(/\r?\n/)) {
-    if (!line.startsWith("data:")) continue;
-    const data = line.slice(5).trim();
-    if (!data || data === "[DONE]") continue;
-    try {
-      const message = findNestedMessage(JSON.parse(data));
-      if (message) return message;
-    } catch {
-      // Ignore non-JSON SSE data lines.
-    }
-  }
-
-  return fallback || CODEX_MODEL_CAPACITY_MESSAGE;
-}
-
-function codexSseErrorResponse(status, message) {
+function codexSseErrorResponse(status, message, originalHeaders) {
+  const headers = new Headers(originalHeaders);
+  headers.set("Content-Type", "application/json");
+  headers.delete("Content-Length");
+  headers.delete("Content-Encoding");
   return new Response(JSON.stringify({
     error: {
       message,
@@ -199,7 +157,7 @@ function codexSseErrorResponse(status, message) {
     }
   }), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers,
   });
 }
 
@@ -291,11 +249,14 @@ export class CodexExecutor extends BaseExecutor {
     // Retry loop for SSE-level overloaded errors (200 OK body contains event: error)
     // Reuses 503 retry config — same semantic: upstream temporarily unavailable
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
-    const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
+    const { attempts, delayMs } = resolveRetryEntry(retryConfig[HTTP_STATUS.SERVICE_UNAVAILABLE]);
     let attempt = 0;
+    const compact = Boolean(args.body?._compact);
     while (true) {
-      const result = await super.execute(args);
-      const peek = await this._peekSseTransientError(result.response);
+      args.signal?.throwIfAborted();
+      const result = await super.execute(attempt ? { ...args, proxyOptions: { ...args.proxyOptions, forceFreshSocket: true } } : args);
+      if (compact) return result;
+      const peek = await this._peekSseTransientError(result.response, args.signal);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
         if (peek.replacementBody) {
@@ -309,77 +270,36 @@ export class CodexExecutor extends BaseExecutor {
       }
       if (peek.accountFallback) {
         args.log?.warn?.("RETRY", `CODEX | SSE account fallback "${peek.message}"`);
-        result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message || CODEX_MODEL_CAPACITY_MESSAGE);
+        result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message, result.response.headers);
         return result;
       }
-      if (attempt >= attempts) {
-        args.log?.warn?.("RETRY", `CODEX | SSE overloaded "${peek.matched}" — retries exhausted (${attempt}/${attempts})`);
-        result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message || peek.matched);
+      if (!peek.retryable || attempt >= attempts) {
+        const status = getStreamErrorStatus(peek.error) ?? (peek.retryable ? HTTP_STATUS.SERVICE_UNAVAILABLE : HTTP_STATUS.BAD_GATEWAY);
+        args.log?.warn?.("RETRY", `CODEX | SSE failure "${peek.message}" (${attempt}/${attempts} retries)`);
+        result.response = codexSseErrorResponse(status, peek.message, result.response.headers);
         return result;
       }
       attempt++;
       args.log?.debug?.("RETRY", `CODEX | SSE "${peek.matched}" retry ${attempt}/${attempts} after ${delayMs / 1000}s`);
       dbg("CODEX", `SSE overloaded "${peek.matched}" → retry ${attempt}/${attempts} in ${delayMs}ms`);
-      await new Promise(r => setTimeout(r, delayMs));
+      if (delayMs > 0) await delay(delayMs, undefined, { signal: args.signal });
     }
   }
 
-  // Peek first N bytes of SSE body to detect upstream transient errors.
-  // Returns { matched: string|null, message: string|null, accountFallback: boolean, replacementBody: ReadableStream|null }.
-  // Caller must use replacementBody when no error matched (original body has been read).
-  async _peekSseTransientError(response) {
-    if (!response || !response.ok || !response.body) return { matched: null, message: null, accountFallback: false, replacementBody: null };
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    const chunks = [];
-    let text = "";
-    let matched = null;
-    let accountFallback = false;
-    try {
-      while (text.length < CODEX_SSE_PEEK_BYTES) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        text += decoder.decode(value, { stream: true });
-        const lowerText = text.toLowerCase();
-        const accountHit = CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS.find(p => lowerText.includes(p));
-        if (accountHit) { matched = accountHit; accountFallback = true; break; }
-        const retryHit = CODEX_SSE_RETRY_PATTERNS.find(p => lowerText.includes(p));
-        if (retryHit) { matched = retryHit; break; }
-        if (CODEX_SSE_USER_OUTPUT_PATTERNS.some(p => lowerText.includes(p))) break;
-      }
-    } catch (e) {
-      dbg("CODEX", `peek read error: ${e.message}`);
+  // Codex owns its retry budget and capacity fallback. It uses the same bounded
+  // frame inspection as other executors, so assistant prose is never matched as an error.
+  async _peekSseTransientError(response, signal) {
+    const contentType = response?.headers?.get("content-type")?.toLowerCase();
+    if (!response?.ok || (contentType && !contentType.includes("text/event-stream"))) {
+      return { matched: null, replacementBody: null };
     }
+    const checked = await inspectStreamingPrelude(response, { signal });
+    if (!checked.error) return { matched: null, replacementBody: checked.response.body };
 
-    if (matched) {
-      try { await reader.cancel(); } catch { /* noop */ }
-      try { reader.releaseLock(); } catch { /* noop */ }
-      return { matched, message: extractSseErrorMessage(text, matched), accountFallback, replacementBody: null };
-    }
-
-    reader.releaseLock();
-
-    // Re-assemble stream: prefix chunks + remaining upstream body
-    const upstream = response.body;
-    let upstreamReader = null;
-    const replacementBody = new ReadableStream({
-      start(controller) {
-        for (const c of chunks) controller.enqueue(c);
-        upstreamReader = upstream.getReader();
-      },
-      async pull(controller) {
-        try {
-          const { done, value } = await upstreamReader.read();
-          if (done) { controller.close(); return; }
-          controller.enqueue(value);
-        } catch (e) { controller.error(e); }
-      },
-      cancel(reason) {
-        try { upstreamReader?.cancel(reason); } catch { /* noop */ }
-      },
-    });
-    return { matched: null, message: null, accountFallback: false, replacementBody };
+    const { error } = checked;
+    const text = `${error.message} ${error.code || ""}`.toLowerCase();
+    const capacity = ACCOUNT_SCOPE_STREAM_ERROR_PATTERNS.find((pattern) => text.includes(pattern));
+    return { matched: capacity || error.message, message: error.message, accountFallback: Boolean(capacity), retryable: isRetryablePreContentError(error), error };
   }
 
   // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise

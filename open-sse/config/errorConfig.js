@@ -45,6 +45,7 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 const COOLDOWN = {
   long: 2 * 60 * 1000,
   short: 5 * 1000,
+  cloudflareTimeout: 2 * 1000,
 };
 
 /**
@@ -81,6 +82,7 @@ export const ERROR_RULES = [
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
+  { status: 524, cooldownMs: COOLDOWN.cloudflareTimeout },
   { status: 429, backoff: true },
 ];
 
@@ -92,3 +94,92 @@ export const COOLDOWN_MS = {
   transient: TRANSIENT_COOLDOWN_MS,
   requestNotAllowed: COOLDOWN.short,
 };
+
+/**
+ * In-band stream/transport failures: the upstream hop dropped mid-request, not a
+ * problem with the request or credential. Providers report these inside 200-OK
+ * SSE bodies (or as error bodies) with provider-specific codes, so the patterns
+ * stay provider-agnostic — matched case-insensitively against the raw error text.
+ * Treating them as transient lets the router retry (and keeps them out of the
+ * client's "unknown error" bucket).
+ */
+export const TRANSIENT_STREAM_ERROR_PATTERNS = [
+  "server_is_overloaded",
+  "service_unavailable_error",
+  "http2_stream_error",
+  "stream_error",
+  "stream_failed",
+  "stream_disconnected",
+  "upstream_stream_read_error",
+  "stream_closed",
+  "upstream_disconnected",
+  "connection_reset",
+  "connection_error",
+  "econnreset",
+  "socket_hang_up",
+  "premature_close",
+  "network_error",
+  "transport_error",
+  // Human-readable phrases from parsed upstream errors.
+  "http/2 stream failed",
+  "http2 stream failed",
+  "socket hang up",
+  "network connection failed",
+  "network connection was lost",
+  "connection reset by server",
+  "upstream connection lost",
+  "upstream response stream was interrupted",
+  "upstream stream disconnected before completion",
+  "temporarily overloaded",
+];
+
+export const STREAM_ERROR_STATUS_BY_TYPE = {
+  invalid_request_error: 400,
+  authentication_error: 401,
+  billing_error: 402,
+  payment_required: 402,
+  permission_error: 403,
+  not_found_error: 404,
+  rate_limit_error: 429,
+  overloaded_error: 503,
+  service_unavailable_error: 503,
+};
+
+export const STREAM_FAILURE_MESSAGES = {
+  headers: "Timed out waiting for upstream response headers",
+  firstOutput: "Timed out waiting for first upstream stream output",
+  stall: "stream stall timeout",
+  noOutput: "Upstream closed before sending any stream output",
+  missingTerminal: "Upstream connection closed before a terminal event",
+  reported: "Upstream SSE stream failed",
+};
+
+export const UPSTREAM_ERROR_UNWRAP_DEPTH = 4;
+export const UPSTREAM_ERROR_TITLE_MAX_CHARS = 160;
+
+/**
+ * Extra phrasings that make a stream failure worth an in-router retry. Only
+ * consulted before any content reached the client, so broader wording is safe.
+ */
+export const PRE_CONTENT_RETRY_PATTERNS = [
+  "overload",
+  "unavailable",
+  "timeout",
+  "timed out",
+  "connection",
+  "upstream",
+  "try again",
+  "capacity",
+  "server_error",
+  "internal error",
+  "rate_limit",
+  "rate limit",
+  "too many requests",
+  "terminated",
+];
+
+/** In-band errors that mean the account/model is saturated → rotate accounts. */
+export const ACCOUNT_SCOPE_STREAM_ERROR_PATTERNS = [
+  "selected model is at capacity",
+  "model_at_capacity",
+];

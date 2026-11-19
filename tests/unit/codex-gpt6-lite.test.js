@@ -8,6 +8,9 @@ import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import * as proxyFetchModule from "../../open-sse/utils/proxyFetch.js";
 
 const credentials = { connectionId: "fixture", accessToken: "fixture-token" };
+const mockStream = () => new Response('data: {"type":"response.completed","response":{"status":"completed"}}\n\n', {
+  headers: { "Content-Type": "text/event-stream" },
+});
 afterEach(() => vi.restoreAllMocks());
 
 describe("Codex GPT-6 Sol/Luna transport", () => {
@@ -81,9 +84,7 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
   });
 
   it.each(["gpt-6-sol", "gpt-6-luna"])("keeps hosted web_search available on %s", async (model) => {
-    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
-      ok: true, status: 200, headers: new Map(),
-    });
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockImplementation(async () => mockStream());
     await new CodexExecutor().execute({
       model,
       body: {
@@ -106,9 +107,7 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
   });
 
   it.each(["gpt-6-sol", "gpt-6-luna"])("registers auto-injected hosted search on %s", async (model) => {
-    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
-      ok: true, status: 200, headers: new Map(),
-    });
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockImplementation(async () => mockStream());
     await new CodexExecutor().execute({
       model,
       body: { model, input: "Search the web", _autoCodexWebSearch: true },
@@ -122,9 +121,7 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
   });
 
   it("moves hosted search out of a native Lite prefix", async () => {
-    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
-      ok: true, status: 200, headers: new Map(),
-    });
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockImplementation(async () => mockStream());
     const tool = { type: "function", name: "run", parameters: { type: "object", properties: {} } };
     await new CodexExecutor().execute({
       model: "gpt-6-sol",
@@ -143,7 +140,7 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
   });
 
   it("preserves native Lite developer instructions when switching for hosted search", async () => {
-    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({ ok: true, status: 200, headers: new Map() });
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockImplementation(async () => mockStream());
     const instruction = { type: "message", role: "developer", content: [{ type: "input_text", text: "Only answer in French" }] };
     await new CodexExecutor().execute({
       model: "gpt-6-sol", body: { model: "gpt-6-sol", input: [
@@ -160,7 +157,7 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
   });
 
   it("does not duplicate tools when hosted search appears in both tool locations", async () => {
-    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({ ok: true, status: 200, headers: new Map() });
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockImplementation(async () => mockStream());
     const tool = { type: "function", name: "run", parameters: { type: "object", properties: {} } };
     await new CodexExecutor().execute({
       model: "gpt-6-sol", body: { model: "gpt-6-sol", input: [
@@ -210,9 +207,7 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
   });
 
   it("sends the Lite shape and header in the actual outbound request", async () => {
-    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
-      ok: true, status: 200, headers: new Map(),
-    });
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockImplementation(async () => mockStream());
     await new CodexExecutor().execute({
       model: "gpt-6-luna",
       body: { model: "gpt-6-luna", input: "hello", instructions: "Do the task" },

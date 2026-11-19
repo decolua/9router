@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { initState, translateResponse } from "../../open-sse/translator/index.js";
 import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
+import { extractUsage } from "../../open-sse/utils/usageTracking.js";
 
 async function runTransform(input) {
   const encoder = new TextEncoder();
@@ -92,5 +94,69 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output.indexOf("event: response.failed")).toBeLessThan(output.indexOf("data: [DONE]"));
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
     expect(output).not.toContain("data: null");
+  });
+});
+
+const OUTPUT_LIMIT = {
+  type: "response.incomplete",
+  response: {
+    id: "resp_test",
+    status: "incomplete",
+    incomplete_details: { reason: "max_output_tokens" },
+    usage: {
+      input_tokens: 120,
+      output_tokens: 24,
+      total_tokens: 144,
+      input_tokens_details: { cached_tokens: 80 },
+      output_tokens_details: { reasoning_tokens: 8 },
+    },
+  },
+};
+
+const CHAT_USAGE = {
+  prompt_tokens: 120,
+  completion_tokens: 24,
+  total_tokens: 144,
+  prompt_tokens_details: { cached_tokens: 80 },
+  completion_tokens_details: { reasoning_tokens: 8 },
+};
+
+describe("Responses output limits translated to Chat", () => {
+  it.each([false, true])("emits one length finish with usage (in-flight tool call: %s)", (withToolCall) => {
+    const state = initState(FORMATS.OPENAI);
+    const translate = (chunk) => translateResponse(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, chunk, state);
+
+    if (withToolCall) {
+      translate({
+        type: "response.output_item.added",
+        item: { id: "fc_1", call_id: "call_1", type: "function_call", name: "lookup" },
+      });
+      const [args] = translate({ type: "response.function_call_arguments.delta", item_id: "fc_1", delta: '{"key":' });
+      expect(args.choices[0].delta.tool_calls[0].function.arguments).toBe('{"key":');
+    } else {
+      translate({ type: "response.output_text.delta", delta: "partial" });
+    }
+
+    const terminal = translate(OUTPUT_LIMIT);
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0].choices).toEqual([{ index: 0, delta: {}, finish_reason: "length" }]);
+    expect(terminal[0].usage).toEqual(CHAT_USAGE);
+    expect(state.finishReason).toBe("length");
+    expect(translate(OUTPUT_LIMIT)).toEqual([]);
+    expect(translate({ type: "response.done", response: { usage: OUTPUT_LIMIT.response.usage } })).toEqual([]);
+    expect(translate(null)).toEqual([]);
+    expect(state.usage).toEqual({ ...CHAT_USAGE, cached_tokens: 80, reasoning_tokens: 8 });
+  });
+
+  it.each(["content_filter", "unknown_reason", undefined])("keeps the existing fallback for incomplete reason %s", (reason) => {
+    const state = initState(FORMATS.OPENAI);
+    const translate = (chunk) => translateResponse(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, chunk, state);
+    translate({ type: "response.output_text.delta", delta: "partial" });
+    expect(translate({ ...OUTPUT_LIMIT, response: { ...OUTPUT_LIMIT.response, incomplete_details: { reason } } })).toEqual([]);
+    expect(translate(null)[0].choices[0].finish_reason).toBe("stop");
+  });
+
+  it("extracts incomplete terminal usage for accounting", () => {
+    expect(extractUsage(OUTPUT_LIMIT)).toEqual({ ...CHAT_USAGE, cached_tokens: 80, reasoning_tokens: 8 });
   });
 });

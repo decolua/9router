@@ -28,7 +28,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
-import { FETCH_CONNECT_TIMEOUT_MS, HTTP_STATUS } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, resolveStreamFetchTimeouts } from "../config/runtimeConfig.js";
 import {
   QODER_CHAT_SIG_PATH,
   QODER_CONTEXT_TIER_ENV,
@@ -660,7 +660,7 @@ export class QoderExecutor extends BaseExecutor {
   //   - body encoded with QoderEncodeBody before signing
   //   - COSY headers built from the *encoded* body bytes
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, credentials, signal, log, proxyOptions = null }) {
     // PAT (pt-...) → exchange for short-lived job token + resolve userId so
     // downstream COSY signing + catalog fetch work. Device tokens (dt-...) and
     // job tokens (jt-...) skip this and are used directly.
@@ -792,17 +792,26 @@ export class QoderExecutor extends BaseExecutor {
         ...attemptHeaders,
       };
 
-      // Abort if upstream doesn't return response headers within connect timeout.
-      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+      // Signed inference always uses SSE, even when the caller aggregates it.
+      const streamTimeouts = resolveStreamFetchTimeouts(this.config);
       const connectCtrl = new AbortController();
-      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
+      const connectTimer = setTimeout(
+        () => connectCtrl.abort(new Error("fetch connect timeout")),
+        streamTimeouts.streamHeadersTimeoutMs,
+      );
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       let response;
       try {
         response = await proxyAwareFetch(
           url,
-          { method: "POST", headers: attemptHeadersFull, body: attemptEncoded, signal: mergedSignal },
+          {
+            method: "POST",
+            headers: attemptHeadersFull,
+            body: attemptEncoded,
+            signal: mergedSignal,
+            ...streamTimeouts,
+          },
           // A failed proxy request may already have reached Qoder. Replaying
           // the same COSY signature directly reuses its requestId and returns
           // 403/code 103. Let the caller retry through execute() with fresh signing.

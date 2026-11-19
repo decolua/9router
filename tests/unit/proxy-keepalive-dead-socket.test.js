@@ -110,7 +110,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(fetchMock.mock.calls[1][1].headers).toEqual({ Authorization: "Bearer nvapi-test" });
   });
 
-  it("does not replay on the fresh socket when the caller aborted or the body is a locked stream", async () => {
+  it("does not dispatch a fetch after the caller has aborted", async () => {
     const fetchMock = vi.fn()
       .mockRejectedValue(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } }));
     vi.doMock("undici", async () => {
@@ -129,8 +129,8 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
         body: "{}",
         signal: controller.signal,
       })
-    ).rejects.toThrow(/fetch failed/);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    ).rejects.toBe(controller.signal.reason);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("does not replay on an ambiguous bare fetch failed (request may have been served)", async () => {
