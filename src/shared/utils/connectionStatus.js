@@ -5,6 +5,11 @@ export function getStatusVariant(isActive, effectiveStatus) {
   return "default";
 }
 
+// null preserves the full catalog; [] is an explicit account deny-all.
+export function filterConnectionsByIds(connections, allowedConnectionIds) {
+  return allowedConnectionIds === null ? connections : connections.filter((connection) => allowedConnectionIds.includes(connection.id));
+}
+
 /**
  * Identify providers that have connections configured, but ALL of them are deactivated (isActive === false).
  * Providers with 0 connections (e.g. keyless local nodes) are NOT considered deactivated.

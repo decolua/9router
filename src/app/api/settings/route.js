@@ -3,6 +3,7 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
+import { validateAccountSelectionSettings } from "@/shared/utils/accountOrdering";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -38,6 +39,11 @@ export async function GET() {
 export async function PATCH(request) {
   try {
     const body = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Invalid settings" }, { status: 400 });
+    }
+    const selectionError = validateAccountSelectionSettings(body);
+    if (selectionError) return NextResponse.json({ error: selectionError }, { status: 400 });
 
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
@@ -77,6 +83,10 @@ export async function PATCH(request) {
     }
 
     const settings = await updateSettings(body);
+    if (Object.prototype.hasOwnProperty.call(body, "providerStrategies")) {
+      const { configureAccountQuotaWindows } = await import("@/shared/services/accountQuotaWindows");
+      configureAccountQuotaWindows(settings);
+    }
 
     // Apply outbound proxy settings immediately (no restart required)
     if (

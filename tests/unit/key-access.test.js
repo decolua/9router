@@ -208,22 +208,41 @@ describe("capacity-adapter models", () => {
 });
 
 describe("helpers: storage + validation", () => {
+  it("account policy remains independent and fails closed on corrupt lists", () => {
+    for (const raw of ["broken", "{}", "null", "3"]) {
+      expect(helpers.keyAccessFromColumns(0, "[]", 1, raw)).toEqual({ restricted: false, allow: [], accountsRestricted: true, accountIds: [] });
+    }
+    expect(helpers.keyAccessFromColumns(1, '["Main"]', 1, '[" account-A ","account-A","account-a"]'))
+      .toEqual({ restricted: true, allow: ["Main"], accountsRestricted: true, accountIds: ["account-A", "account-a"] });
+    expect(helpers.keyAccessToColumns({ restricted: false, accountsRestricted: true, accountIds: ["a", "A", "a"] }))
+      .toEqual({ accessRestricted: 0, accessAllow: "[]", accessAccountsRestricted: 1, accessAccountIds: '["a","A"]' });
+  });
+  it("validates account types and bounds without requiring model restriction", () => {
+    const v = helpers.validateKeyAccessInput;
+    expect(v({ restricted: false, accountsRestricted: true, accountIds: [" A ", "A", "a", ""] }).value)
+      .toEqual({ restricted: false, allow: [], accountsRestricted: true, accountIds: ["A", "a"] });
+    expect(v({ restricted: false, accountsRestricted: true }).value.accountIds).toEqual([]);
+    for (const accountsRestricted of [1, "true", null]) expect(v({ restricted: false, accountsRestricted }).ok).toBe(false);
+    for (const accountIds of [null, "a", [1], Array(KEY_ACCESS_MAX_ENTRIES + 1).fill("a"), ["x".repeat(300)]]) {
+      expect(v({ restricted: false, accountsRestricted: true, accountIds }).ok).toBe(false);
+    }
+  });
   it("columns -> access fails closed", () => {
-    expect(helpers.keyAccessFromColumns(0, '["x"]')).toEqual({ restricted: false, allow: [] });
-    expect(helpers.keyAccessFromColumns(null, null)).toEqual({ restricted: false, allow: [] }); // pre-migration row
-    expect(helpers.keyAccessFromColumns(1, "not json")).toEqual({ restricted: true, allow: [] });
-    expect(helpers.keyAccessFromColumns(1, '{"a":1}')).toEqual({ restricted: true, allow: [] });
-    expect(helpers.keyAccessFromColumns(1, '[" a ", "A", "", 3, "b"]')).toEqual({ restricted: true, allow: ["a", "b"] });
+    expect(helpers.keyAccessFromColumns(0, '["x"]')).toEqual({ restricted: false, allow: [], accountsRestricted: false, accountIds: [] });
+    expect(helpers.keyAccessFromColumns(null, null)).toEqual({ restricted: false, allow: [], accountsRestricted: false, accountIds: [] }); // pre-migration row
+    expect(helpers.keyAccessFromColumns(1, "not json")).toEqual({ restricted: true, allow: [], accountsRestricted: false, accountIds: [] });
+    expect(helpers.keyAccessFromColumns(1, '{"a":1}')).toEqual({ restricted: true, allow: [], accountsRestricted: false, accountIds: [] });
+    expect(helpers.keyAccessFromColumns(1, '[" a ", "A", "", 3, "b"]')).toEqual({ restricted: true, allow: ["a", "b"], accountsRestricted: false, accountIds: [] });
   });
   it("access -> columns", () => {
-    expect(helpers.keyAccessToColumns(undefined)).toEqual({ accessRestricted: 0, accessAllow: "[]" });
-    expect(helpers.keyAccessToColumns({ restricted: true, allow: ["x", "X"] })).toEqual({ accessRestricted: 1, accessAllow: '["x"]' });
-    expect(helpers.keyAccessToColumns({ restricted: false, allow: ["x"] })).toEqual({ accessRestricted: 0, accessAllow: "[]" });
+    expect(helpers.keyAccessToColumns(undefined)).toEqual({ accessRestricted: 0, accessAllow: "[]", accessAccountsRestricted: 0, accessAccountIds: "[]" });
+    expect(helpers.keyAccessToColumns({ restricted: true, allow: ["x", "X"] })).toEqual({ accessRestricted: 1, accessAllow: '["x"]', accessAccountsRestricted: 0, accessAccountIds: "[]" });
+    expect(helpers.keyAccessToColumns({ restricted: false, allow: ["x"] })).toEqual({ accessRestricted: 0, accessAllow: "[]", accessAccountsRestricted: 0, accessAccountIds: "[]" });
   });
   it("input validation rejects rather than repairs", () => {
     const v = helpers.validateKeyAccessInput;
-    expect(v({ restricted: true, allow: [" Main ", "main", "cx/gpt-5"] })).toEqual({ ok: true, value: { restricted: true, allow: ["Main", "cx/gpt-5"] } });
-    expect(v({ restricted: false })).toEqual({ ok: true, value: { restricted: false, allow: [] } });
+    expect(v({ restricted: true, allow: [" Main ", "main", "cx/gpt-5"] })).toEqual({ ok: true, value: { restricted: true, allow: ["Main", "cx/gpt-5"], accountsRestricted: false, accountIds: [] } });
+    expect(v({ restricted: false })).toEqual({ ok: true, value: { restricted: false, allow: [], accountsRestricted: false, accountIds: [] } });
     expect(v(null).ok).toBe(false);
     expect(v([]).ok).toBe(false);
     expect(v({ restricted: "yes", allow: [] }).ok).toBe(false);

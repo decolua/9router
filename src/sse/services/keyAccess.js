@@ -80,6 +80,15 @@ export async function getKeyAccessContext(request) {
   };
 }
 
+/** null means unrestricted; an empty list denies every account, including public providers. */
+export async function getAllowedAccountIds(request) {
+  const apiKey = extractClientApiKey(request);
+  if (!apiKey) return null;
+  const record = await getApiKeyByKey(apiKey);
+  if (!record?.access?.accountsRestricted) return null;
+  return Array.isArray(record.access.accountIds) ? record.access.accountIds : [];
+}
+
 // Resolve the allow list once per request: combo names, resolved model ids,
 // and resolved provider ids (for provider-as-model kinds).
 async function getAllowSets(ctx) {

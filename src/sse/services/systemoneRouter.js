@@ -20,6 +20,7 @@ import {
  *
  * @param {object} opts
  * @param {object} opts.body - Client request body
+ * @param {Request} [opts.request] - Client request for account access restrictions
  * @param {string[]} opts.models - Combo model candidate array
  * @param {string} [opts.routerModel] - System One router model (defaults to oc/jev-1.13-free)
  * @param {object} [opts.log] - Logger
@@ -28,6 +29,7 @@ import {
  */
 export async function resolveSmartChoice({
   body,
+  request,
   models,
   routerModel = DEFAULT_SYSTEMONE_ROUTER_MODEL,
   log,
@@ -56,7 +58,7 @@ export async function resolveSmartChoice({
     }
 
     const { provider, model } = modelInfo;
-    const credentials = await getProviderCredentials(provider, new Set(), model);
+    const credentials = await getProviderCredentials(provider, new Set(), model, { request });
     if (!credentials || credentials.allRateLimited) {
       log?.warn?.("COMBO", `smart-router: no credentials available for router provider "${provider}"`);
       return null;

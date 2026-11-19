@@ -46,54 +46,90 @@ afterEach(() => {
 });
 
 describe("apiKeys access columns: upgrade from the previous schema", () => {
+  it("upgrades schema 2 without weakening existing model restrictions", async () => {
+    writeLegacyDb(tempDir);
+    const legacy = new DatabaseSync(path.join(tempDir, "db", "data.sqlite"));
+    legacy.exec("ALTER TABLE apiKeys ADD COLUMN accessRestricted INTEGER DEFAULT 0");
+    legacy.exec("ALTER TABLE apiKeys ADD COLUMN accessAllow TEXT");
+    legacy.exec("UPDATE _meta SET value = '2' WHERE key = 'backupSchemaVersion'");
+    legacy.prepare("UPDATE apiKeys SET accessRestricted = 1, accessAllow = ? WHERE id = 'k1'").run('["Main"]');
+    legacy.close();
+    const { db } = await boot();
+    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: true, allow: ["Main"], accountsRestricted: false, accountIds: [] });
+    expect(fs.readdirSync(path.join(tempDir, "db", "backups")).some((name) => name.startsWith("schema-2-to-3"))).toBe(true);
+  });
+  it("preserves account policy when migrating legacy JSON", async () => {
+    const access = { restricted: false, allow: [], accountsRestricted: true, accountIds: ["account-A"] };
+    fs.writeFileSync(path.join(tempDir, "db.json"), JSON.stringify({ apiKeys: [{ id: "k1", key: "legacy", access }] }));
+    const { db } = await boot();
+    expect((await db.getApiKeyById("k1")).access).toEqual(access);
+  });
+  it("persists account-only policies through creation, updates and backups", async () => {
+    const { db, adapter } = await boot();
+    const access = { restricted: false, allow: [], accountsRestricted: true, accountIds: ["account-A", "account-a", "deleted-account"] };
+    const created = await db.createApiKey("limited", "machine-1", access);
+    expect(created.access).toEqual(access);
+    expect((await db.getApiKeyByKey(created.key)).access).toEqual(access);
+    await db.updateApiKey(created.id, { isActive: false });
+    await db.updateApiKey(created.id, { access: { restricted: true, allow: ["Main"] } });
+    expect((await db.getApiKeyById(created.id)).access).toEqual({ ...access, restricted: true, allow: ["Main"] });
+    const dump = await db.exportDb();
+    await db.importDb(dump);
+    expect((await db.getApiKeyById(created.id)).access).toEqual(dump.apiKeys[0].access);
+    const bad = { ...dump, apiKeys: [{ ...dump.apiKeys[0], access: { ...access, accountIds: "bad" } }] };
+    await expect(db.importDb(bad)).rejects.toThrow(/accountIds/);
+    expect((await db.getApiKeyById(created.id)).access).toEqual(dump.apiKeys[0].access);
+    adapter.run("UPDATE apiKeys SET accessAccountIds = ? WHERE id = ?", ["broken", created.id]);
+    expect((await db.getApiKeyById(created.id)).access).toEqual({ ...access, restricted: true, allow: ["Main"], accountIds: [] });
+  });
   it("adds the columns, keeps every row, and reads every existing key as unrestricted", async () => {
     writeLegacyDb(tempDir);
     const { db, adapter } = await boot();
 
     const cols = adapter.all(`PRAGMA table_info(apiKeys)`).map((c) => c.name);
-    expect(cols).toEqual(expect.arrayContaining(["accessRestricted", "accessAllow"]));
+    expect(cols).toEqual(expect.arrayContaining(["accessRestricted", "accessAllow", "accessAccountsRestricted", "accessAccountIds"]));
 
     const keys = await db.getApiKeys();
     expect(keys.map((k) => [k.id, k.name, k.isActive, k.access])).toEqual([
-      ["k1", "Default Key", true, { restricted: false, allow: [] }],
-      ["k2", "paused", false, { restricted: false, allow: [] }],
+      ["k1", "Default Key", true, { restricted: false, allow: [], accountsRestricted: false, accountIds: [] }],
+      ["k2", "paused", false, { restricted: false, allow: [], accountsRestricted: false, accountIds: [] }],
     ]);
     expect(await db.validateApiKey("sk-legacy-one")).toBe(true);
     expect((await db.getApiKeyByKey("sk-legacy-one")).access.restricted).toBe(false);
 
     // The schema bump took the pre-change safety backup.
     const backups = fs.readdirSync(path.join(tempDir, "db", "backups"));
-    expect(backups.some((d) => d.startsWith("schema-1-to-2"))).toBe(true);
+    expect(backups.some((d) => d.startsWith("schema-1-to-3"))).toBe(true);
   });
 
   it("persists access through update, new keys default to unrestricted", async () => {
     writeLegacyDb(tempDir);
     const { db } = await boot();
-    const updated = await db.updateApiKey("k1", { access: { restricted: true, allow: ["Main", "cx/gpt-5"] } });
-    expect(updated.access).toEqual({ restricted: true, allow: ["Main", "cx/gpt-5"] });
-    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: true, allow: ["Main", "cx/gpt-5"] });
+    const updated = await db.updateApiKey("k1", { access: { restricted: true, allow: ["Main", "cx/gpt-5"], accountsRestricted: false, accountIds: [] } });
+    expect(updated.access).toEqual({ restricted: true, allow: ["Main", "cx/gpt-5"], accountsRestricted: false, accountIds: [] });
+    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: true, allow: ["Main", "cx/gpt-5"], accountsRestricted: false, accountIds: [] });
     // Unrelated updates (pause/resume) keep the access.
     await db.updateApiKey("k1", { isActive: false });
     expect((await db.getApiKeyById("k1")).access.restricted).toBe(true);
 
     const created = await db.createApiKey("fresh", "machine-1");
-    expect(created.access).toEqual({ restricted: false, allow: [] });
-    expect((await db.getApiKeyById(created.id)).access).toEqual({ restricted: false, allow: [] });
+    expect(created.access).toEqual({ restricted: false, allow: [], accountsRestricted: false, accountIds: [] });
+    expect((await db.getApiKeyById(created.id)).access).toEqual({ restricted: false, allow: [], accountsRestricted: false, accountIds: [] });
   });
 
   it("export/import round-trips access; a backup without access restores unrestricted; malformed access is refused", async () => {
     writeLegacyDb(tempDir);
     const { db } = await boot();
-    await db.updateApiKey("k1", { access: { restricted: true, allow: ["Main"] } });
+    await db.updateApiKey("k1", { access: { restricted: true, allow: ["Main"], accountsRestricted: false, accountIds: [] } });
     const dump = await db.exportDb();
-    expect(dump.apiKeys.find((k) => k.id === "k1").access).toEqual({ restricted: true, allow: ["Main"] });
+    expect(dump.apiKeys.find((k) => k.id === "k1").access).toEqual({ restricted: true, allow: ["Main"], accountsRestricted: false, accountIds: [] });
 
     await db.importDb(dump);
-    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: true, allow: ["Main"] });
+    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: true, allow: ["Main"], accountsRestricted: false, accountIds: [] });
 
     const legacy = { ...dump, apiKeys: dump.apiKeys.map(({ access, ...rest }) => rest) };
     await db.importDb(legacy);
-    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: false, allow: [] });
+    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: false, allow: [], accountsRestricted: false, accountIds: [] });
 
     const bad = { ...dump, apiKeys: [{ ...dump.apiKeys[0], access: { restricted: "yes", allow: [] } }] };
     await expect(db.importDb(bad)).rejects.toThrow(/access/);
