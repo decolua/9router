@@ -1,7 +1,11 @@
 import { FORMATS } from "../translator/formats.js";
 import { fallbackToolCallId } from "../translator/concerns/toolCall.js";
-import { buildErrorBody } from "./error.js";
+import { buildErrorBody, detectErrorBody, normalizeErrorMessage } from "./error.js";
 import { SSE_DONE } from "./sseConstants.js";
+import { CLAUDE_BLOCK, RESPONSES_ITEM } from "../translator/schema/blocks.js";
+import { CLAUDE_EVENT, RESPONSES_EVENT } from "../translator/schema/streamEvents.js";
+import { RESPONSES_STATUS } from "../translator/schema/finishReasons.js";
+import { STREAM_FAILURE_MESSAGES } from "../config/errorConfig.js";
 
 const sharedEncoder = new TextEncoder();
 
@@ -41,13 +45,8 @@ export function parseSSELine(line, format = null) {
 // Check if chunk has valuable content (not empty)
 export function hasValuableContent(chunk, format) {
   // OpenAI format
-  if (format === FORMATS.OPENAI && chunk.choices?.[0]?.delta) {
-    const delta = chunk.choices[0].delta;
-    return delta.content && delta.content !== "" ||
-           delta.reasoning_content && delta.reasoning_content !== "" ||
-           delta.tool_calls && delta.tool_calls.length > 0 ||
-           chunk.choices[0].finish_reason ||
-           delta.role;
+  if (format === FORMATS.OPENAI && Array.isArray(chunk.choices) && chunk.choices.length > 0) {
+    return hasStreamOutput(chunk) || chunk.choices.some((choice) => choice?.delta?.role);
   }
 
   // Claude format
@@ -182,11 +181,191 @@ export function formatSSE(data, sourceFormat) {
 // NOTE: non-SSE client formats (Ollama NDJSON) get an SSE frame here — dead in
 // practice because detectFormatByEndpoint never resolves to OLLAMA.
 export function buildStreamErrorBytes(statusCode, message, clientFormat) {
-  const { error } = buildErrorBody(statusCode, message);
+  const { error: built } = buildErrorBody(statusCode, message);
+
+  // OpenAI-compatible harnesses (Kilo CLI / opencode) only treat an in-stream
+  // error as retryable when the error object has a string message, no `type`
+  // field, and a numeric 4xx/5xx code. A string `type` blocks their envelope
+  // synthesis, so the failure surfaces as a non-retryable UnknownError.
+  const error = clientFormat === FORMATS.CLAUDE
+    ? built
+    : { message: built.message, code: statusCode };
 
   const sse = clientFormat === FORMATS.CLAUDE
     ? formatSSE({ type: "error", error }, FORMATS.CLAUDE)
     : formatSSE({ error }, clientFormat) + SSE_DONE;
 
   return sharedEncoder.encode(sse);
+}
+
+// Parse the first SSE event of an upstream stream. Returns the error descriptor
+// when that event is an error frame (nested, flat, or a Responses failure),
+// otherwise null. Only the first event is inspected — a later error is a
+// mid-stream failure and cannot change the response status anymore.
+export function parseFirstSseError(text) {
+  const { eventName, data } = readSseFields(String(text || "").split(/\r?\n\r?\n/, 1)[0] || "");
+  try { return detectSseEventError(JSON.parse(data), eventName); } catch { return null; }
+}
+
+export function readSseFields(event) {
+  let eventName;
+  const data = [];
+  for (const line of event.split(/\r?\n/)) {
+    if (line.startsWith("event:")) eventName = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+  }
+  return { eventName, data: data.join("\n").trim() };
+}
+
+// Metadata and keepalives do not satisfy the first-output deadline. A tool
+// identity or reasoning payload is usable even before the first text token.
+export function hasStreamOutput(chunk, eventName) {
+  if (!chunk || typeof chunk !== "object") return false;
+  if (Array.isArray(chunk.choices)) {
+    return chunk.choices.some((choice) => {
+      const delta = choice?.delta || choice?.message || {};
+      return Boolean(choice?.finish_reason || choice?.text || delta.content || delta.refusal
+        || delta.reasoning_content || delta.reasoning || delta.reasoning_details?.length
+        || delta.tool_calls?.length || delta.function_call || delta.audio?.data);
+    });
+  }
+  const type = eventName || chunk.type;
+  switch (type) {
+    case CLAUDE_EVENT.MESSAGE_START:
+    case CLAUDE_EVENT.MESSAGE_DELTA:
+    case CLAUDE_EVENT.CONTENT_BLOCK_STOP:
+    case CLAUDE_EVENT.PING:
+    case RESPONSES_EVENT.CREATED:
+    case RESPONSES_EVENT.IN_PROGRESS:
+    case RESPONSES_EVENT.QUEUED:
+      return false;
+    case CLAUDE_EVENT.MESSAGE_STOP:
+    case RESPONSES_EVENT.COMPLETED:
+    case RESPONSES_EVENT.DONE:
+    case RESPONSES_EVENT.INCOMPLETE:
+      return true;
+    case CLAUDE_EVENT.CONTENT_BLOCK_START: {
+      const block = chunk.content_block;
+      return Boolean(block?.text || block?.thinking || block?.id || block?.type === CLAUDE_BLOCK.TOOL_USE);
+    }
+    case CLAUDE_EVENT.CONTENT_BLOCK_DELTA:
+      return Boolean(chunk.delta?.text || chunk.delta?.thinking || chunk.delta?.partial_json);
+    case RESPONSES_EVENT.OUTPUT_ITEM_ADDED:
+    case RESPONSES_EVENT.OUTPUT_ITEM_DONE: {
+      const { item } = chunk;
+      return Boolean(item && (item.type !== RESPONSES_ITEM.MESSAGE && item.type !== RESPONSES_ITEM.REASONING
+        || item.content?.length || item.summary?.length || item.encrypted_content));
+    }
+    case RESPONSES_EVENT.CONTENT_PART_ADDED:
+    case RESPONSES_EVENT.REASONING_SUMMARY_PART_ADDED:
+      return Boolean(chunk.part?.text || chunk.part?.refusal);
+  }
+  if (typeof chunk.delta === "string" && chunk.delta.length > 0) return true;
+  if (chunk.response?.status === RESPONSES_STATUS.COMPLETED || chunk.response?.status === RESPONSES_STATUS.INCOMPLETE) return true;
+  const candidates = chunk.candidates ?? chunk.response?.candidates;
+  if (Array.isArray(candidates)) {
+    return candidates.some((candidate) => candidate?.finishReason || candidate?.content?.parts?.some?.(
+      (part) => part?.text || part?.functionCall || part?.inlineData,
+    ));
+  }
+  return Boolean(chunk.done === true || chunk.message?.content || chunk.message?.thinking || chunk.message?.tool_calls?.length
+    || chunk.text || chunk.content || chunk.tool_calls?.length || typeof chunk.response === "string" && chunk.response);
+}
+
+/** Error descriptor of one parsed SSE event (flat, nested or Responses `response.failed`), else null. */
+export function detectSseEventError(parsed, eventName) {
+  const type = eventName || parsed?.type;
+  if (type === RESPONSES_EVENT.FAILED || parsed?.response?.status === RESPONSES_STATUS.FAILED) {
+    return detectErrorBody({ error: parsed?.response?.error }) || detectErrorBody(parsed) || { message: "Upstream response failed" };
+  }
+  return detectErrorBody(parsed) || (type === "error"
+    ? { message: normalizeErrorMessage(parsed) || STREAM_FAILURE_MESSAGES.reported }
+    : null);
+}
+
+/**
+ * Peek the first SSE event of an upstream body before piping it to the client.
+ *
+ * Relays and gateways answer a streaming request with an in-band error frame
+ * (often before any content) when they are overloaded. Forwarding it leaves the
+ * client with a mid-stream error it can only retry; surfacing it as a pre-flight
+ * failure instead lets account fallback/retry run before any bytes are sent.
+ *
+ * Waits at most `timeoutMs` for the first event. Every byte read is replayed on
+ * the returned response, so a healthy stream is never truncated.
+ *
+ * @returns {Promise<{error: {message: string, code?: string|number, type?: string} | null, response: Response|null}>}
+ */
+export async function peekSseErrorFrame(response, timeoutMs) {
+  const body = response?.body;
+  if (!body || !(timeoutMs > 0)) return { error: null, response };
+
+  const reader = body.getReader();
+  const chunks = [];
+  const decoder = new TextDecoder();
+  let text = "";
+  let finished = false;
+  // A read that outlived the deadline must be kept: the underlying stream queues
+  // it, so dropping it would swallow the next chunk.
+  let pendingRead = null;
+  const deadline = Date.now() + timeoutMs;
+
+  while (!text.includes("\n\n")) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+
+    let timer;
+    const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve("timeout"), remaining); });
+    let result;
+    try {
+      pendingRead = pendingRead || reader.read();
+      result = await Promise.race([pendingRead, timeout]);
+    } catch {
+      finished = true;
+      break;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (result === "timeout") break;
+    pendingRead = null;
+    if (result.done) { finished = true; break; }
+    chunks.push(result.value);
+    text += decoder.decode(result.value, { stream: true });
+  }
+
+  const error = parseFirstSseError(text);
+  if (error) {
+    reader.cancel().catch(() => { });
+    return { error, response: null };
+  }
+
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+    },
+    async pull(controller) {
+      if (finished) { controller.close(); return; }
+      try {
+        const result = await (pendingRead || reader.read());
+        pendingRead = null;
+        if (result.done) controller.close();
+        else controller.enqueue(result.value);
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel(reason) {
+      reader.cancel(reason).catch(() => { });
+    },
+  });
+
+  return {
+    error: null,
+    response: new Response(stream, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    }),
+  };
 }

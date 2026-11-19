@@ -7,6 +7,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 }));
 
 import { handleNonStreamingResponse } from "../../open-sse/handlers/chatCore/nonStreamingHandler.js";
+import { handleForcedSSEToJson } from "../../open-sse/handlers/chatCore/sseToJsonHandler.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { saveRequestDetail, saveRequestUsage } from "@/lib/usageDb.js";
 
@@ -24,6 +25,15 @@ function context(raw, sourceFormat = FORMATS.CLAUDE, contentType = "text/event-s
     onRequestSuccess: vi.fn(), trackDone: vi.fn(), appendLog: vi.fn(),
     reqLogger: { logProviderResponse: vi.fn(), logConvertedResponse: vi.fn() },
     log: { line: vi.fn() },
+  };
+}
+
+function forcedContext(raw) {
+  return {
+    ...context(raw, FORMATS.OPENAI),
+    sourceFormat: FORMATS.OPENAI,
+    targetFormat: FORMATS.OPENAI,
+    provider: "op-test-chat",
   };
 }
 
@@ -81,6 +91,91 @@ describe("non-streaming SSE errors", () => {
 
     expectFailed(ctx, result, 503);
     expect((await result.response.json()).error.message).toBe("Upstream SSE stream failed");
+  });
+
+  const statusErrors = [
+    ["HTTP 524", { error: { status: 524, message: "Upstream timed out" } }, 502, 524],
+    ["HTTP 403", { error: { status: 403, message: "Account forbidden" } }, 403, 403],
+    ["HTTP 429", { error: { status: 429, message: "Rate limited" } }, 429, 429],
+    ["numeric code 429", { message: "Rate limited", code: 429 }, 429, 429],
+    ["numeric code 503", { message: "Service unavailable", code: 503 }, 503, 503],
+  ];
+
+  it.each(statusErrors)("maps %s in both SSE-to-JSON handlers", async (_label, error, status, accountStatus) => {
+    const raw = sse([error]);
+    const nonStreaming = context(raw);
+    const forced = forcedContext(raw);
+
+    const results = await Promise.all([
+      handleNonStreamingResponse(nonStreaming),
+      handleForcedSSEToJson(forced),
+    ]);
+
+    for (const [ctx, result] of [[nonStreaming, results[0]], [forced, results[1]]]) {
+      expect(result.success).toBe(false);
+      expect(result.status).toBe(status);
+      expect(result.accountStatus).toBe(accountStatus);
+      expect(result.response.status).toBe(status);
+      expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
+      expect(ctx.log.line).not.toHaveBeenCalled();
+    }
+    expect(nonStreaming.appendLog).toHaveBeenCalledExactlyOnceWith({ status: `FAILED ${status}` });
+    expect(forced.appendLog).not.toHaveBeenCalledWith(expect.objectContaining({ status: "200 OK" }));
+    expect(saveRequestDetail).not.toHaveBeenCalled();
+    expect(saveRequestUsage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["flat error", { type: "upstream_error", message: "Flat relay failure", code: 503 }, "Flat relay failure", 503],
+    ["double-encoded message", { message: JSON.stringify({ message: "Double-encoded failure", code: 429 }) }, "Double-encoded failure", 429],
+    ["Responses failure", { type: "response.failed", response: { error: { message: "Responses request failed" } } }, "Responses request failed", 502],
+  ])("rejects %s in both handlers without success side effects", async (_label, error, message, status) => {
+    const raw = sse([error]);
+    const nonStreaming = context(raw);
+    const forced = forcedContext(raw);
+
+    const results = await Promise.all([
+      handleNonStreamingResponse(nonStreaming),
+      handleForcedSSEToJson(forced),
+    ]);
+
+    for (const [ctx, result] of [[nonStreaming, results[0]], [forced, results[1]]]) {
+      expect(result.success).toBe(false);
+      expect(result.status).toBe(status);
+      expect(result.response.status).toBe(status);
+      expect((await result.response.json()).error.message).toBe(message);
+      expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
+      expect(ctx.log.line).not.toHaveBeenCalled();
+    }
+    expect(nonStreaming.appendLog).toHaveBeenCalledExactlyOnceWith({ status: `FAILED ${status}` });
+    expect(forced.appendLog).not.toHaveBeenCalledWith(expect.objectContaining({ status: "200 OK" }));
+    expect(saveRequestDetail).not.toHaveBeenCalled();
+    expect(saveRequestUsage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Responses API failure before success callbacks and usage tracking", async () => {
+    const raw = [
+      'event: response.failed\ndata: {"type":"response.failed","response":{"error":{"status":524,"message":"Responses upstream timed out"}}}',
+      "",
+    ].join("\n");
+    const ctx = {
+      ...forcedContext(raw),
+      provider: "codex",
+      targetFormat: FORMATS.OPENAI_RESPONSES,
+    };
+
+    const result = await handleForcedSSEToJson(ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.accountStatus).toBe(524);
+    expect(result.response.status).toBe(502);
+    expect((await result.response.json()).error.message).toBe("Responses upstream timed out");
+    expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
+    expect(ctx.appendLog).not.toHaveBeenCalledWith(expect.objectContaining({ status: "200 OK" }));
+    expect(ctx.log.line).not.toHaveBeenCalled();
+    expect(saveRequestDetail).not.toHaveBeenCalled();
+    expect(saveRequestUsage).not.toHaveBeenCalled();
   });
 
   it.each([FORMATS.OPENAI, FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES])("preserves successful SSE conversion for a %s client", async (sourceFormat) => {
