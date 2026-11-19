@@ -7,7 +7,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, showOrdering = true, quotaReset = undefined, quotaWindowLabel = "", onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -186,8 +186,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
         {/* Priority arrows */}
-        <div className="flex shrink-0 flex-col">
+        {showOrdering && <div className="flex shrink-0 flex-col">
           <button
+            aria-label="Move account up"
             onClick={onMoveUp}
             disabled={isFirst}
             className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
@@ -195,18 +196,24 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
           </button>
           <button
+            aria-label="Move account down"
             onClick={onMoveDown}
             disabled={isLast}
             className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
             <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
           </button>
-        </div>
+        </div>}
         <span className="material-symbols-outlined shrink-0 text-base text-text-muted">
           {authIcon}
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
+          {quotaReset !== undefined && (
+            <p className="mt-1 text-xs text-text-muted" data-testid="account-quota-reset">
+              {connection.isActive === false ? "Inactive, not eligible for consumption" : quotaReset === null ? "No valid window, manual fallback" : <>{quotaWindowLabel} reset: <time dateTime={new Date(quotaReset).toISOString()}>{new Date(quotaReset).toLocaleString()}</time></>}
+            </p>
+          )}
           {secondaryDisplayName && (
             <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
           )}
