@@ -224,6 +224,16 @@ export const MODEL_CAPABILITIES = {
   "north-mini-code-free":    { reasoning: true, thinkingFormat: "openai", contextWindow: 256000, maxOutput: 64000 },
   "ring-2.6-1t-free":        { reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 66000 },
   "x-preview-f-free":        { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+  "longcat-2.5-free":        { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 262144 },
+  "iceman-free":             { reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 131072 },
+  "inkling-2-small-free":    { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "beam-free":               { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "flint-40b-free":          { reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 65536 },
+  "nemotron-3.5-super-vl-free": { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "jev-1.13-free":           { reasoning: false, thinkingFormat: "openai", contextWindow: 64000, maxOutput: 32000 },
+  "nemotron-3.5-lightning-free": { reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 262144 },
+  "hy4-flash-free":          { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 65536 },
+  "tidepool-alpha-free":     { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
@@ -859,11 +869,14 @@ export function getCapabilitiesForModel(provider, model) {
     };
   }
 
-  // 1. Provider-specific override
+  // 1. Provider-specific override. Run through refine() so operator-set catalog
+  //    limits (per-model contextWindow/maxOutput overrides in model-catalog.json)
+  //    still take precedence over the static table — otherwise a provider-scoped
+  //    entry silently ignores the operator's correction (see #5097, #1294).
   if (provider) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    if (providerCaps?.[model]) return refine({ ...DEFAULT_CAPABILITIES, ...providerCaps[model] }, provider, model);
+    if (providerCaps?.[baseModel]) return refine({ ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] }, provider, model);
   }
 
   // 2. Canonical exact, then catalog overlay so provider-scoped models.dev
