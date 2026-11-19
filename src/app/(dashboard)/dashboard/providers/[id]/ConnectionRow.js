@@ -7,7 +7,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, showOrdering = true, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, showOrdering = true, quotaReset = undefined, quotaWindowLabel = "", onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -209,6 +209,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
+          {quotaReset !== undefined && (
+            <p className="mt-1 text-xs text-text-muted" data-testid="account-quota-reset">
+              {connection.isActive === false ? "Inactive, not eligible for consumption" : quotaReset === null ? "No valid window, manual fallback" : <>{quotaWindowLabel} reset: <time dateTime={new Date(quotaReset).toISOString()}>{new Date(quotaReset).toLocaleString()}</time></>}
+            </p>
+          )}
           {secondaryDisplayName && (
             <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
           )}

@@ -119,6 +119,15 @@ describe("provider account strategy UI controls", () => {
     expect(clearInterval).toHaveBeenCalledWith(7);
   });
 
+  it("shows reset below each account instead of duplicating a list in settings", () => {
+    const row = readFileSync(new URL("../../src/app/(dashboard)/dashboard/providers/[id]/ConnectionRow.js", import.meta.url), "utf8");
+    expect(source).not.toContain('aria-label="Quota-window order preview"');
+    expect(source).toContain('quotaReset={windowStrategy ? getAccountWindowReset(quotaSnapshots[conn.id]');
+    expect(row).toContain('data-testid="account-quota-reset"');
+    expect(row).toContain('<time dateTime={new Date(quotaReset).toISOString()}');
+    expect(row.indexOf('data-testid="account-quota-reset"')).toBeGreaterThan(row.indexOf('{displayName}</p>'));
+  });
+
   it("uses shared ordering for preview without writing automatic priorities", () => {
     expect(source).toContain("orderAccountsByWindow(connections, effectiveStrategy, quotaSnapshots, null, previewNow)");
     expect(source).toContain('strategyLoaded && effectiveStrategy === "fill-first" && !strategySaving');

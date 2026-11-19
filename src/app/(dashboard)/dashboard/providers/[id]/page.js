@@ -1164,6 +1164,8 @@ export default function ProviderDetailPage() {
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
                 showOrdering={effectiveStrategy === "fill-first"}
+                quotaReset={windowStrategy ? getAccountWindowReset(quotaSnapshots[conn.id], effectiveStrategy, null, previewNow) : undefined}
+                quotaWindowLabel={effectiveStrategy.startsWith("weekly-") ? "7-day window" : "5-hour window"}
                 isFirst={!canReorder || index === 0}
                 isLast={!canReorder || index === connections.length - 1}
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
@@ -1749,12 +1751,6 @@ export default function ProviderDetailPage() {
               <>
                 <p>Preview uses future reset times, not usage percentage. Order can vary by model. Missing, stale or expired windows fall back to manual priority after accounts with valid windows.</p>
                 <p role="status">{quotaRefreshing ? "Refreshing quota windows... " : ""}{!hasWindowData ? "No valid window data. Using manual order." : "Account list previews quota-window order."}</p>
-                <ol aria-label="Quota-window order preview" className="list-decimal pl-5">
-                  {displayConnections.map((connection) => {
-                    const reset = getAccountWindowReset(quotaSnapshots[connection.id], effectiveStrategy, null, previewNow);
-                    return <li key={connection.id}>{connection.name || connection.email || connection.id}: {connection.isActive === false ? "Inactive, not eligible for consumption" : reset == null ? "No valid window, manual fallback" : `Resets ${new Date(reset).toLocaleString()}`}</li>;
-                  })}
-                </ol>
               </>
             )}
             {windowStrategy && quotaError && <p role="alert" className="text-red-500">{quotaError} Last available data is kept until it expires.</p>}
