@@ -1,7 +1,7 @@
 import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
-import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
+import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, modelParams, normalizeModelId } from "../providers/models/schema.js";
 import { CODEX_REVIEW_SUFFIX, isMuseSparkModel, opencodeFamilyFormats } from "../providers/models/helpers.js";
 import { FORMATS } from "../translator/formats.js";
 export { PROVIDER_MODELS };
@@ -90,6 +90,12 @@ export function getModelType(aliasOrId, modelId) {
 // Raw registry entry for a model (suffix-aware) — executor lookups of per-model hints (e.g. defaultLocation).
 export function getModelMeta(aliasOrId, modelId) {
   return findModel(PROVIDER_MODELS[aliasOrId], modelId, aliasOrId) || null;
+}
+
+// Extra request params a model declares (registry `params`), e.g. ["input_type"].
+// Empty array when the model declares none — callers treat that as "no extra params".
+export function getModelParams(aliasOrId, modelId) {
+  return modelParams(findModel(PROVIDER_MODELS[aliasOrId], modelId, aliasOrId));
 }
 
 export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
