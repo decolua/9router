@@ -26,7 +26,7 @@ export default {
     },
     retry: {
       "429": {
-        attempts: 6,
+        attempts: 2,
       },
       "500": {
         attempts: 3,

@@ -286,7 +286,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           choices: [{ index: 0, message, finish_reason: finishReason }],
           usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, ...cacheDetails }
         };
-        finalResp = chatCompletionToClaudeMessage(intermediateOpenAI);
+        finalResp = openAICompletionToClaudeMessage(intermediateOpenAI);
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;

@@ -332,8 +332,15 @@ export class AntigravityExecutor extends BaseExecutor {
       for (const part of requestWithoutTools.systemInstruction.parts) {
         if (typeof part.text !== "string") continue;
         for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
-          part.text = part.text.replaceAll(from, to);
+          part.text = typeof from === "string"
+            ? part.text.replaceAll(from, to)
+            : part.text.replace(from, to);
         }
+        part.text = part.text.replace(/\n{3,}/g, "\n\n").trim();
+      }
+      requestWithoutTools.systemInstruction.parts = requestWithoutTools.systemInstruction.parts.filter(p => typeof p.text === "string" && p.text.length > 0);
+      if (requestWithoutTools.systemInstruction.parts.length === 0) {
+        delete requestWithoutTools.systemInstruction;
       }
     }
 
@@ -518,6 +525,22 @@ export class AntigravityExecutor extends BaseExecutor {
       retryMs = this.parseRetryFromErrorMessage(errorMessage);
     }
     if (retryMs) return retryMs <= MAX_RETRY_AFTER_MS ? retryMs : false;
+
+    // Quota exhaustion veto: if Google indicates quota exhaustion,
+    // abort retrying on this account immediately so chatCore/chat.js can fallback
+    // to the next account without a 48s stall (6 attempts with exponential backoff).
+    const lowerMessage = (errorMessage || "").toLowerCase();
+    if (
+      lowerMessage.includes("resource_exhausted") ||
+      lowerMessage.includes("resource has been exhausted") ||
+      lowerMessage.includes("quota exhausted") ||
+      lowerMessage.includes("quota reached") ||
+      lowerMessage.includes("check quota") ||
+      lowerMessage.includes("exhausted your capacity") ||
+      lowerMessage.includes("free tier")
+    ) {
+      return false;
+    }
 
     if (!this.isTransientAntigravityError(response.status, errorMessage)) return false;
 
