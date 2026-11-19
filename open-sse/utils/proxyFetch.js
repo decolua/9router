@@ -291,10 +291,19 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
 
 // autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
-// families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
+// families, fall over in 1s — replaces the old global ipv4first flag, which fixed
 // one broken-family network by breaking the other (see claude-code#20240).
 // requestTls must stay TLS-options-only (connect-level options belong in `connect`).
-const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 };
+// Node aborts an attempt that misses this budget instead of racing it, so the budget
+// must exceed a realistic intercontinental TCP RTT or every dual-stack connect fails (#5721).
+const DEFAULT_EYEBALLS_ATTEMPT_TIMEOUT_MS = 1000;
+// NINEROUTER_HAPPY_EYEBALLS_TIMEOUT_MS lets high-latency links raise the budget; invalid values fall back.
+export function parseEyeballsTimeoutMs(raw) {
+  const ms = Number(raw);
+  return Number.isInteger(ms) && ms >= 100 && ms <= 30000 ? ms : DEFAULT_EYEBALLS_ATTEMPT_TIMEOUT_MS;
+}
+export const EYEBALLS_ATTEMPT_TIMEOUT_MS = parseEyeballsTimeoutMs(process.env.NINEROUTER_HAPPY_EYEBALLS_TIMEOUT_MS);
+const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: EYEBALLS_ATTEMPT_TIMEOUT_MS };
 function buildConnectOptions(insecure) {
   return { ...EYEBALLS_CONNECT, ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) };
 }
