@@ -2,7 +2,7 @@
 
 import { safeParseJSON } from "../concerns/json.js";
 import { DEFAULT_IMAGE_MIME, OPENAI_BLOCK } from "../schema/index.js";
-import { isGemini4Model } from "../../providers/capabilities.js";
+import { isGemini4Model, isGeminiLevelThinkingModel } from "../../providers/capabilities.js";
 
 // Unsupported JSON Schema constraints that should be removed for Antigravity
 export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
@@ -549,7 +549,7 @@ export const SYNTHETIC_MIMICRY_TEXTS = new Set([
 // and enforce strict alternating roles (user <-> model) required by Google Gemini.
 export function normalizeGeminiContents(contents, model = null) {
   if (!contents || !Array.isArray(contents)) return [];
-  const frLast = isGemini4Model(model);
+  const frLast = isGeminiLevelThinkingModel(model);
 
   const raw = [];
   for (const c of contents) {

@@ -9,7 +9,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity, normalizeGeminiContents, DEFAULT_SAFETY_SETTINGS } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_CLAUDE_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
-import { isGemini4Model } from "../providers/capabilities.js";
+import { isGemini4Model, isGeminiLevelThinkingModel } from "../providers/capabilities.js";
 import { isValidClaudeSignature } from "../utils/claudeSignature.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
@@ -345,13 +345,11 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
-    const isLevelThinkingModel = isGemini4Model(body.model || model) || /(?:^|\/)gemini-3\.8(?:$|[-.(])/i.test(String(body.model || model || ""));
+    const isLevelThinkingModel = isGeminiLevelThinkingModel(body.model || model);
     if (isLevelThinkingModel) {
-      if (isGemini4Model(body.model || model)) {
-        delete generationConfig.temperature;
-        delete generationConfig.topP;
-        delete generationConfig.topK;
-      }
+      delete generationConfig.temperature;
+      delete generationConfig.topP;
+      delete generationConfig.topK;
       if (generationConfig.thinkingConfig) {
         const tc = generationConfig.thinkingConfig;
         if (tc.thinkingBudget !== undefined || tc.thinkingLevel === "minimal") {

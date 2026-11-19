@@ -35,7 +35,7 @@ import {
 } from "../formats/gemini.js";
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
-import { isGemini4Model } from "../../providers/capabilities.js";
+import { isGemini4Model, isGeminiLevelThinkingModel } from "../../providers/capabilities.js";
 
 // Sanitize function names for Gemini API.
 // Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
@@ -97,8 +97,8 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     safetySettings: DEFAULT_SAFETY_SETTINGS
   };
 
-  // Generation config — Gemini 4 removed the sampling params, forwarding them fails the request
-  const allowSampling = !isGemini4Model(model);
+  // Generation config — Gemini 4 and Gemini 3.8 Flash tiered drop sampling params when thinking is active
+  const allowSampling = !isGeminiLevelThinkingModel(model);
   if (allowSampling && body.temperature !== undefined) {
     result.generationConfig.temperature = body.temperature;
   }
@@ -323,10 +323,6 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
           }
         } else if (parts.length > 0) {
           result.contents.push({ role: GEMINI_ROLE.MODEL, parts });
-        } else {
-          // If assistant message was present in conversation history but empty/stripped,
-          // preserve it as a model placeholder turn so surrounding user turns do not collide
-          result.contents.push({ role: GEMINI_ROLE.MODEL, parts: [{ text: "Processing." }] });
         }
       }
     }
@@ -630,11 +626,6 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
         envelope.request.contents.push({
           role: msg.role === ROLE.ASSISTANT ? GEMINI_ROLE.MODEL : GEMINI_ROLE.USER,
           parts
-        });
-      } else if (msg.role === ROLE.ASSISTANT) {
-        envelope.request.contents.push({
-          role: GEMINI_ROLE.MODEL,
-          parts: [{ text: "Processing." }]
         });
       }
     }

@@ -159,14 +159,26 @@ export function openaiToClaudeResponse(chunk, state) {
       stopThinkingBlock(state, results);
       stopTextBlock(state, results);
       state.finishReason = "stop";
-      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      const rawUsage = state.usage || {};
+      const inputTokens = rawUsage.input_tokens ?? Math.max(0, (rawUsage.prompt_tokens || 0) - (rawUsage.cached_tokens || rawUsage.cache_read_input_tokens || 0) - (rawUsage.cache_creation_input_tokens || 0));
+      const outputTokens = rawUsage.output_tokens ?? (rawUsage.completion_tokens || 0);
+      const cleanUsage = {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens
+      };
+      if (rawUsage.cache_read_input_tokens || rawUsage.cached_tokens) {
+        cleanUsage.cache_read_input_tokens = rawUsage.cache_read_input_tokens ?? rawUsage.cached_tokens;
+      }
+      if (rawUsage.cache_creation_input_tokens) {
+        cleanUsage.cache_creation_input_tokens = rawUsage.cache_creation_input_tokens;
+      }
       results.push({
         type: "message_delta",
         delta: {
           stop_reason: "end_turn",
           stop_sequence: null
         },
-        usage: finalUsage
+        usage: cleanUsage
       });
       results.push({ type: "message_stop" });
       return results;
@@ -373,16 +385,16 @@ export function openaiToClaudeResponse(chunk, state) {
     stopTextBlock(state, results);
 
     for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered, state);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
-        });
-      }
+      // Emit buffered + sanitized args as single delta before stop.
+      // Claude Desktop SDK accumulates `input_json_delta` into `__json_buf` and parses it on stop.
+      // Always emit at least "{}" so `__json_buf` is initialized and avoids parsing errors.
+      const buffered = state.toolArgBuffers?.get(idx) ?? "{}";
+      const sanitized = sanitizeToolArgs(toolInfo.name, buffered || "{}", state);
+      results.push({
+        type: "content_block_delta",
+        index: toolInfo.blockIndex,
+        delta: { type: "input_json_delta", partial_json: sanitized || "{}" }
+      });
       results.push({
         type: "content_block_stop",
         index: toolInfo.blockIndex
@@ -398,12 +410,20 @@ export function openaiToClaudeResponse(chunk, state) {
     }
 
     // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+    const rawUsage = state.usage || {};
+    const inputTokens = rawUsage.input_tokens ?? Math.max(0, (rawUsage.prompt_tokens || 0) - (rawUsage.cached_tokens || rawUsage.cache_read_input_tokens || 0) - (rawUsage.cache_creation_input_tokens || 0));
+    const outputTokens = rawUsage.output_tokens ?? (rawUsage.completion_tokens || 0);
+    const cacheReadTokens = rawUsage.cache_read_input_tokens ?? rawUsage.cached_tokens;
+    const cacheCreateTokens = rawUsage.cache_creation_input_tokens;
+    const cleanUsage = {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens
+    };
+    if (cacheReadTokens) cleanUsage.cache_read_input_tokens = cacheReadTokens;
+    if (cacheCreateTokens) cleanUsage.cache_creation_input_tokens = cacheCreateTokens;
     if (state.webSearchUsage?.server_tool_use) {
-      finalUsage.server_tool_use = state.webSearchUsage.server_tool_use;
+      cleanUsage.server_tool_use = state.webSearchUsage.server_tool_use;
     }
-    const cleanUsage = { ...finalUsage };
-    delete cleanUsage.estimated;
     results.push({
       type: "message_delta",
       delta: {
