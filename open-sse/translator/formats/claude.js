@@ -211,6 +211,25 @@ function hasForeignServerToolUseId(block) {
     && !CLAUDE_SERVER_TOOL_USE_ID.test(String(block.id ?? ""));
 }
 
+// Console API keys answer Claude Code's identity system text with a misleading
+// 400 "credit balance is too low" (the identity is subscription-only). Native
+// passthrough forwards Claude Code / Claude Desktop (Cowork) bodies untouched, and
+// they lead the system prompt with these blocks, so drop them for API-key targets.
+const CLAUDE_CODE_IDENTITY = /^(You are Claude Code|You are a Claude agent, built on Anthropic's Claude Agent SDK|x-anthropic-billing-header:)/;
+
+export function dropClaudeCodeIdentitySystem(body) {
+  if (!body || typeof body !== "object" || !body.system) return body;
+  const isIdentity = (t) => typeof t === "string" && CLAUDE_CODE_IDENTITY.test(t.trim());
+  if (typeof body.system === "string") {
+    const rest = body.system.split("\n").filter((line) => !isIdentity(line)).join("\n").trim();
+    if (rest) body.system = rest; else delete body.system;
+  } else if (Array.isArray(body.system)) {
+    body.system = body.system.filter((b) => !isIdentity(b?.text));
+    if (body.system.length === 0) delete body.system;
+  }
+  return body;
+}
+
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.
 // Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
 // 1. thinking.type "adaptive" → unsupported on Haiku
