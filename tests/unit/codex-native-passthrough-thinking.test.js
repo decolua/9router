@@ -35,12 +35,13 @@ vi.mock("../../open-sse/handlers/chatCore/sseToJsonHandler.js", () => ({
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
 
-async function runNativeCodexRequest(model, reasoning) {
+async function runNativeCodexRequest(model, reasoning, overrides = {}) {
   const body = {
     model,
     input: "hello",
     stream: false,
     ...(reasoning ? { reasoning } : {}),
+    ...overrides,
   };
 
   await handleChatCore({
@@ -107,5 +108,29 @@ describe("native Codex passthrough thinking suffixes", () => {
 
     expect(body.model).toBe("gpt-5.6-terra");
     expect(body.reasoning).toEqual({ effort: "ultra" });
+  });
+
+  it("strips cache breakpoints from native Codex passthrough content", async () => {
+    const body = await runNativeCodexRequest("gpt-5.6-sol", undefined, {
+      instructions: "Keep responses concise.",
+      metadata: { session: "test-session" },
+      prompt_cache_key: "session-cache-key",
+      input: [{
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_text", text: "hello", prompt_cache_breakpoint: true },
+          { type: "input_text", text: "world" },
+        ],
+      }],
+    });
+
+    expect(body.input[0].content).toEqual([
+      { type: "input_text", text: "hello" },
+      { type: "input_text", text: "world" },
+    ]);
+    expect(body.instructions).toBe("Keep responses concise.");
+    expect(body.metadata).toEqual({ session: "test-session" });
+    expect(body.prompt_cache_key).toBe("session-cache-key");
   });
 });

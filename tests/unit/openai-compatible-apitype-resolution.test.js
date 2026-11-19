@@ -92,6 +92,50 @@ describe("openai-responses request shape", () => {
     expect(out.tools).toEqual(body.tools);
   });
 
+  it("strips Kilo cache breakpoints from native Responses content parts", () => {
+    const tools = [{ type: "function", name: "read_file", parameters: { type: "object", properties: {} } }];
+    const body = {
+      model: TEST_MODEL,
+      stream: true,
+      instructions: "Keep responses concise.",
+      metadata: { session: "test-session" },
+      prompt_cache_key: "session-cache-key",
+      input: [
+        {
+          role: "developer",
+          content: [{ type: "input_text", text: "system prompt", prompt_cache_breakpoint: true }],
+        },
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: "hello", prompt_cache_breakpoint: true },
+            { type: "input_text", text: "world" },
+          ],
+        },
+      ],
+      tools,
+    };
+
+    const out = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI_RESPONSES,
+      TEST_MODEL,
+      body,
+      true,
+      creds("auto"),
+      CHAT_ID,
+    );
+
+    expect(out.input[0].content[0]).toEqual({ type: "input_text", text: "system prompt" });
+    expect(out.input[1].content).toEqual([
+      { type: "input_text", text: "hello" },
+      { type: "input_text", text: "world" },
+    ]);
+    expect(out.prompt_cache_key).toBe("session-cache-key");
+    expect(out.instructions).toBe(body.instructions);
+    expect(out.metadata).toEqual(body.metadata);
+    expect(out.tools).toEqual(tools);
+  });
 });
 
 describe("executor buildUrl endpoint path", () => {

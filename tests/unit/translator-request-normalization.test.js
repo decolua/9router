@@ -7,7 +7,7 @@ import { filterToOpenAIFormat } from "../../open-sse/translator/formats/openai.j
 import { parseSSELine } from "../../open-sse/utils/streamHelpers.js";
 
 describe("request normalization", () => {
-  it("claudeToOpenAIRequest flattens text-only content arrays into string", () => {
+  it("claudeToOpenAIRequest preserves multiple text blocks", () => {
     const body = {
       messages: [
         {
@@ -21,7 +21,7 @@ describe("request normalization", () => {
     };
 
     const result = claudeToOpenAIRequest("gpt-oss:120b", body, true);
-    expect(result.messages[0].content).toBe("hi\nthere");
+    expect(result.messages[0].content).toEqual(body.messages[0].content);
   });
 
   it("claudeToOpenAIRequest preserves multimodal arrays", () => {
@@ -48,7 +48,7 @@ describe("request normalization", () => {
     expect(Array.isArray(result.messages[0].content)).toBe(true);
   });
 
-  it("filterToOpenAIFormat flattens text-only arrays to string", () => {
+  it("filterToOpenAIFormat preserves multiple text blocks", () => {
     const body = {
       messages: [
         {
@@ -62,10 +62,10 @@ describe("request normalization", () => {
     };
 
     const result = filterToOpenAIFormat(JSON.parse(JSON.stringify(body)));
-    expect(result.messages[0].content).toBe("a\nb");
+    expect(result.messages[0].content).toEqual(body.messages[0].content);
   });
 
-  it("translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe", () => {
+  it("translateRequest joins text blocks for a native Ollama request", () => {
     const body = {
       model: "ollama/gpt-oss:120b",
       system: [{ type: "text", text: "You are helpful." }],
@@ -83,7 +83,7 @@ describe("request normalization", () => {
 
     const result = translateRequest(
       FORMATS.CLAUDE,
-      FORMATS.OPENAI,
+      FORMATS.OLLAMA,
       "gpt-oss:120b",
       JSON.parse(JSON.stringify(body)),
       true,
@@ -94,6 +94,71 @@ describe("request normalization", () => {
     const userMessage = result.messages.find((m) => m.role === "user");
     expect(typeof userMessage.content).toBe("string");
     expect(userMessage.content).toBe("hello\nworld");
+  });
+
+  it("translateRequest fills every missing result in a partial parallel tool batch", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "Run both tools." },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "call_a", type: "function", function: { name: "alpha", arguments: "{}" } },
+            { id: "call_b", type: "function", function: { name: "beta", arguments: "{}" } },
+          ],
+        },
+        { role: "tool", tool_call_id: "call_a", content: "alpha result" },
+      ],
+    };
+
+    const result = translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "gpt-5.6-luna", body, true);
+    expect(result.messages.slice(2)).toEqual([
+      { role: "tool", tool_call_id: "call_a", content: "alpha result" },
+      { role: "tool", tool_call_id: "call_b", content: "[No response received]" },
+    ]);
+  });
+
+  it("translateRequest preserves duplicate and orphan tool output as user context", () => {
+    const body = {
+      messages: [
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "call_a", type: "function", function: { name: "alpha", arguments: "{}" } },
+          ],
+        },
+        { role: "tool", tool_call_id: "call_a", content: "first" },
+        { role: "tool", tool_call_id: "call_a", content: "duplicate" },
+        { role: "tool", tool_call_id: "call_unknown", content: "orphan" },
+      ],
+    };
+
+    const result = translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "gpt-5.6-luna", body, true);
+    expect(result.messages[1]).toEqual({ role: "tool", tool_call_id: "call_a", content: "first" });
+    expect(result.messages.slice(2).map((message) => message.role)).toEqual(["user", "user"]);
+    expect(result.messages[2].content).toContain("duplicate");
+    expect(result.messages[3].content).toContain("orphan");
+  });
+
+  it("translateRequest fills a tool result when history ends on a tool call", () => {
+    const body = {
+      messages: [{
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_a", type: "function", function: { name: "alpha", arguments: "{}" } },
+        ],
+      }],
+    };
+
+    const result = translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "gpt-5.6-luna", body, true);
+    expect(result.messages[1]).toEqual({
+      role: "tool",
+      tool_call_id: "call_a",
+      content: "[No response received]",
+    });
   });
 
   it("translateRequest strips unsupported Anthropic output_config for MiniMax Claude-compatible endpoints", () => {
@@ -164,14 +229,15 @@ describe("request normalization", () => {
     expect(result.output_config).toEqual(body.output_config);
   });
 
-  it("parseSSELine supports provider raw NDJSON stream lines", () => {
+  it("parseSSELine supports raw NDJSON on the native Ollama stream", () => {
     const raw = JSON.stringify({
       model: "gpt-oss:120b",
       message: { role: "assistant", content: "hello" },
       done: false,
     });
 
-    const parsed = parseSSELine(raw);
+    expect(parseSSELine(raw)).toBeNull();
+    const parsed = parseSSELine(raw, FORMATS.OLLAMA);
     expect(parsed).toEqual({
       model: "gpt-oss:120b",
       message: { role: "assistant", content: "hello" },
