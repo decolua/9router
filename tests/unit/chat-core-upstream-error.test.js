@@ -30,6 +30,31 @@ import { handleChatCore } from "../../open-sse/handlers/chatCore.js";
 describe("handleChatCore upstream error status", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it.each([false, true])("classifies a fetch AbortError using the downstream signal (%s)", async (abortClient) => {
+    const client = new AbortController();
+    const log = { line: vi.fn(), errorLine: vi.fn() };
+    executeMock.mockImplementationOnce(async () => {
+      if (abortClient) client.abort();
+      throw new DOMException("Transport aborted", "AbortError");
+    });
+    const result = await handleChatCore({
+      body: { model: "test", stream: true, messages: [{ role: "user", content: "hello" }] },
+      modelInfo: { provider: "openai-compatible-chat-test", model: "test" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      signal: client.signal,
+      log,
+    });
+
+    expect(result.status).toBe(abortClient ? 499 : 502);
+    if (abortClient) {
+      expect(log.line).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.stringContaining("DOWNSTREAM CANCELLED"));
+      expect(log.errorLine).not.toHaveBeenCalled();
+    } else {
+      expect(log.errorLine).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.stringContaining("UPSTREAM ERROR before headers"));
+      expect(log.line).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.stringContaining("DOWNSTREAM CANCELLED"));
+    }
+  });
+
   it.each([
     [400, "Bad Request", 502],
     [524, "A timeout occurred", 502],
