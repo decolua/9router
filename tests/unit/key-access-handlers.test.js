@@ -189,6 +189,10 @@ describe.each(handlers)("%s handler is wired", (_name, call, allowed, denied) =>
     const r = await call(allowed, "sk-media");
     expect(r.status).not.toBe(403);
     expect(mocks.getProviderCredentials).toHaveBeenCalled();
+    for (const [, , , options] of mocks.getProviderCredentials.mock.calls) {
+      expect(options.request).toBeInstanceOf(Request);
+      expect(options.request.headers.get("Authorization")).toBe("Bearer sk-media");
+    }
   });
   it("leaves an unrestricted key alone", async () => {
     const r = await call(denied, "sk-open");
@@ -204,6 +208,37 @@ describe("video: a body without a readable model is denied for restricted keys",
     const noModel = (k) => handleVideoCreate(post("/v1/videos/generations", { prompt: "x" }, k), "generations");
     expect((await noModel("sk-media")).status).toBe(403);
     expect((await noModel("sk-open")).status).not.toBe(403);
+  });
+});
+
+describe("account restriction propagation", () => {
+  it("preserves the client request through combo failover", async () => {
+    const request = post("/v1/chat/completions", {
+      model: "Main", stream: true, messages: [{ role: "user", content: "hi" }],
+    }, "sk-combo");
+    mocks.getProviderCredentials.mockImplementation(async (_provider, _excluded, _model, options) => {
+      expect(options.request).toBe(request);
+      return { connectionId: "conn", connectionName: "mock" };
+    });
+    const response = await handleChat(request);
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["image", () => handleImageGeneration(post("/v1/images/generations", { model: "veoaifree-web/veo-3.1", prompt: "x" }, "sk-accounts"))],
+    ["video", () => handleVideoCreate(post("/v1/videos/generations", { model: "veoaifree-web/veo-3.1", prompt: "x" }, "sk-accounts"), "generations")],
+    ["search", () => handleSearch(post("/v1/search", { model: "searxng", query: "x" }, "sk-accounts"))],
+  ])("blocks account-restricted keys from no-auth %s", async (_name, call) => {
+    fx.keys["sk-accounts"] = {
+      id: "accounts", isActive: true,
+      access: { restricted: false, accountsRestricted: true, accountIds: ["conn"] },
+    };
+    const response = await call();
+    expect(response.status).toBe(403);
+    expect((await response.json()).error.message).toBe("Access denied");
+    expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
   });
 });
 
