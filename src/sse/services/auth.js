@@ -5,6 +5,7 @@ import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
+import { getAllowedAccountIds } from "./keyAccess.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -26,6 +27,7 @@ function githubMonthlyResetMs(status, errorText, provider) {
  * @param {string|null} model - Model name for per-model rate limit filtering
  */
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
+  const allowedAccountIds = await getAllowedAccountIds(options?.request);
   // Normalize to Set for consistent handling
   const excludeSet = excludeConnectionIds instanceof Set
     ? excludeConnectionIds
@@ -45,6 +47,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
+      // Public connections have no selectable account identity and cannot satisfy an account restriction.
+      if (allowedAccountIds !== null) return null;
       const settings = await getSettings();
       const override = (settings.providerStrategies || {})[providerId] || {};
       const strategy = override.rotateStrategy || "none";
@@ -71,7 +75,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const connections = (await getProviderConnections({ provider: providerId, isActive: true }))
+      .filter((connection) => allowedAccountIds === null || allowedAccountIds.includes(connection.id));
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
