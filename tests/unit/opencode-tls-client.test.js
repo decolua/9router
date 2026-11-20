@@ -29,7 +29,7 @@ describe("opencodeTlsClient", () => {
     createSessionMock.mockResolvedValue({ fetch: fetchMock, close: vi.fn() });
 
     const { opencodeTlsFetch, __test__ } = await import("../../open-sse/services/opencodeTlsClient.js");
-    const result = await opencodeTlsFetch("https://opencode.ai/inference/v1/chat/completions", {
+    const result = await opencodeTlsFetch("https://opencode.ai/inference/openai/v1/chat/completions", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",
@@ -44,7 +44,7 @@ describe("opencodeTlsClient", () => {
     expect(__test__.OPENCODE_CIPHER_LIST.startsWith("TLS_AES_128_GCM_SHA256")).toBe(true);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://opencode.ai/inference/v1/chat/completions",
+      "https://opencode.ai/inference/openai/v1/chat/completions",
       expect.objectContaining({ method: "POST", body: "{}" })
     );
     expect(result.status).toBe(200);
