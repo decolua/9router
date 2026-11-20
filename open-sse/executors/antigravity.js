@@ -1,7 +1,8 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES, ANTIGRAVITY_DEFAULT_SYSTEM } from "../config/appConstants.js";
+import { GEMINI_ROLE } from "../translator/schema/roles.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -310,6 +311,18 @@ export class AntigravityExecutor extends BaseExecutor {
           part.text = part.text.replaceAll(from, to);
         }
       }
+    }
+
+    // The real client always opens the system prompt with the Antigravity identity.
+    const systemParts = requestWithoutTools.systemInstruction?.parts;
+    const hasAgIdentity = (systemParts || []).some(
+      (part) => typeof part.text === "string" && part.text.includes("You are Antigravity")
+    );
+    if (!hasAgIdentity) {
+      requestWithoutTools.systemInstruction = {
+        ...(requestWithoutTools.systemInstruction || { role: GEMINI_ROLE.USER }),
+        parts: [{ text: ANTIGRAVITY_DEFAULT_SYSTEM }, ...(systemParts || [])]
+      };
     }
 
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
