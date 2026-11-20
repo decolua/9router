@@ -11,6 +11,16 @@ function serializeRequestBody(requestBody) {
   return JSON.stringify(requestBody);
 }
 
+async function getProviderResetsAtMs(response, executor) {
+  if (!response || typeof executor?.parseError !== "function") return undefined;
+  try {
+    const parsed = executor.parseError(response, await response.text());
+    return Number.isFinite(parsed?.resetsAtMs) ? parsed.resetsAtMs : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Core image generation handler — orchestrator only.
  * Provider-specific URL/headers/body/parse/normalize live in `./imageProviders/{id}.js`.
@@ -179,10 +189,14 @@ export async function handleImageGenerationCore({
   }
 
   if (!providerResponse.ok) {
+    // Read the body once, then let the executor extract a provider-reported quota reset
+    // (e.g. Codex usage_limit_reached.resets_at) while keeping the generic message parsing.
+    const resetSource = typeof providerResponse.clone === "function" ? providerResponse.clone() : null;
     const { statusCode, message } = await parseUpstreamError(providerResponse);
+    const resetsAtMs = await getProviderResetsAtMs(resetSource, executor);
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     log?.debug?.("IMAGE", `Provider error: ${errMsg}`);
-    return createErrorResult(statusCode, errMsg);
+    return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
   // Parse provider response — adapter may override (codex SSE / async polling / binary)
