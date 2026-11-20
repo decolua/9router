@@ -13,6 +13,14 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 const CLAUDE_OAUTH_TOOL_PREFIX = "";
 
 // Convert OpenAI request to Claude format
+// Claude Code prepends this per-turn line to its system prompt (cron/subagent
+// turns and version bumps change it). Caching it as ordinary system text splits
+// the prompt cache; the Claude-format translator already strips it (#5739).
+function stripAnthropicBillingHeader(text) {
+  if (typeof text !== "string") return "";
+  return text.replace(/^x-anthropic-billing-header:[^\n]*(?:\r?\n)?/i, "");
+}
+
 export function openaiToClaudeRequest(model, body, stream) {
   // Tool name mapping for Claude OAuth (capitalizedName → originalName)
   const toolNameMap = new Map();
@@ -39,7 +47,9 @@ export function openaiToClaudeRequest(model, body, stream) {
     // Extract system messages
     for (const msg of body.messages) {
       if (msg.role === ROLE.SYSTEM) {
-        systemParts.push(typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n"));
+        const text = typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n");
+        const stripped = stripAnthropicBillingHeader(text);
+        if (stripped.trim()) systemParts.push(stripped);
       }
     }
 
