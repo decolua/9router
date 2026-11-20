@@ -28,6 +28,7 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
+import { hasNativeWebSearchTool, resolveWebSearchRouteOverride } from "open-sse/services/webSearchRouting.js";
 
 /**
  * Handle chat completion request
@@ -55,7 +56,7 @@ export async function handleChat(request, clientRawRequest = null) {
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.
   // The capability travels in the anthropic-beta header, forwarded as-is.
-  const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
+  let { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
   if (contextMarker) body.model = modelStr;
 
   const session = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
@@ -98,6 +99,18 @@ export async function handleChat(request, clientRawRequest = null) {
   const keyAccess = await getKeyAccessContext(request);
   const keyAccessDenied = await enforceKeyAccess(keyAccess, modelStr);
   if (keyAccessDenied) return keyAccessDenied;
+
+  // Native web_search redirect (layer 2): when the request carries a native web-search
+  // tool, an operator-configured webSearchRouteModel takes over the whole request so a
+  // search-capable model runs it natively instead of relying on the tool fallback.
+  if (hasNativeWebSearchTool(body)) {
+    const route = resolveWebSearchRouteOverride(modelStr, body, settings);
+    if (route.wasRouted) {
+      log.info("WEBSEARCH", `Routed web_search request from ${modelStr} to ${route.model}`);
+      modelStr = route.model;
+      body.model = route.model;
+    }
+  }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
   const userAgent = request?.headers?.get("user-agent") || "";
