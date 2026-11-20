@@ -19,6 +19,7 @@ import {
   getProviderAlias,
 } from "@/shared/constants/providers";
 import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
+import { resolveProviderPrefix } from "@/shared/utils/providerPrefix";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 export const PROVIDER_ORDER = [
@@ -222,7 +223,11 @@ export function buildModelGroups({
       const connection = filteredActiveProviders.find(p => p.provider === providerId) || effectiveConnections.find(p => p.provider === providerId);
       const matchedNode = providerNodesSafe.find(node => node.id === providerId);
       const displayName = matchedNode?.name || connection?.name || providerInfo.name;
-      const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
+      const nodePrefix = resolveProviderPrefix({
+        providerId,
+        providerSpecificData: connection?.providerSpecificData,
+        node: matchedNode,
+      });
 
       // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
       // so we must filter by providerId, not by the display prefix.

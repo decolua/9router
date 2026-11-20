@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { getModelAliases, setModelAlias, getCustomModels } from "@/models";
+import { getModelAliases, setModelAlias, getCustomModels, getProviderNodes, getProviderConnections } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias, ALIAS_TO_ID } from "@/shared/constants/providers";
+import { resolveProviderPrefix } from "@/shared/utils/providerPrefix";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
 // GET /api/models - Get models with aliases
@@ -10,6 +11,41 @@ export async function GET() {
   try {
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
+
+    // Custom providers (openai-/anthropic-compatible, custom embedding) are
+    // provider nodes whose ID is a UUID-bearing string. They are addressed by
+    // the prefix the user configured, not by that ID — publishing the ID makes
+    // the model ID unusable in a client. /v1/models already resolves this; keep
+    // both endpoints on the same prefix.
+    //
+    // Only provider nodes are remapped. A built-in provider keeps its registry
+    // alias even if its connection happens to carry a `prefix` field.
+    const nodePrefixByProvider = new Map();
+    try {
+      const [nodes, connections] = await Promise.all([
+        getProviderNodes(),
+        getProviderConnections(),
+      ]);
+      const nodeById = new Map(nodes.map((n) => [n.id, n]));
+      // The connection copy of the prefix is written when the connection is
+      // created and kept in sync when the node is edited, so it is the freshest
+      // source; the node row is the fallback.
+      const psdByProvider = new Map(
+        connections
+          .filter((c) => nodeById.has(c.provider))
+          .map((c) => [c.provider, c.providerSpecificData || {}])
+      );
+      for (const node of nodes) {
+        const prefix = resolveProviderPrefix({
+          providerId: node.id,
+          providerSpecificData: psdByProvider.get(node.id),
+          node,
+        });
+        if (prefix) nodePrefixByProvider.set(node.id, prefix);
+      }
+    } catch (e) {
+      console.log("Could not fetch provider nodes, falling back to provider aliases:", e);
+    }
 
     const models = AI_MODELS
       .filter((m) => {
@@ -19,7 +55,7 @@ export async function GET() {
       })
       .map((m) => {
         const fullModel = `${m.provider}/${m.model}`;
-        const providerAlias = getProviderAlias(m.provider) || m.provider;
+        const providerAlias = nodePrefixByProvider.get(m.provider) || getProviderAlias(m.provider) || m.provider;
         const routedModel = `${providerAlias}/${m.model}`;
         const c = getCapabilitiesForModel(m.provider, m.model);
         return {
@@ -54,16 +90,23 @@ export async function GET() {
       return !seenFull.has(`${m.providerAlias}/${m.id}`);
     });
     for (const m of customModels) {
-      const fullModel = `${m.providerAlias}/${m.id}`;
+      // Custom rows are stored against the raw provider id (the node id for
+      // custom providers), but the published id must use the prefix the user
+      // configured. The storage form stays available as storageFullModel so the
+      // dashboard's capability lookup — which keys by provider id — still hits.
+      const storageFullModel = `${m.providerAlias}/${m.id}`;
+      const displayPrefix = nodePrefixByProvider.get(m.providerAlias) || m.providerAlias;
+      const fullModel = `${displayPrefix}/${m.id}`;
       const providerId = ALIAS_TO_ID[m.providerAlias] || m.providerAlias;
       const c = getCapabilitiesForModel(providerId, m.id);
       models.push({
-        provider: m.providerAlias,
+        provider: displayPrefix,
         model: m.id,
         name: m.name || m.id,
         fullModel,
         routedModel: fullModel,
-        alias: modelAliases[fullModel] || m.id,
+        storageFullModel,
+        alias: modelAliases[storageFullModel] || m.id,
         caps: {
           vision: c.vision,
           search: c.search,

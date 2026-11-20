@@ -15,6 +15,9 @@ function buildMaps(models) {
     if (!m.caps) continue;
     if (m.fullModel) byFull[m.fullModel] = m.caps;
     if (m.routedModel) byFull[m.routedModel] = m.caps;
+    // Custom providers publish their prefix, but the dashboard looks caps up by
+    // the raw provider id (the node id). Keep the storage form resolvable too.
+    if (m.storageFullModel) byFull[m.storageFullModel] = m.caps;
     if (m.model) byId[m.model] = m.caps;
   }
   return { byFull, byId };

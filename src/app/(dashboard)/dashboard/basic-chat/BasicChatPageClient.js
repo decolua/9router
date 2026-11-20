@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button } from "@/shared/components";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { resolveProviderPrefix } from "@/shared/utils/providerPrefix";
 
 const STORAGE_KEYS = {
   sessions: "basic-chat.sessions",
@@ -113,11 +114,22 @@ function getProviderLabel(connection) {
   return connection?.name || humanize(connection?.provider || connection?.id || "provider");
 }
 
+// Custom providers are addressed by the prefix the user configured ("mirai"),
+// not by their node id ("openai-compatible-chat-<uuid>"). The model picker
+// already publishes the prefix; Basic Chat must send the same id.
+function getRequestPrefix(connection) {
+  return resolveProviderPrefix({
+    providerId: connection?.provider,
+    providerSpecificData: connection?.providerSpecificData,
+  });
+}
+
 function normalizeStaticModel(model, connection) {
   if (!model?.id) return null;
+  const prefix = getRequestPrefix(connection);
   return {
-    id: `${connection.provider}/${model.id}`,
-    requestModel: `${connection.provider}/${model.id}`,
+    id: `${prefix}/${model.id}`,
+    requestModel: `${prefix}/${model.id}`,
     name: model.name || model.id,
     providerId: connection.provider,
     providerName: getProviderLabel(connection),
@@ -136,7 +148,7 @@ function normalizeLiveModel(model, connection) {
   let requestModel = rawId;
   const isCompatible = isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider);
   if (isCompatible && !rawId.includes("/")) {
-    requestModel = `${connection.provider}/${rawId}`;
+    requestModel = `${getRequestPrefix(connection)}/${rawId}`;
   }
 
   return {
