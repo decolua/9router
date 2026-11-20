@@ -40,11 +40,20 @@ export default {
     { id: "deepseek-ai/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek-ai/deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "moonshotai/kimi-k2.6", name: "Kimi K2.6" },
+    { id: "moonshotai/kimi-k3.1-pro", name: "Kimi K3.1 Pro" },
+    { id: "stepfun-ai/step-5-preview", name: "Step 5 Preview" },
+    { id: "minimaxai/minimax-m3.1-flash", name: "MiniMax M3.1 Flash" },
+    { id: "z-ai/glm-5.3-flash", name: "GLM 5.3 Flash" },
+    { id: "nvidia/nemotron-3.5-super-vl-120b-a12b", name: "Nemotron 3.5 Super VL" },
+    { id: "mistralai/mistral-large-4-1t-a52b", name: "Mistral Large 4" },
     { id: "nvidia/nv-embedqa-e5-v5", name: "NV EmbedQA E5 v5", kind: "embedding" },
     { id: "nvidia/parakeet-ctc-1.1b-asr", name: "Parakeet CTC 1.1B", params: ["language"], kind: "stt" },
     { id: "fastpitch", name: "FastPitch", kind: "tts" },
     { id: "tacotron2", name: "Tacotron2", kind: "tts" },
   ],
+  // Public catalog (no key needed) — surfaces newly published NIM chat models as
+  // one-click suggestions in the dashboard without waiting for a release.
+  modelsFetcher: { url: "https://integrate.api.nvidia.com/v1/models", type: "nvidia" },
   serviceKinds: ["llm","tts","embedding"],
   ttsConfig: {
     baseUrl: "https://integrate.api.nvidia.com/v1/audio/speech",

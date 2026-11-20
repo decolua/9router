@@ -88,6 +88,12 @@ const PATTERN_THINKING = [
   { provider: "codebuddy-cn", pattern: "kimi-k2.8-preview",  levels: ["low", "medium", "high"] },
   { provider: "codebuddy-cn", pattern: "hy3",          levels: ["low", "high"] },
   { provider: "codebuddy-cn", pattern: "hy4-preview",  levels: ["high"] },
+  // NVIDIA NIM endpoints publish their own reasoning_effort enums, and the
+  // upstream rejects any level outside it with HTTP 422. Kimi K3.1 Pro accepts
+  // low|high|max only — "medium"/"minimal" would 422.
+  { provider: "nvidia", pattern: "*kimi-k3.1*", levels: ["low", "high", "max"] },
+  { provider: "nvidia", pattern: "*nemotron-3.5-super-vl*", levels: ["none", "low", "high"] },
+  { provider: "nvidia", pattern: "*mistral-large-4*", levels: ["none", "high"] },
   // codebuddy-intl rides the same gateway catalog, so its deepseek levels match.
   { provider: "codebuddy-intl", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },
   // MiniMax Code (mcode) — adaptive effort via output_config.effort. M3.1

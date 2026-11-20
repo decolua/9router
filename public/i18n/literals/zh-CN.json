@@ -1125,6 +1125,7 @@
   "Sudo Password Required": "需要 sudo 密码",
   "Sudo password is required": "需要 sudo 密码",
   "Suggested free models (≥200k context):": "推荐的免费模型（≥200k 上下文）：",
+  "Suggested models from the provider catalog:": "来自服务商目录的推荐模型：",
   "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929.": "建议的简写示例：g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929。",
   "Support up to 20 active apps & 50 custom domains": "支持最多 20 个活跃应用和 50 个自定义域名",
   "Supported formats: protocol://user:pass@host:port, host:port:user:pass": "支持的格式：protocol://user:pass@host:port, host:port:user:pass",

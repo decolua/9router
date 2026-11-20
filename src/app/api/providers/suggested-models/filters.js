@@ -6,6 +6,26 @@ const KNOWN_FREE_OPENCODE_MODELS = ["big-pickle"];
 // Upstream returns "Model is unavailable" for this id (2026-09-02) — re-enable when fixed
 const DEAD_FREE_OPENCODE_MODELS = new Set(["deepseek-v4-flash-free"]);
 
+// NVIDIA NIM catalogue entries that are not chat models — they serve a
+// different endpoint (embeddings, classification, translation, safety).
+const NVIDIA_NON_CHAT_IDS = [
+  /embed/i,
+  /nvclip/i,
+  /guard/i,
+  /safety/i,
+  /content-safety/i,
+  /detector/i,
+  /retriever/i,
+  /topic-control/i,
+  /ising/i,
+  /calibration/i,
+  /translate/i,
+  /riva/i,
+  /parakeet/i,
+  /snowflake/i,
+  /starcoder/i,
+];
+
 export const FILTERS = {
   "openrouter-free": (models) =>
     models
@@ -57,4 +77,18 @@ export const FILTERS = {
       .sort((a, b) => String(a.id).localeCompare(String(b.id))),
 
   "nous-free": normalizeNousFreeModels,
+
+  // NVIDIA NIM publishes one flat catalogue at /v1/models that mixes chat
+  // models with embedding, guard, safety and detection endpoints. Only the
+  // chat models are routable through /v1/chat/completions, so the rest are
+  // filtered out here. Ids are vendor-namespaced ("moonshotai/kimi-k3.1-pro").
+  "nvidia": (models) =>
+    (Array.isArray(models) ? models : [])
+      .filter((m) => typeof m?.id === "string")
+      .filter((m) => !NVIDIA_NON_CHAT_IDS.some((re) => re.test(m.id)))
+      .map((m) => ({
+        id: m.id,
+        name: m.id.split("/").pop(),
+        contextLength: Number(m.context_window) || undefined,
+      })),
 };

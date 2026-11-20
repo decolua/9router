@@ -1,6 +1,7 @@
 # v0.5.119 (2026-11-11)
 
 ## Features
+- **NVIDIA NIM**: add Kimi K3.1 Pro (`moonshotai/kimi-k3.1-pro`) and Step 5 Preview (`stepfun-ai/step-5-preview`) plus the other chat models in the current NIM catalogue (MiniMax M3.1 Flash, GLM 5.3 Flash, Nemotron 3.5 Super VL, Mistral Large 4); the live catalogue is now fetched too, so newly published NIM models show up in the dashboard as one-click suggestions (#5762)
 - **Synthetic**: add Synthetic (`syn`) — OpenAI-compatible upstream on `api.synthetic.new` with the always-on `hf:` models as a static fallback, model passthrough, live model discovery, and a usage tracker reading `GET /v2/quotas`
 - **Claude**: add Claude Fable 5.2 ($8/$40) as the Fable flagship and `claude-haiku-5-5` ($0.10/$0.50, 1M/128K); the advertised Claude Code version now auto-tracks the latest npm release (floor 2.1.322, pin with `CLAUDE_CLI_VERSION`), and the dashboard lists live models through the OAuth bearer
 - **Antigravity**: add Gemini 4 Carbon in low/medium/high tiers plus a bare alias resolving to medium, and track the tiers in the usage quota list
@@ -25,6 +26,7 @@
 - **Muse Web**: accept Cookie-Editor JSON exports for credentials, normalized on read
 - **Fal**: validate new API keys through the model catalog instead of failing with "Provider validation not supported"
 - **NVIDIA NIM**: strip the params NIM 400s on, enable `dropClientMetadata`, cap the connect timeout, add the current catalogue, and cool down degraded clusters for 15m
+- **NVIDIA NIM**: forward only the fields each NIM endpoint's request schema declares — the newer ones set `additionalProperties: false` and answer 422 on anything else; Kimi K3.1 Pro now keeps its `reasoning_effort` (rounded up to the `low|high|max` enum it publishes) instead of losing the level, Step 5 Preview drops the field it does not declare, and system/assistant content is flattened for the endpoints that only accept plain strings (#5762)
 - **Compatibility**: advertise zstd only when the runtime can decode it (Node < 22.15 returns raw compressed bytes)
 - **Translator**: always emit `tool_result.is_error` for the Zed Anthropic wire, which 400s without it
 - **Translator**: show SearXNG in the combo Web Search model picker by deriving the no-auth list from the full registry

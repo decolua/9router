@@ -1,4 +1,18 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import nvidiaRegistry from "../../providers/registry/nvidia.js";
+
+// Registry-known NIM model ids (the ones with a declared upstream schema).
+// A model that is not in the registry was published after this release or
+// added by the user from the live catalogue — its schema is unknown here, so
+// the request falls back to the fields every NIM chat endpoint accepts.
+const NIM_KNOWN_MODEL_IDS = new Set((nvidiaRegistry.models || []).map((m) => m.id));
+
+function isKnownNvidiaModel(model) {
+  if (typeof model !== "string") return false;
+  if (NIM_KNOWN_MODEL_IDS.has(model)) return true;
+  // The registry may list a model with a thinking suffix "(high)" appended.
+  return NIM_KNOWN_MODEL_IDS.has(model.replace(/\([^()]+\)\s*$/, "").trim());
+}
 
 // Strip request params a given provider/model rejects upstream (e.g. HTTP 400).
 // Config-driven: add a rule instead of scattering `delete body.x` across executors.
@@ -47,6 +61,56 @@ const STRIP_RULES = [
     ],
     renameMessageFields: { reasoning: "reasoning_content" },
   },
+  // NVIDIA NIM endpoints publish a per-model request schema and many of them
+  // set additionalProperties:false — a field the endpoint does not declare is
+  // rejected with HTTP 422 ("Extra inputs are not permitted"). The schemas
+  // below are taken from each model's published API reference:
+  //   Kimi K3.1 Pro      → messages/model/tools/max_tokens/seed/stream/
+  //                        stream_options/reasoning_effort (enum low|high|max)
+  //   MiniMax M3.1 Flash → messages/model/tools/max_tokens/seed/stream/
+  //                        stream_options/temperature/top_p
+  //   Step 5 Preview     → …/temperature/top_p/tool_choice/tools/stop/…
+  //   Nemotron 3.5 Super VL → …/response_format/parallel_tool_calls/…
+  //   Mistral Large 4    → …/reasoning_effort (enum none|high)/…
+  // A model whose schema is unknown (a newly published NIM id the user adds
+  // from the live catalogue) falls back to the fields every NIM chat endpoint
+  // accepts, so it degrades instead of 422-ing on the first call.
+  {
+    provider: "nvidia",
+    match: /kimi-k3\.1/i,
+    allowParams: ["messages", "model", "tools", "max_tokens", "seed", "stream", "stream_options", "reasoning_effort"],
+    flattenContentRoles: ["system", "assistant"],
+    maxOutputCap: 65536,
+  },
+  {
+    provider: "nvidia",
+    match: /minimax-m3\.1/i,
+    allowParams: ["messages", "model", "tools", "max_tokens", "seed", "stream", "stream_options", "temperature", "top_p"],
+    flattenContentRoles: ["system", "assistant"],
+    maxOutputCap: 65536,
+  },
+  {
+    provider: "nvidia",
+    match: /step-5-preview/i,
+    allowParams: ["messages", "model", "tools", "tool_choice", "max_tokens", "seed", "stream", "temperature", "top_p", "stop", "frequency_penalty", "presence_penalty"],
+  },
+  {
+    provider: "nvidia",
+    match: /nemotron-3\.5-super-vl/i,
+    allowParams: ["messages", "model", "tools", "tool_choice", "parallel_tool_calls", "response_format", "max_tokens", "seed", "stream", "stream_options", "temperature", "top_p", "stop", "reasoning_effort"],
+    maxOutputCap: 131072,
+  },
+  {
+    provider: "nvidia",
+    match: /mistral-large-4/i,
+    allowParams: ["messages", "model", "tools", "tool_choice", "max_tokens", "seed", "stream", "temperature", "top_p", "stop", "frequency_penalty", "presence_penalty", "reasoning_effort"],
+  },
+  // Unknown NIM id: keep only the fields every NIM chat endpoint declares.
+  {
+    provider: "nvidia",
+    match: (m) => !isKnownNvidiaModel(m),
+    allowParams: ["messages", "model", "tools", "max_tokens", "seed", "stream", "stream_options"],
+  },
   // OpenCode Go's relay rejects `response_format` for its deepseek family with HTTP
   // 400 — both json_schema and json_object — while glm / kimi / mimo / minimax /
   // qwen / grok / gpt on the same relay accept it. The rejection body is either a
@@ -88,6 +152,14 @@ export function stripUnsupportedParams(provider, model, body) {
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
     }
+    // Strict endpoints (additionalProperties:false) accept only a declared
+    // field set — drop everything else the client or a translator added.
+    if (rule.allowParams) {
+      const allowed = new Set(rule.allowParams);
+      for (const key of Object.keys(body)) {
+        if (!allowed.has(key)) delete body[key];
+      }
+    }
     // Normalize and drop assistant-message fields (clients replay reasoning here).
     if ((rule.renameMessageFields || rule.dropMessageFields) && Array.isArray(body.messages)) {
       for (const msg of body.messages) {
@@ -113,6 +185,18 @@ export function stripUnsupportedParams(provider, model, body) {
             .map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "")
             .join("");
         }
+      }
+    }
+    // NVIDIA NIM's multimodal endpoints accept content parts on user turns
+    // only: "For `system` and `assistant` roles, the object list format is not
+    // supported." Flatten just those roles — the user turn keeps its images.
+    if (rule.flattenContentRoles?.length && Array.isArray(body.messages)) {
+      for (const msg of body.messages) {
+        if (!msg || !Array.isArray(msg.content)) continue;
+        if (!rule.flattenContentRoles.includes(msg.role)) continue;
+        msg.content = msg.content
+          .map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "")
+          .join("");
       }
     }
     if (rule.clampToModelMaxOutput || Number.isFinite(rule.maxOutputCap)) {

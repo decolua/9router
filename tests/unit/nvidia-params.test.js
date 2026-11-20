@@ -5,6 +5,8 @@ import nvidiaConfig from "../../open-sse/providers/registry/nvidia.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
+import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
+import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 
 test("NVIDIA transport quirks declare dropClientMetadata and timeoutMs", () => {
   assert.equal(nvidiaConfig.transport.quirks?.dropClientMetadata, true);
@@ -93,4 +95,136 @@ test("NVIDIA model capabilities distinguish tools support", () => {
 
   assert.equal(llamaCaps.tools, true);
   assert.equal(minimaxCaps.tools, false);
+});
+
+// ── NIM strict envelopes (see build.nvidia.com/<model>/apireference) ───────
+
+test("NVIDIA registry ships Kimi K3.1 Pro, Step 5 Preview and the new live chat models", () => {
+  const ids = nvidiaConfig.models.map((m) => m.id);
+
+  assert.ok(ids.includes("moonshotai/kimi-k3.1-pro"));
+  assert.ok(ids.includes("stepfun-ai/step-5-preview"));
+  assert.ok(ids.includes("minimaxai/minimax-m3.1-flash"));
+  assert.ok(ids.includes("z-ai/glm-5.3-flash"));
+  assert.ok(ids.includes("nvidia/nemotron-3.5-super-vl-120b-a12b"));
+  assert.ok(ids.includes("mistralai/mistral-large-4-1t-a52b"));
+});
+
+test("NVIDIA exposes the live NIM catalogue so new models appear without a release", () => {
+  assert.equal(nvidiaConfig.modelsFetcher?.url, "https://integrate.api.nvidia.com/v1/models");
+  assert.equal(nvidiaConfig.modelsFetcher?.type, "nvidia");
+});
+
+test("Kimi K3.1 Pro on NIM keeps only the fields its schema declares", () => {
+  const payload = {
+    model: "moonshotai/kimi-k3.1-pro",
+    messages: [{ role: "user", content: "hi" }],
+    temperature: 0.7,
+    top_p: 0.9,
+    tool_choice: "auto",
+    response_format: { type: "json_object" },
+    seed: 42,
+    stream: true,
+    max_tokens: 200000,
+  };
+
+  stripUnsupportedParams("nvidia", "moonshotai/kimi-k3.1-pro", payload);
+
+  assert.equal(payload.temperature, undefined);
+  assert.equal(payload.top_p, undefined);
+  assert.equal(payload.tool_choice, undefined);
+  assert.equal(payload.response_format, undefined);
+  assert.equal(payload.seed, 42);
+  assert.equal(payload.stream, true);
+  // Kimi K3.1 Pro's schema caps max_tokens at 65536.
+  assert.equal(payload.max_tokens, 65536);
+});
+
+test("Kimi K3.1 Pro on NIM flattens system/assistant content but keeps user content parts", () => {
+  const payload = {
+    model: "moonshotai/kimi-k3.1-pro",
+    messages: [
+      { role: "system", content: [{ type: "text", text: "be brief" }] },
+      { role: "user", content: [{ type: "text", text: "look" }, { type: "image_url", image_url: { url: "data:image/png;base64,x" } }] },
+      { role: "assistant", content: [{ type: "text", text: "ok" }] },
+    ],
+  };
+
+  stripUnsupportedParams("nvidia", "moonshotai/kimi-k3.1-pro", payload);
+
+  assert.equal(payload.messages[0].content, "be brief");
+  assert.equal(payload.messages[2].content, "ok");
+  assert.ok(Array.isArray(payload.messages[1].content));
+  assert.equal(payload.messages[1].content[1].type, "image_url");
+});
+
+test("Step 5 Preview on NIM drops the reasoning_effort field its schema does not declare", () => {
+  const payload = {
+    model: "stepfun-ai/step-5-preview",
+    messages: [{ role: "user", content: "hi" }],
+    reasoning_effort: "high",
+    thinking: { type: "enabled" },
+    temperature: 0.4,
+  };
+
+  stripUnsupportedParams("nvidia", "stepfun-ai/step-5-preview", payload);
+
+  assert.equal(payload.reasoning_effort, undefined);
+  assert.equal(payload.thinking, undefined);
+  assert.equal(payload.temperature, 0.4);
+});
+
+test("an unknown NIM model falls back to the fields every NIM chat endpoint accepts", () => {
+  const payload = {
+    model: "somevendor/some-new-model",
+    messages: [{ role: "user", content: "hi" }],
+    temperature: 0.4,
+    top_p: 1,
+    response_format: { type: "json_object" },
+    max_tokens: 100,
+    stream: true,
+  };
+
+  stripUnsupportedParams("nvidia", "somevendor/some-new-model", payload);
+
+  assert.equal(payload.temperature, undefined);
+  assert.equal(payload.top_p, undefined);
+  assert.equal(payload.response_format, undefined);
+  assert.equal(payload.max_tokens, 100);
+  assert.equal(payload.stream, true);
+});
+
+test("NIM thinking levels match each endpoint's reasoning_effort enum", () => {
+  assert.deepEqual(getThinkingLevels("nvidia", "moonshotai/kimi-k3.1-pro"), ["low", "high", "max"]);
+  assert.deepEqual(getThinkingLevels("nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b"), ["none", "low", "high"]);
+  assert.deepEqual(getThinkingLevels("nvidia", "mistralai/mistral-large-4-1t-a52b"), ["none", "high"]);
+});
+
+test("a reasoning_effort outside Kimi K3.1 Pro's enum is rounded up, never dropped", () => {
+  const body = { messages: [], reasoning_effort: "medium" };
+  applyThinking("openai", "moonshotai/kimi-k3.1-pro", body, "nvidia");
+
+  assert.equal(body.reasoning_effort, "high");
+});
+
+test("Kimi K3.1 Pro capabilities report a 1M context and the openai reasoning shape", () => {
+  const caps = getCapabilitiesForModel("nvidia", "moonshotai/kimi-k3.1-pro");
+
+  assert.equal(caps.vision, true);
+  assert.equal(caps.tools, true);
+  assert.equal(caps.reasoning, true);
+  assert.equal(caps.thinkingFormat, "openai");
+  assert.equal(caps.thinkingCanDisable, false);
+  assert.equal(caps.contextWindow, 1048576);
+  assert.equal(caps.maxOutput, 65536);
+});
+
+test("Step 5 Preview capabilities report always-on reasoning", () => {
+  const caps = getCapabilitiesForModel("nvidia", "stepfun-ai/step-5-preview");
+
+  assert.equal(caps.vision, true);
+  assert.equal(caps.tools, true);
+  assert.equal(caps.reasoning, true);
+  assert.equal(caps.thinkingCanDisable, false);
+  assert.equal(caps.contextWindow, 1048576);
 });
