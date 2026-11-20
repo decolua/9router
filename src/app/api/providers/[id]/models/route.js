@@ -5,6 +5,7 @@ import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
@@ -229,13 +230,13 @@ const PROVIDER_MODELS_CONFIG = {
     // Live per-account catalog. fetchAvailableModels returns an object map
     // { models: { "<id>": { displayName, maxTokens, ... } } }.
     // Requires the Hub client fingerprint headers, otherwise Google returns 403.
-    url: "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+    url: `${ANTIGRAVITY_IDE_BASE_URL}/v1internal:fetchAvailableModels`,
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "User-Agent": "antigravity/hub/2.24.0 darwin/arm64",
+      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
       "X-Client-Name": "antigravity",
-      "X-Client-Version": "2.24.0",
+      "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
     },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
