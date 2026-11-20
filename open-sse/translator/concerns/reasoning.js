@@ -1,4 +1,8 @@
 import { ROLE } from "../schema/index.js";
+import { extractTextContent } from "../formats/gemini.js";
+
+// Mistral chat content part type carrying reasoning (OpenAI-side, not a Claude block).
+const MISTRAL_THINKING_PART = "thinking";
 
 // Build OpenAI delta carrying reasoning_content (optional leading assistant role)
 export function reasoningDelta(text, withRole = false) {
@@ -33,6 +37,11 @@ export function extractReasoningText(delta) {
   const details = delta.reasoning_details;
   if (Array.isArray(details)) {
     return details.map((d) => (typeof d === "string" ? d : d?.text || d?.content || "")).join("");
+  }
+  // Mistral streams thinking chunks inside content, separately from visible text.
+  if (Array.isArray(delta.content)) {
+    return delta.content.filter(part => part?.type === MISTRAL_THINKING_PART)
+      .map(part => extractTextContent(part.thinking)).join("");
   }
   return "";
 }

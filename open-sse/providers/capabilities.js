@@ -246,6 +246,12 @@ const DEVIN_CLI_GPT_CAPS = { vision: true, reasoning: true, search: true, thinki
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // Native /v1/models resolves latest to Large 4 (2026-11-13); older Large IDs and resellers keep their own limits.
+  "mistral": {
+    "mistral-large-latest": { vision: true, contextWindow: 1048576 },
+    "mistral-large-4": { vision: true, contextWindow: 1048576 },
+    "mistral-large-4-0": { vision: true, contextWindow: 1048576 },
+  },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
