@@ -46,7 +46,10 @@ async function tryFetch(url, init, timeoutMs) {
 function truncate(text, max) {
   if (!text || typeof text !== "string") return text || "";
   if (!max || max <= 0) return text;
-  return text.length > max ? text.slice(0, max) : text;
+  // Count Unicode code points, not UTF-16 units, so a truncated emoji
+  // does not leave a lone surrogate in the result.
+  const chars = Array.from(text);
+  return chars.length > max ? chars.slice(0, max).join("") : text;
 }
 
 function parseJinaTitle(text) {

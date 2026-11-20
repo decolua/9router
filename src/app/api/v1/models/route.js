@@ -323,6 +323,36 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
   };
 }
 
+
+function appendNoAuthWebModels(models, activeConnectionByProvider, kindFilter) {
+  if (!kindFilter.includes("webSearch") && !kindFilter.includes("webFetch")) return;
+  for (const [providerId] of activeConnectionByProvider.entries()) {
+    if (!providerMatchesKinds(providerId, kindFilter)) continue;
+    const providerInfo = AI_PROVIDERS[providerId];
+    const outputAlias = (
+      getProviderAlias(providerId)
+      || PROVIDER_ID_TO_ALIAS[providerId]
+      || providerId
+    ).trim();
+    if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
+      models.push({
+        id: `${outputAlias}/search`,
+        object: "model",
+        kind: "webSearch",
+        owned_by: outputAlias,
+      });
+    }
+    if (kindFilter.includes("webFetch") && providerInfo?.fetchConfig) {
+      models.push({
+        id: `${outputAlias}/fetch`,
+        object: "model",
+        kind: "webFetch",
+        owned_by: outputAlias,
+      });
+    }
+  }
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -379,6 +409,20 @@ export async function buildModelsList(kindFilter, options = {}) {
   // Include no-auth free providers (e.g. opencode) so their models are exposed in /v1/models
   for (const [id, provider] of Object.entries(FREE_PROVIDERS || {})) {
     if (provider?.noAuth && !activeConnectionByProvider.has(id)) {
+      activeConnectionByProvider.set(id, {
+        id: "noauth",
+        provider: id,
+        isActive: true,
+      });
+    }
+  }
+
+  // No-auth web providers in any billing category (e.g. Keenable, which is
+  // freeTier rather than free) must be discoverable on /v1/models/web even
+  // when there are no connections, or only an unrelated connection.
+  for (const [id, provider] of Object.entries(AI_PROVIDERS || {})) {
+    const isWeb = Boolean(provider?.searchConfig || provider?.fetchConfig);
+    if (provider?.noAuth && isWeb && !activeConnectionByProvider.has(id)) {
       activeConnectionByProvider.set(id, {
         id: "noauth",
         provider: id,
@@ -452,6 +496,11 @@ export async function buildModelsList(kindFilter, options = {}) {
         owned_by: providerAlias,
       });
     }
+
+    // The connectionless branch above only emits static PROVIDER_MODELS
+    // entries, so virtual {alias}/search and {alias}/fetch rows would
+    // otherwise be missing when no connections are stored.
+    appendNoAuthWebModels(models, activeConnectionByProvider, kindFilter);
   } else {
     for (const [providerId, conn] of activeConnectionByProvider.entries()) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;

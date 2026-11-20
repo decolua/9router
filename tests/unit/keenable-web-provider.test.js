@@ -41,6 +41,8 @@ describe("Keenable Search and Fetch", () => {
       .toThrow("one include domain");
     expect(() => buildSearchRequest({ id: "keenable", ...provider.searchConfig }, { ...base, offset: 5 }))
       .toThrow("does not support offset");
+    expect(() => buildSearchRequest({ id: "keenable", ...provider.searchConfig }, { ...base, searchType: "x" }))
+      .toThrow("Unsupported Keenable search type");
   });
 
   it("normalizes search results", () => {
@@ -81,5 +83,18 @@ describe("Keenable Search and Fetch", () => {
     const html = await handleFetchCore({ url, format: "html", provider: "keenable", providerConfig: provider.fetchConfig });
     expect(html.success).toBe(false);
     expect(html.status).toBe(400);
+  });
+
+  it("truncates fetched content on Unicode code-point boundaries", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      url, title: "Emoji", content: "A😀", truncated: false, total_chars: 2,
+    }), { headers: { "content-type": "application/json" } })));
+    const result = await handleFetchCore({ url, provider: "keenable", providerConfig: provider.fetchConfig, maxCharacters: 2 });
+    expect(result.success).toBe(true);
+    expect(result.data.content.text).toBe("A😀");
+    const cut = await handleFetchCore({ url, provider: "keenable", providerConfig: provider.fetchConfig, maxCharacters: 1 });
+    expect(cut.success).toBe(true);
+    expect(cut.data.content.text).toBe("A");
+    expect(cut.data.content.text).not.toMatch(/\uD83D|\uDE00/);
   });
 });

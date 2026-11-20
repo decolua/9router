@@ -451,6 +451,9 @@ function buildGlmSearchRequest(config, params) {
 const KEENABLE_TIME_RANGE = { day: "1d", week: "7d", month: "1mo", year: "1y" };
 
 function buildKeenableRequest(config, params) {
+  if (params.searchType && params.searchType !== "web") {
+    throw new Error("Unsupported Keenable search type");
+  }
   const body = { query: params.query, max_results: params.maxResults };
   const { includes, excludes } = parseDomainFilter(params.domainFilter);
   if (includes.length > 1) throw new Error("Keenable search accepts one include domain");
