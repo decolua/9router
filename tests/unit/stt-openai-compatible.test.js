@@ -77,6 +77,30 @@ describe("OpenAI-compatible STT transport", () => {
     expect(body.getAll("timestamp_granularities[]")).toEqual(["word"]);
   });
 
+  it("forwards only documented granularities once each, dropping unknown values and duplicates", async () => {
+    const calls = stubFetch();
+    const formData = new FormData();
+    formData.set("file", mkFile());
+    formData.set("model", "whisper-large-v3");
+    formData.append("timestamp_granularities[]", "word");
+    formData.append("timestamp_granularities", "segment");
+    formData.append("timestamp_granularities[]", "word");
+    formData.append("timestamp_granularities[]", "bogus");
+    formData.append("timestamp_granularities", "segment");
+
+    const result = await handleSttCore({
+      provider: "groq",
+      model: "whisper-large-v3",
+      formData,
+      credentials: CRED,
+      sttConfig: CFG,
+    });
+
+    expect(result.success).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].opts.body.getAll("timestamp_granularities[]")).toEqual(["word", "segment"]);
+  });
+
   it("omits timestamp_granularities[] when not provided in client request", async () => {
     const calls = stubFetch();
     const formData = new FormData();
