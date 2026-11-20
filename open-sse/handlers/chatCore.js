@@ -250,8 +250,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const showThinking = provider !== "grok-cli" || supportsGrokCliReasoningEffort(model);
     const think = showThinking ? log.fmtThink?.(extractThinking(translatedBody)) : null;
     const acc = credentials?.connectionName || credentials?.connectionId?.slice(0, 8) || "-";
+    // Custom providers are addressed by the prefix the user configured ("mirai"),
+    // not by their node id ("openai-compatible-chat-<uuid>"). Show the prefix so
+    // the log matches what the client sent and what the model picker advertises.
+    // Display only — routing and upstream dispatch still use the provider id.
+    const displayProvider = credentials?.providerSpecificData?.prefix || provider;
     const parts = [
-      `POST ${clientModel} → ${provider}/${model}`,
+      `POST ${clientModel} → ${displayProvider}/${model}`,
       fmtStr,
       stream ? "STREAM" : "JSON",
       `${msgN} MSG`,
