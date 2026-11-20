@@ -41,6 +41,10 @@ const CLAUDE_NO_XHIGH = ["none", "low", "medium", "high", "max"];
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
+  // Gemini 4 Hydrogen is the only Gemini 4 model with an "xhigh" tier
+  // (Google, Nov 2026) — must stay above the generic *gemini-4* entry
+  // (first-match-wins) so xhigh is advertised only for Hydrogen.
+  { pattern: "*gemini-4-hydrogen*", levels: ["low", "medium", "high", "xhigh"] },
   // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
   { pattern: "*claude*4.6*", levels: CLAUDE_NO_XHIGH },

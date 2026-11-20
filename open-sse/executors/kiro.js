@@ -12,6 +12,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { AWS_EVENTSTREAM } from "../config/awsConstants.js";
 import { crc32, parseEventFrame } from "../utils/awsEventStream.js";
+import { buildKiroIdentityHeaders } from "../shared/kiroIdentity.js";
 
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 // Regions per service host; a region outside the set is never spliced into the hostname.
@@ -229,6 +230,7 @@ export class KiroExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true, url = "") {
     const headers = {
       ...this.config.headers,
+      ...buildKiroIdentityHeaders(credentials, "streaming"),
       "Amz-Sdk-Request": "attempt=1; max=3",
       "Amz-Sdk-Invocation-Id": uuidv4()
     };
