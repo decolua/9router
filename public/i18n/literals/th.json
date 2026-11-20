@@ -1124,6 +1124,7 @@
   "Sudo Password Required": "ต้องใช้ Sudo Password",
   "Sudo password is required": "ต้องใช้ Sudo password",
   "Suggested free models (≥200k context):": "โมเดลฟรีที่แนะนำ (≥200k context):",
+  "Suggested models from the provider catalog:": "โมเดลที่แนะนำจากแคตตาล็อกของผู้ให้บริการ:",
   "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929.": "ตัวอย่าง shorthand ที่แนะนำ: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929",
   "Support up to 20 active apps & 50 custom domains": "รองรับสูงสุด 20 active apps & 50 custom domains",
   "Supported formats: protocol://user:pass@host:port, host:port:user:pass": "Supported formats: protocol://user:pass@host:port, host:port:user:pass",

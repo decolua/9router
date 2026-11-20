@@ -1124,6 +1124,7 @@
   "Sudo Password Required": "Kata Sandi Sudo Diperlukan",
   "Sudo password is required": "Kata sandi sudo diperlukan",
   "Suggested free models (≥200k context):": "Model gratis yang disarankan (≥200k konteks):",
+  "Suggested models from the provider catalog:": "Model yang disarankan dari katalog penyedia:",
   "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929.": "Contoh nama pendek yang disarankan: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929.",
   "Support up to 20 active apps & 50 custom domains": "Mendukung hingga 20 aplikasi aktif & 50 domain kustom",
   "Supported formats: protocol://user:pass@host:port, host:port:user:pass": "Format yang didukung: protocol://user:pass@host:port, host:port:user:pass",

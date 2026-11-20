@@ -61,6 +61,10 @@ export const DEFAULT_CAPABILITIES = {
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
   thinkingEffortSupported: false, // zai format only: model accepts a reasoning_effort level (GLM-5.2+; older GLM ignores it)
+  // The endpoint publishes its own reasoning_effort enum and rejects any level
+  // outside it (HTTP 422) — e.g. NVIDIA NIM's Kimi K3.1 Pro takes low|high|max.
+  // The level is then rounded up to the nearest declared one instead of dropped.
+  thinkingEffortStrict: false,
   // limits (tokens)
   contextWindow: 200000,
   maxOutput: 64000,
@@ -246,6 +250,25 @@ export const PROVIDER_CAPABILITIES = {
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
+    // NIM serves third-party models behind strict OpenAI-compatible envelopes:
+    // `thinking` (Anthropic/z.ai shape) is rejected, so every reasoning model
+    // here uses the openai wire shape (reasoning_effort) and declares the
+    // effort levels its endpoint actually accepts (see providers/thinkingLevels.js).
+    // Kimi K3.1 Pro: reasoning_effort enum is low|high|max (no medium/minimal) —
+    // the level set lives in providers/thinkingLevels.js.
+    "moonshotai/kimi-k3.1-pro": { tools: true, vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingEffortStrict: true, contextWindow: 1048576, maxOutput: 65536 },
+    // Step 5 Preview: reasons on every turn, cannot be turned off, and its
+    // schema has no reasoning_effort field — the level is dropped on the wire.
+    "stepfun-ai/step-5-preview": { tools: true, vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 },
+    // MiniMax M3.1 Flash: reasoning lives in the chat template, not in a
+    // top-level reasoning_effort field — the field is dropped on the wire.
+    "minimaxai/minimax-m3.1-flash": { tools: true, vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },
+    // GLM 5.3 Flash on NIM mirrors GLM 5.2's openai-shaped reasoning_effort.
+    "z-ai/glm-5.3-flash": { tools: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
+    // Nemotron 3.5 Super VL: reasoning_effort enum is none|low|high.
+    "nvidia/nemotron-3.5-super-vl-120b-a12b": { tools: true, vision: true, reasoning: true, thinkingFormat: "openai", thinkingEffortStrict: true, contextWindow: 262144, maxOutput: 131072 },
+    // Mistral Large 4: reasoning_effort enum is none|high.
+    "mistralai/mistral-large-4-1t-a52b": { tools: true, vision: true, reasoning: true, thinkingFormat: "openai", thinkingEffortStrict: true, contextWindow: 262144, maxOutput: 262144 },
     "nvidia/nemotron-3.5-bolt-e4b": { tools: true, contextWindow: 128000, maxOutput: 8192 },
     "nvidia/nemotron-3.5-lightning-30b-a3b": { tools: false, reasoning: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 8192 },
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": { tools: false, reasoning: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 8192 },

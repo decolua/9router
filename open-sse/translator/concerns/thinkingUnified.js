@@ -180,6 +180,19 @@ function normalizeOpenAILevel(level, supportedLevels) {
   return "xhigh";
 }
 
+// Round a level up to the nearest one the endpoint declares. Never rounds
+// down to "none" — that would silently drop the reasoning the client asked for.
+const LEVEL_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+function clampToDeclaredLevels(level, supportedLevels) {
+  if (!supportedLevels?.length) return level;
+  if (supportedLevels.includes(level)) return level;
+  const want = LEVEL_ORDER.indexOf(level);
+  if (want < 0) return level;
+  const above = LEVEL_ORDER.slice(want + 1).find((l) => supportedLevels.includes(l));
+  return above || supportedLevels[supportedLevels.length - 1];
+}
+
 function toGeminiThinkingLevel(cfg) {
   const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
   return effortToThinkingLevel(raw);
@@ -272,8 +285,14 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "",
   switch (fmt) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
-      const level = toLevel(eff);
-      if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+      let level = toLevel(eff);
+      if (level) level = normalizeOpenAILevel(level, supportedLevels);
+      // Endpoints that publish their own reasoning_effort enum (NVIDIA NIM's
+      // Kimi K3.1 Pro accepts low|high|max only) reject any other level with
+      // HTTP 422. Round up to the nearest level they do accept instead of
+      // dropping the client's request.
+      if (level && caps.thinkingEffortStrict) level = clampToDeclaredLevels(level, supportedLevels);
+      if (level) body.reasoning_effort = level;
       break;
     }
     case "openai-responses": {
