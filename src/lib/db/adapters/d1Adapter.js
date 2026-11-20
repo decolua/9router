@@ -1,6 +1,6 @@
 // Cloudflare D1 adapter — persistent storage for Cloudflare Workers.
 //
-// D1's API is async, but the adapter interface is synchronous.
+// D1'\''s API is async, but the adapter interface is synchronous.
 // Strategy: "memory + D1 write-through"
 //   1. Cold start: bulk-load all tables from D1 into memory
 //   2. Reads hit memory (fast, sync)
@@ -147,6 +147,11 @@ export async function createD1Adapter(d1) {
           ? `SELECT * FROM ${tableName} ${orderClause} LIMIT ${limit}`
           : `SELECT * FROM ${tableName}`;
         const { results } = await d1.prepare(query).all();
+        if (tableName === "kv") {
+          mem.exec("DELETE FROM kv");
+        } else if (tableName === "usageHistory" && (!results || results.length === 0)) {
+          mem.exec("DELETE FROM usageHistory");
+        }
         if (results && results.length > 0) {
           for (const row of results) {
             const cols = Object.keys(row);

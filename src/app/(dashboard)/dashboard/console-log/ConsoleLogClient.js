@@ -25,13 +25,14 @@ export default function ConsoleLogClient() {
   const logRef = useRef(null);
 
   const handleClear = async () => {
+    setLogs([]);
     try {
       await fetch("/api/translator/console-logs", { method: "DELETE" });
-      // UI cleared via SSE "clear" event
     } catch (err) {
       console.error("Failed to clear console logs:", err);
     }
   };
+
   // Polling fallback for distributed worker environments
   useEffect(() => {
     let timer;
@@ -40,12 +41,15 @@ export default function ConsoleLogClient() {
         const res = await fetch("/api/translator/console-logs");
         if (res.ok) {
           const data = await res.json();
-          if (data.success && Array.isArray(data.logs) && data.logs.length > 0) {
+          if (data.success && Array.isArray(data.logs)) {
             setLogs((prev) => {
-              if (data.logs.length >= prev.length) {
-                return data.logs.slice(-CONSOLE_LOG_CONFIG.maxLines);
+              if (
+                data.logs.length === prev.length &&
+                (data.logs.length === 0 || data.logs[data.logs.length - 1] === prev[prev.length - 1])
+              ) {
+                return prev;
               }
-              return prev;
+              return data.logs.slice(-CONSOLE_LOG_CONFIG.maxLines);
             });
           }
         }
@@ -56,8 +60,6 @@ export default function ConsoleLogClient() {
     timer = setInterval(pollLogs, 3000);
     return () => clearInterval(timer);
   }, []);
-
-
 
   useEffect(() => {
     const es = new EventSource("/api/translator/console-logs/stream");

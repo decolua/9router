@@ -11,3 +11,15 @@ export async function GET() {
     return NextResponse.json({ error: "Failed to fetch logs" }, { status: 500 });
   }
 }
+
+export async function DELETE() {
+  try {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    db.run("DELETE FROM usageHistory");
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[API ERROR] DELETE /api/usage/request-logs failed:", error);
+    return NextResponse.json({ error: "Failed to clear request logs" }, { status: 500 });
+  }
+}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Card from "./Card";
+import Button from "./Button";
 
 export default function RequestLogger() {
   const [logs, setLogs] = useState([]);
@@ -37,11 +38,23 @@ export default function RequestLogger() {
     }
   };
 
+  const handleClear = async () => {
+    if (!window.confirm("Are you sure you want to clear request logs?")) return;
+    try {
+      const res = await fetch("/api/usage/request-logs", { method: "DELETE" });
+      if (res.ok) {
+        setLogs([]);
+      }
+    } catch (err) {
+      console.error("Failed to clear request logs:", err);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Request Logs</h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
           <label className="text-sm font-medium text-text-muted flex items-center gap-2 cursor-pointer">
             <span>Auto Refresh (3s)</span>
             <div
@@ -55,6 +68,9 @@ export default function RequestLogger() {
               />
             </div>
           </label>
+          <Button size="sm" variant="outline" icon="delete" onClick={handleClear}>
+            Clear Logs
+          </Button>
         </div>
       </div>
 

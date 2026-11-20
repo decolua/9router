@@ -27,12 +27,37 @@ if (!state.flushTimer) state.flushTimer = null;
 const FLUSH_INTERVAL_MS = 100;
 const MAX_BATCH_LINES = 50;
 
+let isPersisting = false;
+async function persistLogsToD1(newLines) {
+  if (isPersisting) return;
+  isPersisting = true;
+  try {
+    const cfCtx = globalThis[Symbol.for("__cloudflare-context__")];
+    if (!cfCtx?.env?.DB) return;
+    const { makeKv } = await import("@/lib/db/helpers/kvStore.js");
+    const kv = makeKv("system");
+    const existing = await kv.get("console_logs", []);
+    const updated = [...(Array.isArray(existing) ? existing : []), ...newLines].slice(-CONSOLE_LOG_CONFIG.maxLines);
+    await kv.set("console_logs", updated);
+  } catch {
+  } finally {
+    isPersisting = false;
+  }
+}
+
 function flushPendingLines() {
   state.flushTimer = null;
   if (!state.pendingLines.length) return;
 
   const lines = state.pendingLines.splice(0, state.pendingLines.length);
   state.emitter.emit("lines", lines);
+
+  try {
+    const cfCtx = globalThis[Symbol.for("__cloudflare-context__")];
+    if (cfCtx?.ctx?.waitUntil && cfCtx?.env?.DB) {
+      cfCtx.ctx.waitUntil(persistLogsToD1(lines));
+    }
+  } catch {}
 }
 
 function scheduleFlush() {
@@ -98,9 +123,18 @@ export function getConsoleLogs() {
   return state.logs;
 }
 
-export function clearConsoleLogs() {
+export async function clearConsoleLogs() {
   state.logs = [];
   state.emitter.emit("clear");
+  try {
+    const cfCtx = globalThis[Symbol.for("__cloudflare-context__")];
+    if (cfCtx?.env?.DB) {
+      const { makeKv } = await import("@/lib/db/helpers/kvStore.js");
+      const kv = makeKv("system");
+      await kv.set("console_logs", []);
+      await kv.set("console_cleared_at", Date.now());
+    }
+  } catch {}
 }
 
 export function getConsoleEmitter() {
