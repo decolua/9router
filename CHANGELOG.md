@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Providers**: drop retired models from the Anthropic (`claude-sonnet-4-20250514`, `claude-opus-4-20250514`, `claude-3-5-sonnet-20241022`) and OpenAI (`gpt-4-turbo`, `gpt-4.1-nano`, `o3-mini`, `o4-mini`, `o1-mini`, `gpt-image-1`, `dall-e-3`, `dall-e-2`) catalogs and list their replacements (`claude-sonnet-5-5`, `claude-opus-4-8`, `gpt-5.6-sol/terra/luna`, `gpt-image-2.6-sunburst`); pricing and capability rows stay so existing configs still bill correctly
+
 # v0.5.119 (2026-11-11)
 
 ## Features
