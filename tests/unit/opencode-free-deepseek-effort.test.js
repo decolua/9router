@@ -79,7 +79,7 @@ describe("oc/deepseek-v4.1-flash-free reasoning levels", () => {
       };
       const translated = translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, MODEL, body, true, {}, PROVIDER);
       const out = executor.transformRequest(MODEL, translated, true, { connectionId: "oc-deepseek-effort-test" });
-      expect(executor.buildUrl(MODEL)).toBe("https://opencode.ai/inference/v1/chat/completions");
+      expect(executor.buildUrl(MODEL)).toBe("https://opencode.ai/inference/openai/v1/chat/completions");
       expect(out.reasoning_effort).toBe(level);
       expect(out.model).toBe(MODEL);
     }

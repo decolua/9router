@@ -81,11 +81,11 @@ describe("opencode Free 1.3 tool_choice auto-only", () => {
     const { url, transformedBody } = await ex.execute({
       model: FREE_13, body, stream: true, credentials: CREDS,
     });
-    expect(url).toBe("https://opencode.ai/inference/v1/responses");
+    expect(url).toBe("https://opencode.ai/inference/openai/v1/responses");
     expect(transformedBody.tool_choice).toBe("auto");
     expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
     const [actualUrl, actualInit] = proxyAwareFetch.mock.calls[0];
-    expect(actualUrl).toBe("https://opencode.ai/inference/v1/responses");
+    expect(actualUrl).toBe("https://opencode.ai/inference/openai/v1/responses");
     const sent = JSON.parse(actualInit.body);
     expect(sent.tool_choice).toBe("auto");
     expect(sent.model).toBe(FREE_13);
