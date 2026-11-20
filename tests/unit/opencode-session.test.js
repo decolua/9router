@@ -95,20 +95,25 @@ describe("OpenCode Free Session ID Format", () => {
     // so the decoded time is the mint time modulo 2^36.
     const TIME_MASK = (1n << 36n) - 1n;
     const timeOf = (id) => Number((~BigInt(`0x${id.slice(4, 16)}`) & ((1n << 48n) - 1n)) >> 12n);
-    const before = Date.now();
-    const translated = translateSessionId(`fresh-${before}`, "claude");
-    const after = Date.now();
+    for (const [index, translate] of [translateSessionId, translateZenSessionId].entries()) {
+      const before = Date.now();
+      const translated = translate(`fresh-${index}-${before}`, "claude");
+      const after = Date.now();
 
-    expect(timeOf(translated)).toBeGreaterThanOrEqual(Number(BigInt(before) & TIME_MASK));
-    expect(timeOf(translated)).toBeLessThanOrEqual(Number(BigInt(after) & TIME_MASK));
+      expect(timeOf(translated)).toBeGreaterThanOrEqual(Number(BigInt(before) & TIME_MASK));
+      expect(timeOf(translated)).toBeLessThanOrEqual(Number(BigInt(after) & TIME_MASK));
+    }
   });
 
   it("reuses the memoized session for one conversation", () => {
-    const raw = "claude:memoized-conversation";
-    const first = translateSessionId(raw, "claude");
-    expect(translateSessionId(raw, "claude")).toBe(first);
-    // A different conversation still gets its own session.
-    expect(translateSessionId(`${raw}-other`, "claude")).not.toBe(first);
+    for (const translate of [translateSessionId, translateZenSessionId]) {
+      const raw = "claude:memoized-conversation";
+      const first = translate(raw, "claude");
+      expect(translate(raw, "claude")).toBe(first);
+      // A different conversation or client tool still gets its own session.
+      expect(translate(`${raw}-other`, "claude")).not.toBe(first);
+      expect(translate(raw, "codex")).not.toBe(first);
+    }
   });
 
   it("preserves already-valid OpenCode sessions without re-hashing", () => {
