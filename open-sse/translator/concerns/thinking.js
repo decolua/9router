@@ -25,10 +25,13 @@ export function effortToBudget(effort) {
 
 // OpenAI reasoning_effort → Gemini thinkingLevel (gemini-3 enum: minimal|low|medium|high).
 // Gemini 3 cannot fully disable thinking; "none"/"off" map to "minimal".
+// "xhigh" is preserved (not collapsed to "high"): Gemini 4 Hydrogen serves it,
+// and the gemini-level clamp in thinkingUnified.js downgrades it to "high"
+// for models whose advertised levels lack xhigh. "max" is not a Gemini level.
 export function effortToThinkingLevel(effort) {
   const e = String(effort).toLowerCase().trim();
   if (e === "none" || e === "off") return "minimal";
-  if (e === "xhigh" || e === "max") return "high";
+  if (e === "max") return "high";
   return e;
 }
 
