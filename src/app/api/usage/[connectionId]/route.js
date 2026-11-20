@@ -1,12 +1,25 @@
-// Ensure proxyFetch is loaded to patch globalThis.fetch
-import "open-sse/index.js";
+// On Node.js, import open-sse/index.js to patch globalThis.fetch for proxy support.
+// On Cloudflare Workers this import is deferred: undici references MessagePort which
+// doesn't exist in the Workers runtime, so we load the proxy-fetch side-effect lazily.
+import { isCloudflareWorker } from "@/shared/utils/runtime";
 
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
-import { getUsageForProvider } from "open-sse/services/usage.js";
-import { isUnrecoverableRefreshError } from "open-sse/services/tokenRefresh.js";
-import { getExecutor } from "open-sse/executors/index.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+
+// Lazy-loaded modules (deferred on CF Workers to avoid undici/MessagePort crash)
+let _getUsageForProvider, _isUnrecoverableRefreshError, _getExecutor, _resolveConnectionProxyConfig;
+
+async function ensureOpenSseDeps() {
+  if (_getUsageForProvider) return;
+  if (!isCloudflareWorker()) {
+    // Side-effect: patches globalThis.fetch for proxy support
+    await import("open-sse/index.js");
+  }
+  ({ getUsageForProvider: _getUsageForProvider } = await import("open-sse/services/usage.js"));
+  ({ isUnrecoverableRefreshError: _isUnrecoverableRefreshError } = await import("open-sse/services/tokenRefresh.js"));
+  ({ getExecutor: _getExecutor } = await import("open-sse/executors/index.js"));
+  ({ resolveConnectionProxyConfig: _resolveConnectionProxyConfig } = await import("@/lib/network/connectionProxy"));
+}
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -22,12 +35,14 @@ function isAuthExpiredMessage(usage) {
  * @returns Promise<{ connection, refreshed: boolean }>
  */
 export async function refreshAndUpdateCredentials(connection, force = false, proxyOptions = null) {
+  await ensureOpenSseDeps();
+
   // Re-read latest tokens: OpenAI rotates the refresh token on every refresh, and
   // refreshing with a stale snapshot (reuse) revokes the whole session → account logout.
   const latest = connection.id ? await getProviderConnectionById(connection.id) : null;
   if (latest) connection = latest;
 
-  const executor = getExecutor(connection.provider);
+  const executor = _getExecutor(connection.provider);
 
   // Build credentials object from connection
   const credentials = {
@@ -54,7 +69,7 @@ export async function refreshAndUpdateCredentials(connection, force = false, pro
   const refreshResult = await executor.refreshCredentials(credentials, console, proxyOptions);
 
   // Refresh token reused/invalidated — token family is revoked; do not continue with the dead token.
-  if (refreshResult && isUnrecoverableRefreshError(refreshResult)) {
+  if (refreshResult && _isUnrecoverableRefreshError(refreshResult)) {
     throw new Error("Refresh token invalid or reused. Please re-authorize the connection.");
   }
 
@@ -136,6 +151,7 @@ export async function GET(request, { params }) {
     const { connectionId } = await params;
     const force = new URL(request.url).searchParams.get("force") === "1";
 
+    await ensureOpenSseDeps();
 
     // Get connection from database
     connection = await getProviderConnectionById(connectionId);
@@ -157,7 +173,7 @@ export async function GET(request, { params }) {
     }
 
     // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
-    const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
+    const proxyConfig = await _resolveConnectionProxyConfig(connection.providerSpecificData);
     const proxyOptions = {
       connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
       connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
@@ -180,7 +196,7 @@ export async function GET(request, { params }) {
     }
 
     // Fetch usage from provider API
-    let usage = await getUsageForProvider(connection, proxyOptions, { force });
+    let usage = await _getUsageForProvider(connection, proxyOptions, { force });
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once (OAuth only)
@@ -188,7 +204,7 @@ export async function GET(request, { params }) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
-        usage = await getUsageForProvider(connection, proxyOptions, { force });
+        usage = await _getUsageForProvider(connection, proxyOptions, { force });
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }

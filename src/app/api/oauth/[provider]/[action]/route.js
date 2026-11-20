@@ -1,14 +1,6 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
-import {
-  getProvider,
-  generateAuthData,
-  exchangeTokens,
-  requestDeviceCode,
-  pollForToken
-} from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
-import { readDesktopPassToken } from "open-sse/shared/mimoAccount.js";
 import {
   startCodexProxy,
   stopCodexProxy,
@@ -44,7 +36,23 @@ import {
 import { detectIdeInstalled } from "@/lib/oauth/utils/ideDetect";
 import { ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 
+// Lazy-loaded modules to avoid open-sse/index.js → undici → MessagePort crash on CF Workers
+let _getProvider, _generateAuthData, _exchangeTokens, _requestDeviceCode, _pollForToken, _readDesktopPassToken;
+
+async function ensureOAuthDeps() {
+  if (_getProvider) return;
+  const providers = await import("@/lib/oauth/providers");
+  _getProvider = providers.getProvider;
+  _generateAuthData = providers.generateAuthData;
+  _exchangeTokens = providers.exchangeTokens;
+  _requestDeviceCode = providers.requestDeviceCode;
+  _pollForToken = providers.pollForToken;
+  const mimo = await import("open-sse/shared/mimoAccount.js");
+  _readDesktopPassToken = mimo.readDesktopPassToken;
+}
+
 async function completeXaiManualCode(code, state) {
+  await ensureOAuthDeps();
   const session = state ? getXaiSessionStatus(state) : null;
   if (!session) {
     throw new Error("xAI OAuth session not found; restart the login flow and paste the code again");
@@ -52,7 +60,7 @@ async function completeXaiManualCode(code, state) {
   if (!code) throw new Error("Missing xAI authorization code");
 
   try {
-    const tokenData = await exchangeTokens(
+    const tokenData = await _exchangeTokens(
       "xai",
       code,
       session.redirectUri,
@@ -92,6 +100,7 @@ async function completeXaiManualCode(code, state) {
 // GET /api/oauth/[provider]/device-code - Request device code (for device_code flow)
 export async function GET(request, { params }) {
   try {
+    await ensureOAuthDeps();
     const { provider, action } = await params;
     const { searchParams } = new URL(request.url);
 
@@ -132,7 +141,7 @@ export async function GET(request, { params }) {
       if (provider === "zed") {
         try { const p = new URL(redirectUri).port; if (p) meta.nativeAppPort = p; } catch { /* ignore */ }
       }
-      const authData = await generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
+      const authData = await _generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
       return NextResponse.json(authData);
     }
 
@@ -236,12 +245,12 @@ export async function GET(request, { params }) {
     }
 
     if (action === "device-code") {
-      const providerData = getProvider(provider);
+      const providerData = _getProvider(provider);
       if (providerData.flowType !== "device_code") {
         return NextResponse.json({ error: "Provider does not support device code flow" }, { status: 400 });
       }
 
-      const authData = await generateAuthData(provider, null);
+      const authData = await _generateAuthData(provider, null);
       const startUrl = searchParams.get("start_url");
       const region = searchParams.get("region");
       const authMethod = searchParams.get("auth_method");
@@ -270,10 +279,10 @@ export async function GET(request, { params }) {
       ];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
-        deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
+        deviceData = await _requestDeviceCode(provider, undefined, deviceOptions);
       } else {
         // Qwen and other PKCE providers
-        deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceOptions);
+        deviceData = await _requestDeviceCode(provider, authData.codeChallenge, deviceOptions);
       }
 
       return NextResponse.json({
@@ -295,6 +304,7 @@ export async function GET(request, { params }) {
 // POST /api/oauth/[provider]/poll - Poll for token (device_code flow)
 export async function POST(request, { params }) {
   try {
+    await ensureOAuthDeps();
     const { provider, action } = await params;
     let body;
     try {
@@ -340,7 +350,7 @@ export async function POST(request, { params }) {
         // to the connection so those models work right after OAuth.
         let passToken = null;
         try {
-          passToken = await readDesktopPassToken();
+          passToken = await _readDesktopPassToken();
         } catch {
           // Desktop not installed / cookie DB locked — preview models stay unavailable.
         }
@@ -390,7 +400,7 @@ export async function POST(request, { params }) {
           return NextResponse.json({ error: "Missing token or callback URL" }, { status: 400 });
         }
         try {
-          const tokenData = await exchangeTokens(provider, token, null, null, state);
+          const tokenData = await _exchangeTokens(provider, token, null, null, state);
           const connection = await createProviderConnection({
             provider,
             authType: provider === "windsurf" ? "api_key" : "oauth",
@@ -465,7 +475,7 @@ export async function POST(request, { params }) {
       // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl).
       // systemId (Zed) is merged into meta so the login attempt's own id is
       // used instead of a freshly prepared one. Ignored by other providers.
-      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, {
+      const tokenData = await _exchangeTokens(provider, code, redirectUri, codeVerifier, state, {
         ...(meta || {}),
         ...(systemId ? { systemId } : {}),
       });
@@ -504,10 +514,10 @@ export async function POST(request, { params }) {
       let result;
       if (noPkceProviders.includes(provider)) {
         // kimi needs extraData._kimiDeviceId for stable X-Msh-Device-Id (CLIProxyAPI parity)
-        result = await pollForToken(provider, deviceCode, null, extraData);
+        result = await _pollForToken(provider, deviceCode, null, extraData);
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
-        result = await pollForToken(provider, deviceCode, null, extraData);
+        result = await _pollForToken(provider, deviceCode, null, extraData);
       } else if (provider === "qoder" || provider === "qoder-cn") {
         // Qoder needs both the PKCE verifier (codeVerifier) and the machineId
         // captured at device-code time (extraData._qoderMachineId) so
@@ -515,13 +525,13 @@ export async function POST(request, { params }) {
         if (!codeVerifier) {
           return NextResponse.json({ error: "Missing code verifier" }, { status: 400 });
         }
-        result = await pollForToken(provider, deviceCode, codeVerifier, extraData);
+        result = await _pollForToken(provider, deviceCode, codeVerifier, extraData);
       } else {
         // Qwen and other PKCE providers
         if (!codeVerifier) {
           return NextResponse.json({ error: "Missing code verifier" }, { status: 400 });
         }
-        result = await pollForToken(provider, deviceCode, codeVerifier);
+        result = await _pollForToken(provider, deviceCode, codeVerifier);
       }
 
       if (result.success) {

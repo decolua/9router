@@ -4,7 +4,8 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2025-05-05",
   "compatibility_flags": [
-    "nodejs_compat"
+    "nodejs_compat",
+    "expose_global_message_channel"
   ],
   "assets": {
     "directory": ".open-next/assets",
@@ -13,6 +14,15 @@
   "vars": {
     "NODE_ENV": "production",
     "DATA_DIR": "/tmp/.9router",
-    "JWT_SECRET": "6f6dcffee2db4c26ab35631a38fe3216fd273a7637b64efc8dfd816ee3083afe"
-  }
+    "JWT_SECRET": "6f6dcffee2db4c26ab35631a38fe3216fd273a7637b64efc8dfd816ee3083afe",
+    "INITIAL_PASSWORD": "123abc456",
+    "ENABLE_REQUEST_LOGS": "true"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "9router-db",
+      "database_id": "0ae2134a-ab2b-4e6d-81aa-6c4cc7f58ecd"
+    }
+  ]
 }

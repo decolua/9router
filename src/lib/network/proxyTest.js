@@ -1,5 +1,3 @@
-import { ProxyAgent, fetch as undiciFetch } from "undici";
-
 const DEFAULT_TEST_URL = "https://google.com/";
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -41,6 +39,9 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
   let dispatcher;
 
   try {
+    // Lazy-load undici to avoid MessagePort crash on Cloudflare Workers
+    const { ProxyAgent, fetch: undiciFetch } = await import("undici");
+
     try {
       dispatcher = new ProxyAgent({ uri: normalizedProxyUrl });
     } catch (err) {

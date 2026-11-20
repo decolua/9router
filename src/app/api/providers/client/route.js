@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections } from "@/lib/localDb";
-import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
 const SAFE_FIELDS = [
@@ -76,7 +75,17 @@ function sortConnections(connections, sort) {
 
 export async function GET(request) {
   try {
-    await backfillCodexEmails();
+    // Dynamic import to avoid pulling in open-sse/index.js (which patches
+    // globalThis.fetch via undici/proxyFetch) at module-evaluation time.
+    // On Cloudflare Workers undici references MessagePort which doesn't exist,
+    // so we lazy-load and swallow errors to keep the route functional.
+    try {
+      const { backfillCodexEmails } = await import("@/lib/oauth/providers");
+      await backfillCodexEmails();
+    } catch (e) {
+      // Non-fatal: backfill is a one-time migration for codex email fields
+      console.log("backfillCodexEmails skipped:", e?.message || e);
+    }
 
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider") || "all";

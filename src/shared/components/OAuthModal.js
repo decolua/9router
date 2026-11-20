@@ -360,7 +360,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       } else if (provider === "xai") {
         redirectUri = "http://127.0.0.1:56121/callback";
       } else {
-        redirectUri = `http://localhost:${appPort}/callback`;
+        // On remote deployments (e.g. Cloudflare Workers) the port derived from
+        // window.location is the HTTPS port (443) which Google OAuth rejects as
+        // an invalid loopback redirect.  Use a neutral localhost port instead.
+        const callbackPort = isLocalhost ? appPort : "8080";
+        redirectUri = `http://localhost:${callbackPort}/callback`;
       }
 
       // Build authorize URL first to get codeVerifier/state for codex server-side mode
@@ -374,9 +378,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (!res.ok) throw new Error(data.error);
 
       // Codex: start proxy with server-side session (auto-exchange) + fallback to channels
+      // Proxy requires a local TCP server — skip on remote deployments (e.g. Cloudflare Workers).
       let codexProxyActive = false;
       let codexServerSide = false;
-      if (provider === "codex") {
+      if (provider === "codex" && isLocalhost) {
         try {
           const proxyUrl = new URL(`/api/oauth/codex/start-proxy`, window.location.origin);
           proxyUrl.searchParams.set("app_port", appPort);
@@ -393,9 +398,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
 
       // xAI: same fixed-port server-side proxy pattern as codex (port 56121)
+      // Proxy requires a local TCP server — skip on remote deployments.
       let xaiProxyActive = false;
       let xaiServerSide = false;
-      if (provider === "xai") {
+      if (provider === "xai" && isLocalhost) {
         try {
           const proxyUrl = new URL(`/api/oauth/xai/start-proxy`, window.location.origin);
           proxyUrl.searchParams.set("app_port", appPort);

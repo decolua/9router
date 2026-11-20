@@ -32,6 +32,32 @@ export default function ConsoleLogClient() {
       console.error("Failed to clear console logs:", err);
     }
   };
+  // Polling fallback for distributed worker environments
+  useEffect(() => {
+    let timer;
+    const pollLogs = async () => {
+      try {
+        const res = await fetch("/api/translator/console-logs");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.logs) && data.logs.length > 0) {
+            setLogs((prev) => {
+              if (data.logs.length >= prev.length) {
+                return data.logs.slice(-CONSOLE_LOG_CONFIG.maxLines);
+              }
+              return prev;
+            });
+          }
+        }
+      } catch {}
+    };
+
+    pollLogs();
+    timer = setInterval(pollLogs, 3000);
+    return () => clearInterval(timer);
+  }, []);
+
+
 
   useEffect(() => {
     const es = new EventSource("/api/translator/console-logs/stream");

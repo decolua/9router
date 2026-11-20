@@ -5,7 +5,16 @@ initConsoleLogCapture();
 
 export async function GET() {
   try {
-    const logs = getConsoleLogs();
+    let logs = getConsoleLogs();
+    if (!logs || logs.length === 0) {
+      try {
+        const { getRecentLogs } = await import("@/lib/usageDb");
+        const recent = await getRecentLogs(50);
+        if (recent.length > 0) {
+          logs = recent.map((r) => `[LOG] ${r}`);
+        }
+      } catch {}
+    }
     return NextResponse.json({ success: true, logs });
   } catch (error) {
     console.error("Error getting console logs:", error);

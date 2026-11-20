@@ -1,3 +1,5 @@
+import { initConsoleLogCapture } from "@/lib/consoleLogBuffer.js";
+try { initConsoleLogCapture(); } catch {}
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
@@ -121,7 +123,7 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0
   };
 
-  saveRequestUsage({
+    const p = saveRequestUsage({
     provider: provider || "unknown",
     model: model || "unknown",
     tokens: normalized,
@@ -130,4 +132,12 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     apiKey: apiKey || undefined,
     endpoint: endpoint || null
   }).catch(() => {});
+
+  try {
+    const cfCtx = globalThis[Symbol.for("__cloudflare-context__")];
+    if (cfCtx?.ctx?.waitUntil) {
+      cfCtx.ctx.waitUntil(p);
+    }
+  } catch {}
 }
+

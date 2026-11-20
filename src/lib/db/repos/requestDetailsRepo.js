@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { isCloudflareWorker } from "@/shared/utils/runtime.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -148,9 +149,16 @@ export async function saveRequestDetail(detail) {
 
   // Trigger immediate flush if batch threshold reached.
   // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
-  if (writeBuffer.length >= config.batchSize) {
+    const isCf = isCloudflareWorker();
+  if (isCf || writeBuffer.length >= config.batchSize) {
     if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));
+    const p = flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));
+    try {
+      const cfCtx = globalThis[Symbol.for("__cloudflare-context__")];
+      if (cfCtx?.ctx?.waitUntil) {
+        cfCtx.ctx.waitUntil(p);
+      }
+    } catch {}
   } else if (!flushTimer) {
     flushTimer = setTimeout(() => {
       flushTimer = null;
@@ -161,6 +169,7 @@ export async function saveRequestDetail(detail) {
 
 export async function getRequestDetails(filter = {}) {
   const db = await getAdapter();
+  if (typeof db.syncTable === "function") await db.syncTable("requestDetails", 100);
   const conds = [];
   const params = [];
 

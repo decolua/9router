@@ -1,14 +1,20 @@
-// Ensure proxyFetch is loaded to patch globalThis.fetch
-import "open-sse/index.js";
+// On Node.js, import open-sse/index.js to patch globalThis.fetch for proxy support.
+// On Cloudflare Workers this import is deferred: undici references MessagePort which
+// doesn't exist in the Workers runtime, so we load the proxy-fetch side-effect lazily.
+import { isCloudflareWorker } from "@/shared/utils/runtime";
 
 import { getProviderConnectionById } from "@/lib/localDb";
-import { consumeClaudeResetGrant } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "../route.js";
 
 // Spend one free Claude "limit reset" grant (irreversible)
 export async function POST(request, { params }) {
   try {
+    // Lazy-load open-sse deps to avoid undici crash on CF Workers
+    if (!isCloudflareWorker()) {
+      await import("open-sse/index.js");
+    }
+    const { consumeClaudeResetGrant } = await import("open-sse/services/usage.js");
     const { connectionId } = await params;
     const { grantId } = await request.json().catch(() => ({}));
 

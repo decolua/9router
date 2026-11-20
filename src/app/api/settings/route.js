@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
-import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -93,7 +92,9 @@ export async function PATCH(request) {
       Object.prototype.hasOwnProperty.call(body, "comboStickyRoundRobinLimit") ||
       Object.prototype.hasOwnProperty.call(body, "comboStrategies")
     ) {
-      resetComboRotation();
+      import("open-sse/services/combo.js")
+        .then(({ resetComboRotation }) => resetComboRotation())
+        .catch((e) => console.warn("[Settings] resetComboRotation skipped:", e?.message || e));
     }
 
     if (

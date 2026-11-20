@@ -316,6 +316,7 @@ export async function saveRequestUsage(entry) {
 
 export async function getUsageHistory(filter = {}) {
   const db = await getAdapter();
+  if (typeof db.syncTable === "function") await db.syncTable("usageHistory", 200);
   const conds = [];
   const params = [];
 
@@ -346,6 +347,10 @@ function loadDaysInRange(adapter, maxDays) {
 
 export async function getUsageStats(period = "all") {
   const db = await getAdapter();
+  if (typeof db.syncTable === "function") {
+    await db.syncTable("usageHistory", 100);
+    await db.syncTable("usageDaily", 0);
+  }
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
     import("./connectionsRepo.js"),
@@ -781,6 +786,7 @@ export async function appendRequestLog() {}
 export async function getRecentLogs(limit = 200) {
   try {
     const db = await getAdapter();
+    if (typeof db.syncTable === "function") await db.syncTable("usageHistory", limit);
     const rows = db.all(
       `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`,
       [limit],
@@ -809,3 +815,5 @@ export async function getRecentLogs(limit = 200) {
     return [];
   }
 }
+
+

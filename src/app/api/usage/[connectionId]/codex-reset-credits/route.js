@@ -1,10 +1,22 @@
-// Ensure proxyFetch is loaded to patch globalThis.fetch
-import "open-sse/index.js";
+// On Node.js, import open-sse/index.js to patch globalThis.fetch for proxy support.
+// On Cloudflare Workers this import is deferred: undici references MessagePort which
+// doesn't exist in the Workers runtime, so we load the proxy-fetch side-effect lazily.
+import { isCloudflareWorker } from "@/shared/utils/runtime";
 
 import { getProviderConnectionById } from "@/lib/localDb";
-import { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "../route.js";
+
+// Lazy-loaded open-sse deps
+let _consumeCodexRateLimitResetCredit, _getCodexRateLimitResetCredits;
+
+async function ensureOpenSseDeps() {
+  if (_consumeCodexRateLimitResetCredit) return;
+  if (!isCloudflareWorker()) {
+    await import("open-sse/index.js");
+  }
+  ({ consumeCodexRateLimitResetCredit: _consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits: _getCodexRateLimitResetCredits } = await import("open-sse/services/usage.js"));
+}
 
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
 
@@ -88,6 +100,7 @@ async function refreshCodexConnection(connection, proxyOptions) {
 export async function GET(_request, { params }) {
   let connection;
   try {
+    await ensureOpenSseDeps();
     const { connectionId } = await params;
     const resolved = await getCodexConnection(connectionId);
     if (resolved.response) return resolved.response;
@@ -102,12 +115,12 @@ export async function GET(_request, { params }) {
 
     let result;
     try {
-      result = await getCodexRateLimitResetCredits(connection.accessToken, proxyOptions, connection.providerSpecificData);
+      result = await _getCodexRateLimitResetCredits(connection.accessToken, proxyOptions, connection.providerSpecificData);
     } catch (fetchError) {
       if (!isOAuth || !connection.refreshToken || !isAuthExpiredError(fetchError)) throw fetchError;
       const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
       connection = retryResult.connection;
-      result = await getCodexRateLimitResetCredits(connection.accessToken, proxyOptions, connection.providerSpecificData);
+      result = await _getCodexRateLimitResetCredits(connection.accessToken, proxyOptions, connection.providerSpecificData);
     }
 
     return Response.json(result);
@@ -121,6 +134,7 @@ export async function GET(_request, { params }) {
 export async function POST(request, { params }) {
   let connection;
   try {
+    await ensureOpenSseDeps();
     const { connectionId } = await params;
     const resolved = await getCodexConnection(connectionId);
     if (resolved.response) return resolved.response;
@@ -135,13 +149,13 @@ export async function POST(request, { params }) {
 
     // Server-generated redeem id prevents client-controlled replay
     const redeemRequestId = crypto.randomUUID();
-    let consumeResult = await consumeCodexRateLimitResetCredit(connection.accessToken, redeemRequestId, proxyOptions);
+    let consumeResult = await _consumeCodexRateLimitResetCredit(connection.accessToken, redeemRequestId, proxyOptions);
 
     if (isOAuth && isAuthExpiredResult(consumeResult) && connection.refreshToken) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
-        consumeResult = await consumeCodexRateLimitResetCredit(connection.accessToken, redeemRequestId, proxyOptions);
+        consumeResult = await _consumeCodexRateLimitResetCredit(connection.accessToken, redeemRequestId, proxyOptions);
       } catch (retryError) {
         console.warn(`[Codex Reset Credits] force refresh failed: ${retryError.message}`);
       }

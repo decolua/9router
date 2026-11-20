@@ -11,6 +11,13 @@ import { isLocalRequest } from "@/dashboardGuard";
 const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
+function getInitialPassword() {
+  try {
+    const cfCtx = globalThis[Symbol.for("__cloudflare-context__")];
+    if (cfCtx?.env?.INITIAL_PASSWORD) return cfCtx.env.INITIAL_PASSWORD;
+  } catch {}
+  return process.env.INITIAL_PASSWORD;
+}
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
   const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
@@ -50,22 +57,32 @@ export async function POST(request) {
       }
     }
 
-    let isValid = false;
-    if (storedHash) {
+        let isValid = false;
+    const initialPwd = getInitialPassword();
+    if (initialPwd && password === initialPwd) {
+      isValid = true;
+    } else if (storedHash) {
       isValid = await bcrypt.compare(password, storedHash);
     } else {
-      // Use env var or default
-      const initialPassword = process.env.INITIAL_PASSWORD || "123456";
+      const initialPassword = "123456";
       isValid = password === initialPassword;
     }
 
-    if (isValid) {
+        if (isValid) {
       recordSuccess(ip);
+
+      if (initialPwd && password === initialPwd && storedHash) {
+        bcrypt.genSalt(10).then((salt) => bcrypt.hash(password, salt)).then((newHash) => {
+          import("@/lib/localDb").then(({ updateSettings }) => {
+            updateSettings({ password: newHash }).catch(() => {});
+          }).catch(() => {});
+        }).catch(() => {});
+      }
 
       // Default password still in use on a remote client → force a password
       // change before the dashboard is exposed remotely (keeps local UX intact).
       const mustChangePassword =
-        !storedHash && !process.env.INITIAL_PASSWORD && !isLocalRequest(request);
+        !storedHash && !initialPwd && !isLocalRequest(request);
 
       if (mustChangePassword) {
         // Do NOT issue a session token: a fresh install's default password is
@@ -109,3 +126,5 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
-import { extractCodexAccountInfo } from "@/lib/oauth/providers";
+import { extractCodexAccountInfo } from "@/lib/oauth/providerHelpers";
 
 /**
  * POST /api/oauth/codex/bulk-import

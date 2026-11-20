@@ -67,6 +67,21 @@ async function trySqlJs() {
   }
 }
 
+async function tryD1() {
+  try {
+    // Access the D1 binding from Cloudflare Workers environment.
+    // The binding is set on globalThis by the Workers runtime / OpenNext.
+    const cfCtx = globalThis[Symbol.for("__cloudflare-context__")];
+    const d1 = cfCtx?.env?.DB;
+    if (!d1) return null;
+    const { createD1Adapter } = await import("./adapters/d1Adapter.js");
+    return await createD1Adapter(d1);
+  } catch (e) {
+    console.warn(`[DB] D1 unavailable: ${e.message}`);
+    return null;
+  }
+}
+
 async function tryMemory() {
   try {
     const { createMemoryAdapter } = await import("./adapters/memoryAdapter.js");
@@ -80,16 +95,16 @@ async function tryMemory() {
 async function initAdapter() {
   const isCf = isCloudflareWorker();
 
-  // In Cloudflare Workers, skip file-system drivers entirely → use in-memory
+  // In Cloudflare Workers, skip file-system drivers entirely → use D1 or in-memory
   if (isCf) {
-    const adapter = await tryMemory();
+    // Try D1 first (persistent), fall back to volatile in-memory
+    let adapter = await tryD1();
+    if (!adapter) adapter = await tryMemory();
     if (!adapter) throw new Error("[DB] No driver available in Cloudflare Workers");
     if (!state.logged) {
-      console.log(`[DB] Driver: ${adapter.driver} (Cloudflare Workers — in-memory)`);
+      console.log(`[DB] Driver: ${adapter.driver} (Cloudflare Workers)`);
       state.logged = true;
     }
-    // Run schema bootstrap (memory adapter handles PRAGMA/CREATE TABLE as no-ops,
-    // but tables are already pre-initialized from TABLES in memoryAdapter.js)
     return adapter;
   }
 
