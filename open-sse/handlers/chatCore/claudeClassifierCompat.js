@@ -117,6 +117,7 @@ export function buildDefaultAllowClaudeMessage(model, format = "block") {
       status: 200,
       headers: {
         "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
         "anthropic-version": "2023-06-01",
       },
     }),
