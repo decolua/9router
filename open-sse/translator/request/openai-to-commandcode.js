@@ -100,12 +100,36 @@ function toContentBlocks(content) {
 function safeParseJson(s) {
   if (s == null) return {};
   if (typeof s !== "string") return s;
-  try { return JSON.parse(s); } catch { return {}; }
+  const trimmed = s.trim();
+  if (!trimmed) return {};
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object") return parsed;
+    return { value: parsed };
+  } catch {
+    return { raw: s };
+  }
 }
+
+const COMMAND_CODE_MAX_TOKENS = 64000;
 
 function convertMessages(messages = []) {
   const out = [];
   const systemTexts = [];
+  // Build a lookup map of toolCallId -> toolName across all assistant turns.
+  // Standard OpenAI/Claude tool-response turns omit the tool name on role:"tool",
+  // which would otherwise leave toolName empty and crash upstream /alpha/generate.
+  const toolCallIdToName = new Map();
+  for (const m of messages) {
+    if (m?.role === ROLE.ASSISTANT && Array.isArray(m.tool_calls)) {
+      for (const tc of m.tool_calls) {
+        const name = tc?.function?.name || tc?.name;
+        if (tc?.id && name) {
+          toolCallIdToName.set(tc.id, name);
+        }
+      }
+    }
+  }
 
   for (const m of messages) {
     if (!m) continue;
@@ -119,13 +143,15 @@ function convertMessages(messages = []) {
 
     if (role === ROLE.TOOL) {
       const value = typeof m.content === "string" ? m.content : flattenText(m.content);
+      const isError = Boolean(m.is_error || m.status === "error");
+      const toolName = m.name || (m.tool_call_id ? toolCallIdToName.get(m.tool_call_id) : null) || "unknown";
       out.push({
         role: ROLE.TOOL,
         content: [{
           type: "tool-result",
           toolCallId: m.tool_call_id || "",
-          toolName: m.name || "",
-          output: { type: "text", value },
+          toolName,
+          output: { type: isError ? "error-text" : "text", value },
         }],
       });
       continue;
@@ -134,19 +160,20 @@ function convertMessages(messages = []) {
     if (role === ROLE.ASSISTANT) {
       const blocks = [];
       const rc = m.reasoning_content || m.thought || m.reasoning;
-      if (rc || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0)) {
-        blocks.push({ type: "reasoning", text: rc || " " });
+      if (rc && typeof rc === "string" && rc.trim()) {
+        blocks.push({ type: "reasoning", text: rc });
       }
       const text = flattenText(m.content);
       if (text) blocks.push({ type: OPENAI_BLOCK.TEXT, text });
       if (Array.isArray(m.tool_calls)) {
         for (const tc of m.tool_calls) {
           const fn = tc.function || {};
+          const name = fn.name || tc.name || "";
           blocks.push({
             type: "tool-call",
             toolCallId: tc.id || "",
-            toolName: fn.name || "",
-            input: safeParseJson(fn.arguments),
+            toolName: name,
+            input: safeParseJson(fn.arguments ?? tc.input),
           });
         }
       }
@@ -188,7 +215,7 @@ export function openaiToCommandCodeRequest(model, body, stream, credentials) {
     model,
     messages,
     stream: stream !== false,
-    max_tokens: body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS,
+    max_tokens: body.max_tokens ?? body.max_output_tokens ?? COMMAND_CODE_MAX_TOKENS,
     temperature: body.temperature ?? 0.3,
   };
 
@@ -198,12 +225,23 @@ export function openaiToCommandCodeRequest(model, body, stream, credentials) {
   if (tools) params.tools = tools;
   if (body.top_p != null) params.top_p = body.top_p;
 
+  // Reasoning effort if specified by client (Claude effort or OpenAI reasoning_effort)
+  const effort = body.reasoning_effort ??
+    body.output_config?.effort ??
+    (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
+  if (effort && typeof effort === "string") {
+    params.reasoning_effort = effort;
+  }
+
   const today = new Date().toISOString().slice(0, 10);
 
   return {
     // Conversation-stable (session captured by translateRequest); the executor reuses it as x-session-id.
     threadId: toCommandCodeSessionUuid(credentials?._clientSessionId),
-    memory: "",
+    memory: null,
+    taste: null,
+    skills: null,
+    permissionMode: "standard",
     config: {
       workingDir: COMMAND_CODE_WORKING_DIR,
       date: today,

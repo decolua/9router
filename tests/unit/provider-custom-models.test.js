@@ -1,5 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels.js";
+import { applyQoderModelNames, getProviderCustomModelRows } from "@/shared/utils/providerCustomModels.js";
+
+describe("Qoder model display names", () => {
+  const models = [{ id: "qmodel_latest", name: "Qwen3.7-Max", contextLength: 200000 }];
+
+  it("uses the saved upstream name without changing IDs or capabilities", () => {
+    const saved = [{ providerAlias: "qdcn", id: "qmodel_latest", name: "Qwen4-Max-Preview", type: "llm" }];
+    expect(applyQoderModelNames(models, saved, "qdcn")).toEqual([
+      { ...models[0], name: "Qwen4-Max-Preview" },
+    ]);
+    expect(models[0].name).toBe("Qwen3.7-Max");
+    expect(getProviderCustomModelRows({ customModels: saved, providerAlias: "qdcn", builtInModels: models })).toEqual([]);
+  });
+
+  it("updates existing names on the next fetch", () => {
+    for (const providerAlias of ["qd", "qdcn"]) {
+      const saved = [{ providerAlias, id: "qmodel_latest", name: "Qwen4-Max-Preview" }];
+      expect(applyQoderModelNames(models, saved, providerAlias)[0].name).toBe("Qwen4-Max-Preview");
+      saved[0].name = "New upstream name";
+      expect(applyQoderModelNames(models, saved, providerAlias)[0].name).toBe("New upstream name");
+    }
+  });
+
+  it("ignores other providers, modalities and old ID-only records", () => {
+    const saved = [
+      { providerAlias: "qd", id: "qmodel_latest", name: "Intl model" },
+      { providerAlias: "qdcn", id: "qmodel_latest", name: "Audio model", type: "tts" },
+      { providerAlias: "qdcn", id: "qmodel_latest", name: "qmodel_latest" },
+    ];
+    expect(applyQoderModelNames(models, saved, "qdcn")).toEqual(models);
+    expect(applyQoderModelNames(models, saved, "other")).toBe(models);
+  });
+});
 
 describe("provider custom model rows", () => {
   it("keeps identical model IDs separate per provider", () => {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+import { filterProxyPools, getVisibleProxyPoolSelection, updateProxyPoolSelection } from "@/shared/utils/proxyPoolSelection";
 
 function getStatusVariant(status) {
   if (status === "active") return "success";
@@ -48,13 +49,19 @@ export default function ProxyPoolsPage() {
   const [importing, setImporting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [testingId, setTestingId] = useState(null);
-  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedPoolIds, setSelectedIds] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("all");
   const [healthChecking, setHealthChecking] = useState(false);
   const [healthProgress, setHealthProgress] = useState({ current: 0, total: 0 });
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
   const relayMenuRef = useRef(null);
+  const selectionAnchorRef = useRef(null);
   const notify = useNotificationStore();
+  const visiblePools = useMemo(() => filterProxyPools(proxyPools, statusFilter), [proxyPools, statusFilter]);
+  const selectedIds = getVisibleProxyPoolSelection(visiblePools, selectedPoolIds);
+  const visiblePoolsRef = useRef([]);
+  useEffect(() => { visiblePoolsRef.current = visiblePools; }, [visiblePools]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -210,13 +217,23 @@ export default function ProxyPoolsPage() {
     }
   };
 
-  const allSelected = proxyPools.length > 0 && selectedIds.length === proxyPools.length;
-  const toggleSelect = (id) => setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-  const toggleSelectAll = () => setSelectedIds(allSelected ? [] : proxyPools.map((p) => p.id));
-  const clearSelection = () => setSelectedIds([]);
+  const allSelected = visiblePools.length > 0 && selectedIds.length === visiblePools.length;
+  const toggleSelect = (id, checked, shiftKey) => {
+    const anchorId = selectionAnchorRef.current;
+    setSelectedIds(prev => updateProxyPoolSelection(visiblePools, prev, { id, checked, shiftKey, anchorId }));
+    selectionAnchorRef.current = id;
+  };
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? [] : visiblePools.map(pool => pool.id));
+    selectionAnchorRef.current = null;
+  };
+  const clearSelection = () => {
+    setSelectedIds([]);
+    selectionAnchorRef.current = null;
+  };
 
   const bulkSetActive = async (isActive) => {
-    const targets = selectedIds.length > 0 ? selectedIds : proxyPools.map((p) => p.id);
+    const targets = selectedIds.length > 0 ? selectedIds : visiblePools.map((p) => p.id);
     if (targets.length === 0) return;
     setBulkBusy(true);
     try {
@@ -244,11 +261,13 @@ export default function ProxyPoolsPage() {
       title: "Delete Proxy Pools",
       message: `Delete ${selectedIds.length} proxy pool(s)?`,
       onConfirm: async () => {
+        // A pending test can change a pool's status while confirmation is open.
+        const targets = getVisibleProxyPoolSelection(visiblePoolsRef.current, selectedIds);
         setConfirmState(null);
         setBulkBusy(true);
         try {
           let ok = 0; let blocked = 0; let failed = 0;
-          for (const id of selectedIds) {
+          for (const id of targets) {
             try {
               const res = await fetch(`/api/proxy-pools/${id}`, { method: "DELETE" });
               if (res.ok) ok += 1;
@@ -268,8 +287,8 @@ export default function ProxyPoolsPage() {
 
   const handleHealthCheck = async () => {
     const targets = selectedIds.length > 0
-      ? proxyPools.filter((p) => selectedIds.includes(p.id))
-      : proxyPools;
+      ? visiblePools.filter((p) => selectedIds.includes(p.id))
+      : visiblePools;
     if (targets.length === 0) return;
     setHealthChecking(true);
     setHealthProgress({ current: 0, total: targets.length });
@@ -685,33 +704,48 @@ export default function ProxyPoolsPage() {
 
       <Card>
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          {proxyPools.length > 0 && (
+          <label className="flex items-center gap-2 text-xs text-text-muted">
+            Status
+            <select
+              value={statusFilter}
+              disabled={bulkBusy || healthChecking}
+              onChange={(event) => { setStatusFilter(event.target.value); clearSelection(); }}
+              className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-text-main"
+            >
+              <option value="all">All</option>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </label>
+          {visiblePools.length > 0 && (
             <label className="flex items-center gap-1.5 text-xs text-text-muted cursor-pointer">
               <input
                 type="checkbox"
                 checked={allSelected}
                 onChange={toggleSelectAll}
+                disabled={bulkBusy || healthChecking}
                 className="size-4 rounded border-black/20 dark:border-white/20"
               />
-              {allSelected ? "Unselect all" : "Select all"}
+              {allSelected ? "Unselect visible" : "Select all visible"}
             </label>
           )}
           <Badge variant="default">Total: {proxyPools.length}</Badge>
           <Badge variant="success">Active: {activeCount}</Badge>
+          <span className="text-xs text-text-muted">Showing {visiblePools.length} · Shift+click to select a range</span>
         </div>
 
         {(selectedIds.length > 0 || healthChecking) && (
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
             <span className="material-symbols-outlined text-[18px] text-primary">checklist</span>
             <span className="text-xs font-medium text-primary">
-              {selectedIds.length > 0 ? `${selectedIds.length} selected` : "All pools"}
+              {selectedIds.length > 0 ? `${selectedIds.length} selected` : "Visible pools"}
             </span>
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
                 icon={healthChecking ? "progress_activity" : "health_and_safety"}
                 onClick={handleHealthCheck}
-                disabled={healthChecking || bulkBusy || proxyPools.length === 0}
+                disabled={healthChecking || bulkBusy || visiblePools.length === 0}
               >
                 {healthChecking ? `Checking ${healthProgress.current}/${healthProgress.total}` : "Health Check"}
               </Button>
@@ -743,15 +777,19 @@ export default function ProxyPoolsPage() {
             </p>
             <Button icon="add" onClick={openCreateModal}>Add Proxy Pool</Button>
           </div>
+        ) : visiblePools.length === 0 ? (
+          <p className="py-10 text-center text-sm text-text-muted">No proxy pools match this status.</p>
         ) : (
           <div className="flex flex-col divide-y divide-black/[0.04] dark:divide-white/[0.05]">
-            {proxyPools.map((pool) => (
+            {visiblePools.map((pool) => (
               <div key={pool.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-3 min-w-0 flex-1">
                   <input
                     type="checkbox"
                     checked={selectedIds.includes(pool.id)}
-                    onChange={() => toggleSelect(pool.id)}
+                    onChange={(event) => toggleSelect(pool.id, event.target.checked, event.nativeEvent.shiftKey === true)}
+                    disabled={bulkBusy || healthChecking}
+                    aria-label={`Select ${pool.name}`}
                     className="mt-1 size-4 shrink-0 rounded border-black/20 dark:border-white/20"
                   />
                   <div className="min-w-0 flex-1">
