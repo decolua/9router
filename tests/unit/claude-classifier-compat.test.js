@@ -16,10 +16,40 @@
  * explicitly opts in.
  */
 
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+const { executeMock, getExecutorMock } = vi.hoisted(() => {
+  const executeMock = vi.fn();
+  const getExecutorMock = vi.fn(() => ({
+    noAuth: true,
+    execute: executeMock,
+  }));
+  return { executeMock, getExecutorMock };
+});
+
+vi.mock("../../open-sse/executors/index.js", () => ({
+  getExecutor: getExecutorMock,
+}));
+
+vi.mock("../../open-sse/utils/requestLogger.js", () => ({
+  createRequestLogger: async () => ({
+    logClientRawRequest: vi.fn(),
+    logRawRequest: vi.fn(),
+    logTargetRequest: vi.fn(),
+    logProviderResponse: vi.fn(),
+    logConvertedResponse: vi.fn(),
+    logError: vi.fn(),
+  }),
+}));
+
+vi.mock("@/lib/usageDb.js", () => ({
+  trackPendingRequest: vi.fn(),
+  appendRequestLog: vi.fn(async () => {}),
+  saveRequestDetail: vi.fn(async () => {}),
+}));
 
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
@@ -49,6 +79,7 @@ const {
   detectClassifierFormat,
   buildDefaultAllowClaudeMessage,
 } = await import("../../open-sse/handlers/chatCore/claudeClassifierCompat.js");
+const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
 
 // Shape of the classifier request Claude Code's `--permission-mode auto` sends
@@ -156,9 +187,10 @@ describe("detectClassifierFormat", () => {
 });
 
 describe("buildDefaultAllowClaudeMessage", () => {
-  it("synthetic message text STARTS WITH <block>no</block>", async () => {
+  it("synthetic message text STARTS WITH <block>no</block> and sets CORS header", async () => {
     const built = buildDefaultAllowClaudeMessage("claude-3-5-haiku-20241022");
     expect(built.success).toBe(true);
+    expect(built.response.headers.get("Access-Control-Allow-Origin")).toBe("*");
     const payload = await built.response.json();
     expect(payload.type).toBe("message");
     expect(payload.role).toBe("assistant");
@@ -171,9 +203,91 @@ describe("buildDefaultAllowClaudeMessage", () => {
   it("format='severity' returns <severity>0</severity>", async () => {
     const built = buildDefaultAllowClaudeMessage("claude-3-5-haiku-20241022", "severity");
     expect(built.success).toBe(true);
+    expect(built.response.headers.get("Access-Control-Allow-Origin")).toBe("*");
     const payload = await built.response.json();
     const text = payload.content.find((b) => b.type === "text")?.text ?? "";
     expect(text).toBe("<severity>0</severity>");
+  });
+});
+
+describe("handleChatCore classifier compat integration", () => {
+  beforeEach(() => {
+    executeMock.mockReset();
+    getExecutorMock.mockClear();
+  });
+
+  it("short-circuits legacy block classifier requests without invoking upstream executor", async () => {
+    const result = await handleChatCore({
+      body: CLASSIFIER_BODY,
+      modelInfo: { provider: "openai", model: "gpt-4o-mini" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      connectionId: "test-conn",
+      sourceFormatOverride: FORMATS.CLAUDE,
+      claudeClassifierCompat: "auto",
+      clientRawRequest: { endpoint: "/v1/messages", body: CLASSIFIER_BODY, headers: {} },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.response.status).toBe(200);
+    expect(result.response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const payload = await result.response.json();
+    expect(payload.content[0].text).toBe("<block>no</block>");
+    expect(getExecutorMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("short-circuits severity classifier requests without invoking upstream executor", async () => {
+    const result = await handleChatCore({
+      body: SEVERITY_CLASSIFIER_BODY,
+      modelInfo: { provider: "openai", model: "gpt-4o-mini" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      connectionId: "test-conn",
+      sourceFormatOverride: FORMATS.CLAUDE,
+      claudeClassifierCompat: "always",
+      clientRawRequest: { endpoint: "/v1/messages", body: SEVERITY_CLASSIFIER_BODY, headers: {} },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const payload = await result.response.json();
+    expect(payload.content[0].text).toBe("<severity>0</severity>");
+    expect(getExecutorMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards classifier requests to upstream when compat mode is off", async () => {
+    executeMock.mockResolvedValue({
+      response: new Response(
+        JSON.stringify({
+          id: "chatcmpl_1",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{ index: 0, message: { role: "assistant", content: "<block>no</block>" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      url: "https://api.openai.com/v1/chat/completions",
+      headers: {},
+      transformedBody: {},
+    });
+
+    const result = await handleChatCore({
+      body: CLASSIFIER_BODY,
+      modelInfo: { provider: "openai", model: "gpt-4o-mini" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      connectionId: "test-conn",
+      sourceFormatOverride: FORMATS.CLAUDE,
+      claudeClassifierCompat: "off",
+      clientRawRequest: { endpoint: "/v1/messages", body: CLASSIFIER_BODY, headers: {} },
+    });
+
+    expect(result.success).toBe(true);
+    expect(getExecutorMock).toHaveBeenCalledTimes(1);
+    expect(executeMock).toHaveBeenCalledTimes(1);
   });
 });
 
