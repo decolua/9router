@@ -198,6 +198,16 @@ describe("system-inject claude", () => {
     expect(body.system[body.system.length - 1]).toEqual({ type: CLAUDE_BLOCK.TEXT, text: P1 });
   });
 
+  it("single cached Claude Code identity block stays at system[0]", () => {
+    const identity = "You are Claude Code, Anthropic's official CLI for Claude.";
+    const body = { system: [{ type: CLAUDE_BLOCK.TEXT, text: identity, cache_control: { type: "ephemeral", ttl: "1h" } }] };
+    injectSystemPrompt(body, FORMATS.CLAUDE, P1);
+    expect(body.system).toHaveLength(2);
+    expect(body.system[0].text).toBe(identity);
+    expect(body.system[1].text).toBe(P1);
+    expect(body.system[0].cache_control).toBeDefined();
+  });
+
   it("exact idempotency for claude array", () => {
     const body = { system: [{ type: CLAUDE_BLOCK.TEXT, text: "a" }] };
     injectSystemPrompt(body, FORMATS.CLAUDE, P1);
