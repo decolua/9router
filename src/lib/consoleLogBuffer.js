@@ -62,13 +62,13 @@ function formatArg(arg) {
   }
 }
 
-function appendLine(line) {
-  state.logs.push(line);
+function appendLine(entry) {
+  state.logs.push(entry);
   const maxLines = CONSOLE_LOG_CONFIG.maxLines;
   if (state.logs.length > maxLines) {
     state.logs = state.logs.slice(-maxLines);
   }
-  state.pendingLines.push(line);
+  state.pendingLines.push(entry);
   if (state.pendingLines.length >= MAX_BATCH_LINES) {
     if (state.flushTimer) {
       clearTimeout(state.flushTimer);
@@ -86,7 +86,11 @@ export function initConsoleLogCapture() {
   for (const level of consoleLevels) {
     state.originals[level] = console[level];
     console[level] = (...args) => {
-      appendLine(toLogLine(level, args));
+      // Structured entry: the dashboard viewer filters/counts by level and tag,
+      // which raw text alone cannot express reliably. `seq` is monotonic so the
+      // viewer can key rows even after the buffer drops old lines.
+      state.seq = (state.seq || 0) + 1;
+      appendLine({ seq: state.seq, t: Date.now(), level, text: toLogLine(level, args) });
       state.originals[level](...args);
     };
   }
