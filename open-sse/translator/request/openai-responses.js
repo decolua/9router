@@ -37,6 +37,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let pendingReasoningEncrypted = "";
   const additionalTools = [];
   const customToolNames = new Set();
+  const namespaceToolMap = {};
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -113,7 +114,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
-      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(item.name);
+      const itemNs = typeof item.namespace === "string" && item.namespace.trim() ? item.namespace.trim() : "";
+      const fnName = itemNs && !item.name.startsWith(`${itemNs}__`) ? `${itemNs}__${item.name}` : item.name;
+      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(fnName);
       const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
         ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
         : item.arguments;
@@ -121,7 +124,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         id: item.call_id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
-          name: item.name,
+          name: fnName,
           arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
@@ -174,14 +177,40 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   }
 
   // Convert tools format.
-  // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
-  // explicit `name` field and cannot be represented as Chat Completions function declarations.
-  // Filter them out to avoid sending nameless functionDeclarations to downstream providers
-  // such as Gemini, which strictly validates function names.
-  const responseTools = [
+  // Responses API supports tools grouped into namespaces
+  // ({ type: "namespace", name: "mcp__...", tools: [...] }) as well as "hosted" tools
+  // without an explicit `name` field. Flatten namespace tools into `<namespace>__<tool>`
+  // and record `_namespaceToolMap` so responses can restore `namespace` + `name`.
+  const unpackNamespaceTools = (tools, nsName = "") => {
+    if (!Array.isArray(tools)) return [];
+    const out = [];
+    for (const entry of tools) {
+      if (!entry || typeof entry !== "object") continue;
+      if (entry.type === "namespace" && Array.isArray(entry.tools)) {
+        const subNs = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : nsName;
+        out.push(...unpackNamespaceTools(entry.tools, subNs));
+        continue;
+      }
+      if (nsName && typeof entry.name === "string" && entry.name.trim()) {
+        const flatName = entry.name.startsWith(`${nsName}__`) ? entry.name : `${nsName}__${entry.name}`;
+        namespaceToolMap[flatName] = { namespace: nsName, name: entry.name };
+        const { defer_loading: _defer, ...restTool } = entry;
+        out.push({ ...restTool, name: flatName });
+        continue;
+      }
+      if ("defer_loading" in entry) {
+        const { defer_loading: _defer, ...restTool } = entry;
+        out.push(restTool);
+        continue;
+      }
+      out.push(entry);
+    }
+    return out;
+  };
+  const responseTools = unpackNamespaceTools([
     ...(Array.isArray(body.tools) ? body.tools : []),
     ...additionalTools,
-  ];
+  ]);
   if (responseTools.length > 0) {
     result.tools = responseTools
       .map(tool => {
@@ -230,6 +259,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       .filter(Boolean);
   }
   if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
+  if (Object.keys(namespaceToolMap).length > 0) result._namespaceToolMap = namespaceToolMap;
 
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)
