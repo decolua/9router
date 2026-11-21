@@ -47,6 +47,31 @@ describe("intelligence combo manual refresh", () => {
     expect(response.body).toMatchObject({ success: true, disabled: true, newModelsCount: 0 });
   });
 
+  it("leaves the combo unchanged when provider model discovery fails", async () => {
+    const combo = {
+      id: "combo-1",
+      name: "top-models",
+      models: ["old-model"],
+      updatedAt: "2026-10-08T00:00:00.000Z",
+      config: { type: "intelligence", minScore: 60, maxScore: 70, refreshSchedule: "manual" },
+    };
+    db.getComboById.mockResolvedValue(combo);
+    leaderboard.validateIntelligenceConfig.mockReturnValue(combo.config);
+    leaderboard.fetchLeaderboardModels.mockResolvedValue([]);
+    models.buildModelsList.mockRejectedValue(new Error("discovery unavailable"));
+    // This file does not clear mocks between tests, so reset the two mocks
+    // this test asserts were never called.
+    db.updateCombo.mockClear();
+    leaderboard.matchModelsWithLeaderboard.mockClear();
+
+    const response = await POST(new Request("http://localhost"), { params: Promise.resolve({ id: combo.id }) });
+
+    expect(db.updateCombo).not.toHaveBeenCalled();
+    expect(leaderboard.matchModelsWithLeaderboard).not.toHaveBeenCalled();
+    expect(response.status).toBe(502);
+    expect(response.body).toMatchObject({ success: false });
+  });
+
   it("does not overwrite a combo edited while the refresh was resolving models", async () => {
     const combo = {
       id: "combo-1",

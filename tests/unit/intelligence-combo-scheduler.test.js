@@ -58,6 +58,30 @@ describe("intelligence combo scheduler", () => {
     );
   });
 
+  it("leaves an overdue combo unchanged when provider model discovery fails", async () => {
+    const combo = {
+      id: "combo-1",
+      name: "top-models",
+      models: ["old-model"],
+      updatedAt: "2026-10-08T00:00:00.000Z",
+      config: {
+        type: "intelligence",
+        minScore: 60,
+        maxScore: 70,
+        refreshSchedule: "daily",
+      },
+    };
+    db.getCombos.mockResolvedValue([combo]);
+    leaderboard.validateIntelligenceConfig.mockReturnValue(combo.config);
+    leaderboard.fetchLeaderboardModels.mockResolvedValue([]);
+    models.buildModelsList.mockRejectedValue(new Error("discovery unavailable"));
+
+    await checkAndRefreshIntelligenceCombos();
+
+    expect(db.updateCombo).not.toHaveBeenCalled();
+    expect(leaderboard.matchModelsWithLeaderboard).not.toHaveBeenCalled();
+  });
+
   it("does not overwrite an intelligence combo that changed during refresh", async () => {
     const combo = {
       id: "combo-1",

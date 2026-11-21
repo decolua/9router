@@ -23,13 +23,23 @@ export async function POST(request, { params }) {
     const config = validateIntelligenceConfig(combo.config);
     const aaModels = await fetchLeaderboardModels({ forceRefresh: true });
 
-    // Fetch available provider models in 9router
-    let availableModels = [];
+    // Fetch available provider models in 9router. A discovery error is not
+    // proof that no configured route matches, so it must never be treated as
+    // an empty catalog: leave the combo unchanged and report the failure
+    // instead of persisting an empty model list.
+    let availableModels;
     try {
       const allModels = await buildModelsList(["llm"], { configuredOnly: true });
-      availableModels = (allModels || []).filter((m) => m && m.owned_by !== "combo");
+      if (!Array.isArray(allModels)) {
+        throw new Error("Provider model discovery did not return a catalog");
+      }
+      availableModels = allModels.filter((m) => m && m.owned_by !== "combo");
     } catch (err) {
       console.warn("[ComboRefresh] Failed to get available models:", err.message);
+      return NextResponse.json(
+        { success: false, error: "Failed to get available provider models; combo was left unchanged" },
+        { status: 502 }
+      );
     }
 
     const { models, details } = matchModelsWithLeaderboard({

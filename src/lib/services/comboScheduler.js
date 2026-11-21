@@ -55,9 +55,17 @@ export async function checkAndRefreshIntelligenceCombos() {
         if (!availableModels) {
           try {
             const all = await buildModelsList(["llm"], { configuredOnly: true });
-            availableModels = (all || []).filter((m) => m && m.owned_by !== "combo");
-          } catch {
-            availableModels = [];
+            if (!Array.isArray(all)) {
+              throw new Error("Provider model discovery did not return a catalog");
+            }
+            availableModels = all.filter((m) => m && m.owned_by !== "combo");
+          } catch (err) {
+            // A discovery error is not proof that no configured route
+            // matches, so skip this combo without persisting an empty model
+            // list. The failure is not cached: the next combo, and the next
+            // scheduled run, retry discovery.
+            console.warn(`[ComboScheduler] Skipping "${combo.name}" because provider model discovery failed: ${err.message}`);
+            continue;
           }
         }
 
