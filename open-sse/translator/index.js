@@ -125,7 +125,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
       if (targetFormat !== FORMATS.OPENAI) {
         const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
         if (fromOpenAI) {
+          const prev = result;
           result = fromOpenAI(model, result, stream, credentials);
+          if (result && typeof result === "object" && prev) {
+            for (const k of Object.keys(prev)) {
+              if (k.startsWith("_") && result[k] === undefined) result[k] = prev[k];
+            }
+          }
         }
       }
     }
@@ -301,6 +307,7 @@ export function initState(sourceFormat) {
       funcArgsDone: {},
       funcItemDone: {},
       customToolNames: new Set(),
+      namespaceToolMap: null,
       // Chat Completions usage for response.completed. Not state.usage: other translators in
       // the same pipeline overwrite that in their own shapes.
       responsesUsage: null,
