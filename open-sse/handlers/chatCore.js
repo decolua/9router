@@ -474,7 +474,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
             proxyOptions,
             providerOverrides,
           });
-          if (retryResult.response.ok) {
+          // Keep the retry response even when it is non-2xx: the first response
+          // may be an empty 403 while the retry carries the provider's real
+          // error payload and URL, which are what we parse and log below.
+          if (retryResult?.response) {
             providerResponse = retryResult.response;
             providerUrl = retryResult.url;
             providerResponseFormat = retryResult.responseFormat || targetFormat;
