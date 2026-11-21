@@ -101,30 +101,44 @@ export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
   const models = PROVIDER_MODELS[aliasOrId];
 
   // Resolve requested thinking level from suffix or client request body
+  const normalizeTier = (value) => (value === "minimal" ? "low" : value === "ultra" ? "max" : value);
   const rawSuffix = suffix ? suffix.slice(1, -1).trim().toLowerCase() : "";
-  let tier = rawSuffix === "xhigh" || rawSuffix === "max" ? "high" : rawSuffix === "minimal" ? "low" : rawSuffix;
+  let tier = normalizeTier(rawSuffix);
   if (!tier && clientBody && typeof clientBody === "object") {
     const rawEffort = clientBody.reasoning_effort || clientBody.output_config?.effort || (typeof clientBody.reasoning === "object" ? clientBody.reasoning?.effort : null);
     if (typeof rawEffort === "string" && rawEffort) {
-      const v = rawEffort.toLowerCase().trim();
-      tier = v === "xhigh" || v === "max" ? "high" : v === "minimal" ? "low" : v;
+      tier = normalizeTier(rawEffort.toLowerCase().trim());
     } else if (clientBody.thinking && typeof clientBody.thinking === "object") {
       const b = Number(clientBody.thinking.budget_tokens);
       if (Number.isFinite(b) && b > 0) {
-        tier = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
+        tier = b > 28672 ? "xhigh" : b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
       }
     }
   }
 
-  // Look for tiered variant first if a tier was requested (e.g. gemini-3.8-flash-high)
-  const tieredId = tier ? `${baseId}-${tier}` : null;
-  const found = (tieredId && findModel(models, tieredId, aliasOrId)) || findModel(models, baseId, aliasOrId);
+  // Look for tiered variant first if a tier was requested (e.g. gemini-4-hydrogen-xhigh, gemini-3.8-flash-high)
+  let found = null;
+  let matchedTier = tier;
+  if (tier) {
+    found = findModel(models, `${baseId}-${tier}`, aliasOrId);
+    if (!found && tier === "max") {
+      found = findModel(models, `${baseId}-xhigh`, aliasOrId);
+      if (found) matchedTier = "xhigh";
+    }
+    if (!found && (tier === "xhigh" || tier === "max")) {
+      found = findModel(models, `${baseId}-high`, aliasOrId);
+      if (found) matchedTier = "high";
+    }
+  }
+  if (!found) {
+    found = findModel(models, baseId, aliasOrId);
+  }
   const resolvedId = found?.upstreamModelId || found?.id;
   if (resolvedId) {
     const presetMatch = resolvedId.match(/\([^()]+\)\s*$/);
     const presetSuffix = presetMatch?.[0] || "";
     const resolvedBase = presetSuffix ? resolvedId.slice(0, presetMatch.index).trim() : resolvedId;
-    return resolvedBase + (suffix || (presetSuffix && tier ? `(${tier})` : presetSuffix));
+    return resolvedBase + (suffix || (presetSuffix && matchedTier ? `(${matchedTier})` : presetSuffix));
   }
   if (aliasOrId === "cx" && typeof baseId === "string" && baseId.endsWith(CODEX_REVIEW_SUFFIX)) {
     return baseId.slice(0, -CODEX_REVIEW_SUFFIX.length) + suffix;
