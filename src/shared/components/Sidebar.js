@@ -46,6 +46,8 @@ export default function Sidebar({ onClose }) {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updateStatusText, setUpdateStatusText] = useState("");
+  const [updateError, setUpdateError] = useState(null);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
@@ -76,10 +78,43 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
-  const handleUpdate = () => {
+  // Trigger auto-update in background via /api/auto-update webhook
+  const handleUpdate = async () => {
     setShowUpdateModal(false);
     setIsUpdating(true);
+    setUpdateStatusText("Memulai proses update di latar belakang...");
+    setUpdateError(null);
+    try {
+      await fetch("/api/auto-update", { method: "POST" });
+      const startTime = Date.now();
+      const pollTimer = setInterval(async () => {
+        try {
+          const res = await fetch("/api/auto-update");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.status === "updating" || data.status === "building") {
+              setUpdateStatusText(data.message || "Sedang memproses pembaruan...");
+            } else if (data.status === "conflict" || data.status === "error") {
+              clearInterval(pollTimer);
+              setIsUpdating(false);
+              setUpdateError(data.message || "Pembaruan gagal dijalankan.");
+            } else if (data.status === "success") {
+              clearInterval(pollTimer);
+              setUpdateStatusText("Pembaruan selesai! Memuat ulang...");
+              setTimeout(() => window.location.reload(), 2000);
+            }
+          }
+        } catch {}
+        if (Date.now() - startTime > 300000) {
+          clearInterval(pollTimer);
+          setIsUpdating(false);
+          setUpdateError("Batas waktu update (5 menit) terlampaui.");
+        }
+      }, 2500);
+    } catch (e) {
+      setIsUpdating(false);
+      setUpdateError("Gagal menghubungi server update: " + e.message);
+    }
   };
 
   // Triggered by Copy button inside ManualUpdatePanel: copy + countdown + shutdown
@@ -362,25 +397,43 @@ export default function Sidebar({ onClose }) {
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
         title="Update 9Router"
-        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText="Show Command"
-        cancelText="Cancel"
+        message={isUpdating ? "Updating in background... Please wait ~1 to 3 minutes. The page will reload automatically when done." : "This will automatically pull the latest master branch and rebuild the Docker container in the background. Are you sure?"}
+        confirmText={isUpdating ? "Updating..." : "Start Update"}
+        cancelText={isUpdating ? "" : "Cancel"}
         variant="primary"
+        loading={isUpdating}
       />
 
-      {/* Disconnected / Updating Overlay */}
-      {(isDisconnected || isUpdating) && (
+      {/* Disconnected / Updating / Error Overlay */}
+      {(isDisconnected || isUpdating || updateError) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
-          {isUpdating ? (
-            <ManualUpdatePanel
-              latestVersion={updateInfo?.latestVersion}
-              installCmd={INSTALL_CMD}
-              copied={copied}
-              onCopyAndShutdown={handleCopyAndShutdown}
-              onCancel={handleCancelUpdate}
-              countdown={shutdownCountdown}
-              isDisconnected={isDisconnected}
-            />
+          {updateError ? (
+            <div className="w-full max-w-md rounded-2xl bg-surface border border-red-500/40 p-6 text-text-main shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-center">
+              <div className="flex items-center justify-center size-14 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
+                <span className="material-symbols-outlined text-[32px]">warning</span>
+              </div>
+              <h2 className="text-lg font-semibold mb-2 text-red-500">Pembaruan Gagal</h2>
+              <p className="text-sm text-text-muted mb-6 whitespace-pre-wrap">{updateError}</p>
+              <Button variant="secondary" onClick={() => setUpdateError(null)}>
+                Tutup
+              </Button>
+            </div>
+          ) : isUpdating ? (
+            <div className="w-full max-w-md rounded-2xl bg-surface border border-border p-6 text-text-main shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-center">
+              <div className="flex items-center justify-center size-14 rounded-full bg-primary/20 text-primary mx-auto mb-4 animate-spin">
+                <span className="material-symbols-outlined text-[32px]">sync</span>
+              </div>
+              <h2 className="text-lg font-semibold mb-2">Updating 9Router{updateInfo?.latestVersion ? ` to v${updateInfo.latestVersion}` : ""}</h2>
+              <p className="text-sm text-text-muted mb-4">
+                {updateStatusText || "Memperbarui codebase dan membangun container Docker di latar belakang. Mohon tunggu ~1 hingga 3 menit."}
+              </p>
+              <div className="w-full bg-border/40 rounded-full h-1.5 overflow-hidden mb-3">
+                <div className="bg-primary h-full animate-pulse w-3/4 rounded-full"></div>
+              </div>
+              <p className="text-xs text-text-muted">
+                Halaman akan otomatis dimuat ulang begitu pembaruan selesai.
+              </p>
+            </div>
           ) : (
             <div className="text-center p-8">
               <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">

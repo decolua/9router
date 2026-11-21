@@ -232,6 +232,7 @@ export const PROVIDER_PRICING = {
     "google/gemini-3-flash-preview": { input: 0.5, output: 3.0, cached: 0.05, cache_creation: 0.08333, reasoning: 3.0 },
     "google/gemini-3-pro-image-preview": { input: 2, output: 12, reasoning: 12 },
     "google/gemini-3.1-flash-image-preview": { input: 0.5, output: 3.0, reasoning: 3.0 },
+    "google/gemini-3.1-flash-lite": { input: 0.25, output: 1.5, cached: 0.025, cache_creation: 0.05, reasoning: 1.5 },
     "google/gemini-3.1-flash-lite-image": { input: 0.25, output: 1.5, reasoning: 1.5 },
     "google/gemini-3.1-pro-preview": { input: 2, output: 12, cached: 0.2, cache_creation: 0.375, reasoning: 12 },
     "google/gemini-3.5-flash": { input: 1.5, output: 9.0, cached: 0.15, cache_creation: 0.08333, reasoning: 9.0 },

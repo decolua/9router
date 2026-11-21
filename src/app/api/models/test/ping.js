@@ -6,6 +6,16 @@ import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
+export const DEFAULT_MODEL_TEST_TIMEOUT_MS = 60000;
+
+export function getModelTestTimeoutMs() {
+  const envVal = process.env.MODEL_TEST_TIMEOUT_MS;
+  if (envVal && !isNaN(Number(envVal))) {
+    return Math.max(5000, Number(envVal));
+  }
+  return DEFAULT_MODEL_TEST_TIMEOUT_MS;
+}
+
 function createSilentWavFile() {
   const sampleRate = 16000;
   const channels = 1;
@@ -58,193 +68,220 @@ async function getInternalHeaders() {
 export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`) {
   const headers = await getInternalHeaders();
   const start = Date.now();
+  const timeoutMs = getModelTestTimeoutMs();
 
-  if (kind === "embedding") {
-    const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, input: "test" }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const latencyMs = Date.now() - start;
-    const rawText = await res.text().catch(() => "");
-    let parsed = null;
-    try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
+  try {
+    if (kind === "embedding") {
+      const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, input: "test" }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const latencyMs = Date.now() - start;
+      const rawText = await res.text().catch(() => "");
+      let parsed = null;
+      try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
 
-    if (!res.ok) {
-      const detail = parsed?.error?.message || parsed?.error || rawText;
-      return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
-    }
-    const hasEmbedding = Array.isArray(parsed?.data) && parsed.data.length > 0 && Array.isArray(parsed.data[0]?.embedding);
-    if (!hasEmbedding) {
-      return { ok: false, latencyMs, status: res.status, error: "Provider returned no embedding data" };
-    }
-    return { ok: true, latencyMs, error: null, status: res.status };
-  }
-
-  if (kind === "image") {
-    const res = await fetch(`${baseUrl}/api/v1/images/generations`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, prompt: "test" }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const latencyMs = Date.now() - start;
-    const rawText = await res.text().catch(() => "");
-    let parsed = null;
-    try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
-
-    if (!res.ok) {
-      const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
-      return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
+      if (!res.ok) {
+        const detail = parsed?.error?.message || parsed?.error || rawText;
+        return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
+      }
+      const hasEmbedding = Array.isArray(parsed?.data) && parsed.data.length > 0 && Array.isArray(parsed.data[0]?.embedding);
+      if (!hasEmbedding) {
+        return { ok: false, latencyMs, status: res.status, error: "Provider returned no embedding data" };
+      }
+      return { ok: true, latencyMs, error: null, status: res.status };
     }
 
-    const hasImages = Array.isArray(parsed?.data) && parsed.data.length > 0;
-    if (!hasImages) {
-      return { ok: false, latencyMs, status: res.status, error: "Provider returned no image data for this model" };
-    }
-    return { ok: true, latencyMs, error: null, status: res.status };
-  }
+    if (kind === "image") {
+      const res = await fetch(`${baseUrl}/api/v1/images/generations`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, prompt: "test" }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const latencyMs = Date.now() - start;
+      const rawText = await res.text().catch(() => "");
+      let parsed = null;
+      try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
 
-  if (kind === "stt") {
-    const form = new FormData();
-    const sampleAudio = createSilentWavFile();
-    form.append("file", sampleAudio, "test.wav");
-    form.append("model", model);
+      if (!res.ok) {
+        const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
+        return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
+      }
 
-    const res = await fetch(`${baseUrl}/api/v1/audio/transcriptions`, {
-      method: "POST",
-      headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "content-type")),
-      body: form,
-      signal: AbortSignal.timeout(15000),
-    });
-    const latencyMs = Date.now() - start;
-    const rawText = await res.text().catch(() => "");
-    let parsed = null;
-    try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
-
-    if (!res.ok) {
-      const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
-      return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
+      const hasImages = Array.isArray(parsed?.data) && parsed.data.length > 0;
+      if (!hasImages) {
+        return { ok: false, latencyMs, status: res.status, error: "Provider returned no image data for this model" };
+      }
+      return { ok: true, latencyMs, error: null, status: res.status };
     }
 
-    const text = typeof parsed?.text === "string" ? parsed.text : "";
-    if (!text.trim()) {
-      return { ok: false, latencyMs, status: res.status, error: "Provider returned no transcription text for this model" };
-    }
-    return { ok: true, latencyMs, error: null, status: res.status };
-  }
+    if (kind === "stt") {
+      const form = new FormData();
+      const sampleAudio = createSilentWavFile();
+      form.append("file", sampleAudio, "test.wav");
+      form.append("model", model);
 
-  if (kind === "systemone") {
-    const res = await fetch(`${baseUrl}/api/v1/systemone`, {
+      const res = await fetch(`${baseUrl}/api/v1/audio/transcriptions`, {
+        method: "POST",
+        headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "content-type")),
+        body: form,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const latencyMs = Date.now() - start;
+      const rawText = await res.text().catch(() => "");
+      let parsed = null;
+      try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
+
+      if (!res.ok) {
+        const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
+        return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
+      }
+
+      const text = typeof parsed?.text === "string" ? parsed.text : "";
+      if (!text.trim()) {
+        return { ok: false, latencyMs, status: res.status, error: "Provider returned no transcription text for this model" };
+      }
+      return { ok: true, latencyMs, error: null, status: res.status };
+    }
+
+    if (kind === "systemone") {
+      const isClairic = String(model).includes("clairic");
+      const res = await fetch(`${baseUrl}/api/v1/systemone`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          state: "Customer: I was charged twice for my order this morning.",
+          ...(isClairic
+            ? { fields: { probe: { type: "boolean" } } }
+            : { questions: { probe: { type: "noul", instructions: "Is the customer reporting a billing problem?" } } }),
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const latencyMs = Date.now() - start;
+      const rawText = await res.text().catch(() => "");
+      let parsed = null;
+      try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
+
+      if (!res.ok) {
+        const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
+        return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
+      }
+
+      const answers = parsed?.answers || parsed?.result?.answers;
+      const hasAnswers = answers && typeof answers === "object" && Object.keys(answers).length > 0;
+      if (!hasAnswers) {
+        return { ok: false, latencyMs, status: res.status, error: "Provider returned no answers for this model" };
+      }
+      return { ok: true, latencyMs, error: null, status: res.status };
+    }
+
+    const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({
         model,
-        state: "Customer: I was charged twice for my order this morning.",
-        questions: {
-          probe: { type: "noul", instructions: "Is the customer reporting a billing problem?" },
-        },
+        // 1024 tokens: reasoning models (ClinePass/kimi-k3, deepseek-v4-pro, etc.) spend
+        // their budget on chain-of-thought before emitting an answer. A tiny probe like
+        // max_tokens:16 starves the answer and yields a false "no choices" failure.
+        // See issue #3010.
+        max_tokens: 1024,
+        stream: false,
+        messages: [{ role: "user", content: "hi" }],
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
+
     const rawText = await res.text().catch(() => "");
     let parsed = null;
     try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
 
+    // Unwrap before the choices checks below. No-op for providers that do not
+    // opt in via transport.quirks.clineEnvelope.
+    const providerId = resolveProviderId(String(model).split("/")[0]);
+    parsed = unwrapClineEnvelope(parsed, providerId);
+
     if (!res.ok) {
       const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
-      return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
+      return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 500)}` : ""}`, status: res.status };
     }
 
-    const hasAnswers = parsed?.answers && typeof parsed.answers === "object" && Object.keys(parsed.answers).length > 0;
-    if (!hasAnswers) {
-      return { ok: false, latencyMs, status: res.status, error: "Provider returned no answers for this model" };
+    const providerStatus = parsed?.status;
+    const providerMsg = parsed?.msg || parsed?.message;
+    const hasProviderErrorStatus = providerStatus !== undefined
+      && providerStatus !== null
+      && String(providerStatus) !== "200"
+      && String(providerStatus) !== "0";
+    if (hasProviderErrorStatus && providerMsg) {
+      return {
+        ok: false,
+        latencyMs,
+        status: res.status,
+        error: `Provider status ${providerStatus}: ${String(providerMsg).slice(0, 240)}`,
+      };
     }
+
+    if (parsed?.error) {
+      const providerError = parsed?.error?.message || parsed?.error || "Provider returned an error";
+      return {
+        ok: false,
+        latencyMs,
+        status: res.status,
+        error: String(providerError).slice(0, 240),
+      };
+    }
+
+    const hasChoices = Array.isArray(parsed?.choices) && parsed.choices.length > 0;
+
+    // Soft-pass (issue #3010): a reasoning model may burn its whole budget on
+    // chain-of-thought and return finish_reason:"length" with empty content but
+    // non-empty reasoning/thinking. That's a successful connection, not a failure.
+    const firstChoice = parsed?.choices?.[0] || {};
+    const hasReasoning =
+      firstChoice.message?.reasoning ||
+      firstChoice.message?.reasoning_content ||
+      firstChoice.message?.thinking ||
+      firstChoice.message?.thinking_content;
+    const contentEmpty = !String(firstChoice.message?.content || "").trim();
+    if (hasChoices && firstChoice.finish_reason === "length" && contentEmpty && hasReasoning) {
+      return { ok: true, latencyMs, error: null, status: res.status, note: "reasoning-only response (length-limited)" };
+    }
+
+    if (!hasChoices) {
+      return {
+        ok: false,
+        latencyMs,
+        status: res.status,
+        error: "Provider returned no completion choices for this model",
+      };
+    }
+
     return { ok: true, latencyMs, error: null, status: res.status };
-  }
+  } catch (err) {
+    const latencyMs = Date.now() - start;
+    const isTimeout =
+      err?.name === "TimeoutError" ||
+      err?.name === "AbortError" ||
+      /timeout|aborted/i.test(err?.message || "");
 
-  const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      model,
-      // 1024 tokens: reasoning models (ClinePass/kimi-k3, deepseek-v4-pro, etc.) spend
-      // their budget on chain-of-thought before emitting an answer. A tiny probe like
-      // max_tokens:16 starves the answer and yields a false "no choices" failure.
-      // See issue #3010.
-      max_tokens: 1024,
-      stream: false,
-      messages: [{ role: "user", content: "hi" }],
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
-  const latencyMs = Date.now() - start;
+    if (isTimeout) {
+      return {
+        ok: false,
+        latencyMs,
+        status: 504,
+        error: `Model probe timed out after ${Math.round(timeoutMs / 1000)}s (upstream model took too long to respond or account fallback chain was slow)`,
+      };
+    }
 
-  const rawText = await res.text().catch(() => "");
-  let parsed = null;
-  try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
-
-  // Unwrap before the choices checks below. No-op for providers that do not
-  // opt in via transport.quirks.clineEnvelope.
-  const providerId = resolveProviderId(String(model).split("/")[0]);
-  parsed = unwrapClineEnvelope(parsed, providerId);
-
-  if (!res.ok) {
-    const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
-    return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 500)}` : ""}`, status: res.status };
-  }
-
-  const providerStatus = parsed?.status;
-  const providerMsg = parsed?.msg || parsed?.message;
-  const hasProviderErrorStatus = providerStatus !== undefined
-    && providerStatus !== null
-    && String(providerStatus) !== "200"
-    && String(providerStatus) !== "0";
-  if (hasProviderErrorStatus && providerMsg) {
     return {
       ok: false,
       latencyMs,
-      status: res.status,
-      error: `Provider status ${providerStatus}: ${String(providerMsg).slice(0, 240)}`,
+      status: 500,
+      error: `Model probe failed: ${err?.message || "Unknown error"}`,
     };
   }
-
-  if (parsed?.error) {
-    const providerError = parsed?.error?.message || parsed?.error || "Provider returned an error";
-    return {
-      ok: false,
-      latencyMs,
-      status: res.status,
-      error: String(providerError).slice(0, 240),
-    };
-  }
-
-  const hasChoices = Array.isArray(parsed?.choices) && parsed.choices.length > 0;
-
-  // Soft-pass (issue #3010): a reasoning model may burn its whole budget on
-  // chain-of-thought and return finish_reason:"length" with empty content but
-  // non-empty reasoning/thinking. That's a successful connection, not a failure.
-  const firstChoice = parsed?.choices?.[0] || {};
-  const hasReasoning =
-    firstChoice.message?.reasoning ||
-    firstChoice.message?.reasoning_content ||
-    firstChoice.message?.thinking ||
-    firstChoice.message?.thinking_content;
-  const contentEmpty = !String(firstChoice.message?.content || "").trim();
-  if (hasChoices && firstChoice.finish_reason === "length" && contentEmpty && hasReasoning) {
-    return { ok: true, latencyMs, error: null, status: res.status, note: "reasoning-only response (length-limited)" };
-  }
-
-  if (!hasChoices) {
-    return {
-      ok: false,
-      latencyMs,
-      status: res.status,
-      error: "Provider returned no completion choices for this model",
-    };
-  }
-
-  return { ok: true, latencyMs, error: null, status: res.status };
 }

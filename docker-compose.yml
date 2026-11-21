@@ -1,12 +1,16 @@
 services:
   9router:
-    image: decolua/9router:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: 9router
-    restart: always
+    restart: unless-stopped
     ports:
       - "20128:20128"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - 9router-data:/app/data
+      - ./data:/app/data
     env_file:
       - .env
     environment:
@@ -24,7 +28,3 @@ services:
     restart: always
     ports:
       - "127.0.0.1:8787:8787"
-
-volumes:
-  9router-data:
-    name: 9router-data

@@ -65,8 +65,10 @@ export async function handleSystemoneCore({
   if (body.state === undefined || body.state === null) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: state");
   }
-  if (!body.questions || typeof body.questions !== "object" || Array.isArray(body.questions)) {
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: questions");
+  const hasQuestions = body.questions && typeof body.questions === "object" && !Array.isArray(body.questions);
+  const hasFields = body.fields && typeof body.fields === "object" && !Array.isArray(body.fields);
+  if (!hasQuestions && !hasFields) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: questions or fields");
   }
 
   // noAuth free lanes carry accessToken "public" from the credential stub.
@@ -78,8 +80,27 @@ export async function handleSystemoneCore({
     // Zen lanes expect the official client session header; other providers don't need it.
     ...(OPENCODE_PROVIDERS.has(provider) ? { "x-opencode-session": generateSessionId() } : {}),
   };
-  // Cloudflare validates the body model as a short selector (e.g. "clef-flash"), not the full id.
+  // Cloudflare validates the body model as a short selector (e.g. "clef-flash", "clairic"), not the full id.
   const requestBody = { ...body, model: getModelUpstreamId(provider, model) || model };
+
+  // Cloudflare Clairic models require 'fields' schema. Map 'questions' to 'fields' if not already provided.
+  if (provider === "cloudflare-ai" && String(model).includes("clairic")) {
+    if (!requestBody.fields && requestBody.questions) {
+      const mappedFields = {};
+      for (const [key, q] of Object.entries(requestBody.questions)) {
+        if (q && typeof q === "object") {
+          const t = q.type;
+          mappedFields[key] = {
+            type: t === "noul" ? "boolean" : (t || "text"),
+            ...(q.instructions ? { description: q.instructions } : {}),
+          };
+        } else {
+          mappedFields[key] = { type: "text" };
+        }
+      }
+      requestBody.fields = mappedFields;
+    }
+  }
 
   log?.debug?.("SYSTEMONE", `${provider.toUpperCase()} | ${model}`);
 
@@ -115,7 +136,7 @@ export async function handleSystemoneCore({
 
   if (onRequestSuccess) await onRequestSuccess();
 
-  const usage = responseBody?.usage;
+  const usage = responseBody?.usage || responseBody?.result?.usage;
   return {
     success: true,
     usage: usage

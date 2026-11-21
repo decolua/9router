@@ -64,8 +64,10 @@ export async function handleSystemone(request) {
   if (body.state === undefined || body.state === null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: state");
   }
-  if (!body.questions || typeof body.questions !== "object" || Array.isArray(body.questions)) {
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: questions");
+  const hasQuestions = body.questions && typeof body.questions === "object" && !Array.isArray(body.questions);
+  const hasFields = body.fields && typeof body.fields === "object" && !Array.isArray(body.fields);
+  if (!hasQuestions && !hasFields) {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: questions or fields");
   }
 
   const modelInfo = await getModelInfo(modelStr);

@@ -620,8 +620,21 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(url, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel("cloudflare-ai"), messages: [{ role: "user", content: "test" }], max_tokens: 1 }),
+          body: JSON.stringify({ model: "@cf/meta/llama-3.2-11b-vision-instruct", messages: [{ role: "user", content: "test" }], max_tokens: 1 }),
         }, effectiveProxy);
+
+        if (res.status === 403) {
+          try {
+            const cfData = await res.clone().json();
+            const rawMsg = cfData?.errors?.[0]?.message || "";
+            if (rawMsg.includes("Model Agreement")) {
+              return { valid: false, error: "MODEL_AGREEMENT_REQUIRED", rawMessage: rawMsg };
+            }
+          } catch (e) {
+            // Ignore JSON parse errors
+          }
+        }
+
         const valid = res.status !== 401 && res.status !== 403 && res.status !== 404;
         return { valid, error: valid ? null : "Invalid API token or Account ID" };
       }

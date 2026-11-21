@@ -98,7 +98,37 @@ export default function ProviderDetailPage() {
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const [importingClineModels, setImportingClineModels] = useState(false);
+  const [isAgreeing, setIsAgreeing] = useState(false);
   const { copied, copy } = useCopyToClipboard();
+
+  const handleAgreeToTerms = async () => {
+    if (isAgreeing) return;
+    const activeConnection = connections.find(c => c.isActive !== false);
+    if (!activeConnection) {
+      setModelsTestError("No active connection to agree with.");
+      return;
+    }
+    setIsAgreeing(true);
+    setModelsTestError("");
+    try {
+      const res = await fetch("/api/providers/cloudflare-agree", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId: activeConnection.id }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setModelsTestError("");
+        alert(translate("Cloudflare AI ToS agreement successful. Please try testing the model again."));
+      } else {
+        setModelsTestError(data.error || translate("Failed to agree to terms & conditions."));
+      }
+    } catch (err) {
+      setModelsTestError(translate("A network error occurred while trying to agree to ToS."));
+    } finally {
+      setIsAgreeing(false);
+    }
+  };
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
 
@@ -1826,6 +1856,17 @@ export default function ProviderDetailPage() {
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">
+                {modelsTestError?.includes("Model Agreement") && (
+                  <Button 
+                    size="sm" 
+                    onClick={handleAgreeToTerms} 
+                    disabled={isAgreeing} 
+                    className="bg-yellow-500 hover:bg-yellow-600 text-black border-none"
+                    title={translate("Click to Agree Terms & Conditions")}
+                  >
+                    {isAgreeing ? translate("Processing...") : translate("Agree to Terms & Conditions")}
+                  </Button>
+                )}
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All
@@ -1842,7 +1883,14 @@ export default function ProviderDetailPage() {
         </div>
         {!!modelsTestError && (
           <div className="mb-3">
-            <p className="text-xs text-red-500 break-words">{modelsTestError}</p>
+            <p className="text-xs text-red-500 break-words mb-2">{modelsTestError}</p>
+            {modelsTestError.includes("Model Agreement") && (
+              <div className="flex p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                <p className="text-xs text-yellow-500">
+                  {translate("You have not agreed to the Terms & Conditions of Meta Llama 3.2 to use this model on Cloudflare AI.")}
+                </p>
+              </div>
+            )}
             {/RegionError|hosted in China|regionNotAllowed/i.test(modelsTestError) && (() => {
               const str = typeof modelsTestError === "string" ? modelsTestError : JSON.stringify(modelsTestError);
               const linkMatch = str.match(/https:\/\/opencode\.ai\/workspace\/[^\s"')]+/);
@@ -1966,6 +2014,7 @@ export default function ProviderDetailPage() {
       {!isCompatible && (
         <AddCustomModelModal
           isOpen={showAddCustomModel}
+          activeConnectionId={connections.find(c => c.isActive !== false)?.id}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
           onSave={async (modelId, type, caps, transport) => {
