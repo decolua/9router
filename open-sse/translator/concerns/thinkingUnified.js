@@ -180,8 +180,13 @@ function normalizeOpenAILevel(level, supportedLevels) {
   return "xhigh";
 }
 
-function toGeminiThinkingLevel(cfg) {
-  const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
+function toGeminiThinkingLevel(cfg, supportedLevels) {
+  const raw = (cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high")).toLowerCase();
+  if (supportedLevels?.length) {
+    if (supportedLevels.includes(raw)) return raw;
+    if ((raw === "max" || raw === "ultra") && supportedLevels.includes("xhigh")) return "xhigh";
+    if ((raw === "xhigh" || raw === "max" || raw === "ultra") && supportedLevels.includes("high")) return "high";
+  }
   return effortToThinkingLevel(raw);
 }
 
@@ -317,7 +322,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "",
       break;
     }
     case "gemini-level": {
-      let level = none ? "minimal" : toGeminiThinkingLevel(eff);
+      let level = none ? "minimal" : toGeminiThinkingLevel(eff, supportedLevels);
       // Models without a "minimal" tier (Gemini 4) reject it with 400 — clamp to the lowest supported level.
       const lowest = supportedLevels?.find((l) => l !== "none");
       if (supportedLevels?.length && lowest && !supportedLevels.includes(level)) level = lowest;
