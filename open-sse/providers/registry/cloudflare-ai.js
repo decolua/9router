@@ -27,6 +27,8 @@ export default {
     thinkingFormat: "openai",
   },
   models: [
+    { id: "@cf/cloudflare/clairic", name: "Clairic", kind: "systemone", upstreamModelId: "clairic" },
+    { id: "@cf/cloudflare/clairic-flash", name: "Clairic Flash", kind: "systemone", upstreamModelId: "clairic-flash" },
     { id: "@cf/cloudflare/clef-flash", name: "Clef Flash", kind: "systemone", upstreamModelId: "clef-flash" },
     { id: "@cf/meta/llama-3.2-1b-instruct", name: "Llama 3.2 1B Instruct" },
     { id: "@cf/meta/llama-3.2-3b-instruct", name: "Llama 3.2 3B Instruct" },

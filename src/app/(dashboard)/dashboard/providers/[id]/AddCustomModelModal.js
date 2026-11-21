@@ -72,6 +72,7 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
           options={[
             { value: "llm", label: "Chat / LLM" },
             { value: "stt", label: "Speech to text (STT)" },
+            { value: "systemone", label: "System One (Decision / Extraction)" },
           ]}
           onChange={(e) => {
             setModelType(e.target.value);
@@ -83,7 +84,9 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
           disabled={saving || testStatus === "testing"}
           hint={modelType === "llm"
             ? "Chat models appear in this provider's Available Models."
-            : "Audio transcription models use /v1/audio/transcriptions."}
+            : modelType === "stt"
+            ? "Audio transcription models use /v1/audio/transcriptions."
+            : "System One models use /v1/systemone for structured decision and extraction."}
         />
         <div>
           <label className="text-sm font-medium mb-1.5 block">Model ID</label>

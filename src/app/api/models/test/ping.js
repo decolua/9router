@@ -136,15 +136,16 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
   }
 
   if (kind === "systemone") {
+    const isClairic = String(model).includes("clairic");
     const res = await fetch(`${baseUrl}/api/v1/systemone`, {
       method: "POST",
       headers,
       body: JSON.stringify({
         model,
         state: "Customer: I was charged twice for my order this morning.",
-        questions: {
-          probe: { type: "noul", instructions: "Is the customer reporting a billing problem?" },
-        },
+        ...(isClairic
+          ? { fields: { probe: { type: "boolean" } } }
+          : { questions: { probe: { type: "noul", instructions: "Is the customer reporting a billing problem?" } } }),
       }),
       signal: AbortSignal.timeout(15000),
     });
@@ -158,7 +159,8 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
     }
 
-    const hasAnswers = parsed?.answers && typeof parsed.answers === "object" && Object.keys(parsed.answers).length > 0;
+    const answers = parsed?.answers || parsed?.result?.answers;
+    const hasAnswers = answers && typeof answers === "object" && Object.keys(answers).length > 0;
     if (!hasAnswers) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no answers for this model" };
     }
