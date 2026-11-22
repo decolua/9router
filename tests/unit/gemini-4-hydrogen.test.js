@@ -49,8 +49,8 @@ describe("Gemini 4 Hydrogen Antigravity registry & capabilities", () => {
     expect(getThinkingLevels("antigravity", "gemini-4-carbon-high")).toEqual(["low", "medium", "high"]);
   });
 
-  it("prices gemini-4-hydrogen using the gemini-4 pattern", () => {
-    const expected = { input: 2, output: 10, cached: 0.1, reasoning: 10, cache_creation: 0.1875 };
+  it("prices gemini-4-hydrogen using the Hydrogen pattern", () => {
+    const expected = { input: 1.5, output: 7.5, cached: 0.075, reasoning: 7.5, cache_creation: 1.5 };
     expect(getPricingForModel("antigravity", "gemini-4-hydrogen")).toEqual(expected);
     expect(getPricingForModel("antigravity", "gemini-4-hydrogen-xhigh")).toEqual(expected);
     expect(getPricingForModel("antigravity", "gemini-4-hydrogen-high")).toEqual(expected);
