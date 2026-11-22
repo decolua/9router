@@ -1,7 +1,7 @@
 # Unreleased
 
 ## Features
-- **Antigravity**: add Gemini 4 Hydrogen in low/medium/high/xhigh tiers plus a bare alias resolving to medium, and track the tiers in the usage quota list. Hydrogen is the only Gemini 4 model with an xhigh thinking level, so `xhigh` is advertised for Hydrogen only and downgrades to `high` on Carbon/Argon. Bare-alias default is medium, matching Carbon.
+- **Antigravity**: add Gemini 4 Hydrogen in low/medium/high/xhigh tiers plus a bare alias resolving to high, and track the tiers in the usage quota list. Hydrogen is the only Gemini 4 model with an xhigh thinking level, so `xhigh` is advertised for Hydrogen only and downgrades to `high` on Carbon/Argon.
 
 ## Fixes
 - **Kiro**: identify as Kiro IDE 1.4.154 on inference, model catalog, usage, profile lookup and API-key validation — Kiro's client-version gate rejected the old `kiro-ide/1.0.0` / `KiroIDE-0.10.32` identities with "This version of Kiro is no longer supported" (#5613). All callers now share one identity builder, so they cannot drift apart again.
