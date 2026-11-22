@@ -11,7 +11,10 @@
 
 // Top-level "model:" mapping block — key on its own line, indented children.
 // NOTE: does NOT match the scalar sentinel `model: ""` (no newline right after `model:`).
-export const MODEL_BLOCK_RE = /^model:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
+// Include column-zero comments only when more indented lines follow them, so comments
+// introducing the next top-level section stay in the file when model is replaced or removed.
+export const MODEL_BLOCK_RE =
+  /^model:[ \t]*\r?\n((?:[ \t]+[^ \t\r\n][^\r\n]*(?:\r?\n|$)|[ \t]*\r?\n|(?:#[^\r\n]*\r?\n(?:[ \t]*\r?\n)*)+(?=[ \t]+[^ \t\r\n]))*)/m;
 // Single-line form: `model: ""`, `model: ''`, `model:` at EOF. Anchored without indent so
 // only the top-level key matches (`model_aliases:` never does — `:` must follow "model").
 export const MODEL_SCALAR_RE = /^model:[ \t]*[^\r\n]*\r?\n?/m;

@@ -30,6 +30,8 @@ const modelKeys = (yaml) => yaml.match(/^model:/gm) || [];
 
 const FRESH_INSTALL = `model: ""\nagent:\n  reasoning_effort: medium\n`;
 const EXISTING_MAPPING = `model:\n  provider: openrouter\n  default: anthropic/claude-opus-4.7\n  base_url: ""\n`;
+const AFTER_MODEL = "# Kanban settings\nkanban:\n  review_dispatch: true\n";
+const MAPPING_WITH_COMMENTS = `${EXISTING_MAPPING}# Connection settings\n\n# Credentials\n  api_mode: chat_completions\n  api_key: \${EXAMPLE_PROVIDER_KEY}\n${AFTER_MODEL}`;
 
 describe("hermes config.yaml helpers", () => {
   describe("upsertModelBlock", () => {
@@ -47,6 +49,11 @@ describe("hermes config.yaml helpers", () => {
       expect(modelKeys(out)).toHaveLength(1);
       expect(out).toContain('default: "openai/gpt-5.5"');
       expect(out).not.toContain("openrouter");
+    });
+
+    it("replaces the entire mapping across top-level comments", () => {
+      const newBlock = buildModelBlock("openai/gpt-5.5", BASE);
+      expect(upsertModelBlock(MAPPING_WITH_COMMENTS, newBlock)).toBe(newBlock + AFTER_MODEL);
     });
 
     it("prepends a block when the file has no model key", () => {
@@ -73,6 +80,11 @@ describe("hermes config.yaml helpers", () => {
       expect(modelKeys(removeModelBlock(EXISTING_MAPPING))).toHaveLength(0);
     });
 
+    it("removes the entire mapping across top-level comments in a CRLF file", () => {
+      const yaml = MAPPING_WITH_COMMENTS.replaceAll("\n", "\r\n");
+      expect(removeModelBlock(yaml)).toBe(AFTER_MODEL.replaceAll("\n", "\r\n"));
+    });
+
     it("removes the scalar sentinel line", () => {
       const out = removeModelBlock(FRESH_INSTALL);
       expect(modelKeys(out)).toHaveLength(0);
@@ -89,6 +101,11 @@ describe("hermes config.yaml helpers", () => {
     it("reads provider/default/base_url from a mapping", () => {
       const parsed = parseModelBlock(upsertModelBlock(FRESH_INSTALL, buildModelBlock("m1", BASE)));
       expect(parsed).toMatchObject({ default: "m1", provider: "custom", base_url: BASE });
+    });
+
+    it("reads fields after a top-level comment at the end of a mapping", () => {
+      const yaml = "model:\n  provider: custom\n# Credentials\n  api_key: ${EXAMPLE_PROVIDER_KEY}";
+      expect(parseModelBlock(yaml).api_key).toBe("${EXAMPLE_PROVIDER_KEY}");
     });
 
     it("returns null for the sentinel (unconfigured)", () => {
