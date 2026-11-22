@@ -181,6 +181,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (credentials) credentials.rawHeaders = clientRawRequest?.headers || {};
 
   // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
+  const dbgContent = (b) => { const c = b?.messages?.[0]?.content; return Array.isArray(c) ? c.map(x => x.type).join(",") : typeof c; };
   if (!passthrough) {
     const caps = getCapabilitiesForModel(provider, model);
     console.log("[STRIPDBG] provider=%s model=%s vision=%s sourceFormat=%s", provider, model, caps?.vision, sourceFormat);
@@ -188,11 +189,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log?.debug?.("MODALITY", `stripped unsupported media for ${provider}/${model}`);
       console.log("[STRIPDBG] STRIPPED for %s/%s", provider, model);
     }
+    console.log("[PIPEDBG] after strip: %s hasImage=%s", dbgContent(body), JSON.stringify(body).includes("image_url"));
     // Convert remote image URLs to base64 for targets that can't fetch URLs.
     try {
       const n = await prefetchRemoteImages(body, sourceFormat, targetFormat, { signal: undefined });
       if (n > 0) log?.debug?.("MODALITY", `prefetched ${n} remote image(s) for ${targetFormat}`);
     } catch (e) { log?.warn?.("MODALITY", `image prefetch failed: ${e.message}`); }
+    console.log("[PIPEDBG] after prefetch: %s hasImage=%s", dbgContent(body), JSON.stringify(body).includes("image_url"));
   }
 
   let translatedBody;
@@ -227,6 +230,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._customToolNames;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
     stripContinuityFields(translatedBody);
+    console.log("[PIPEDBG] after translate: %s hasImage=%s", dbgContent(translatedBody), JSON.stringify(translatedBody).includes("image_url"));
   }
 
   // Tool normalization: MCP-equivalent built-in dedup (Claude clients) + same-name
