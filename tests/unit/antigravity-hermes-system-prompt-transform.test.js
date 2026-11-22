@@ -147,4 +147,24 @@ describe("Antigravity transforms a real Hermes Agent system prompt (fake-429 tri
     const hydrogen = systemTextSentToAntigravity(FULL_HERMES_PROMPT, "gemini-4-hydrogen-medium");
     for (const fingerprint of FINGERPRINTS) expect(hydrogen).not.toContain(fingerprint);
   });
+
+  it("treats only the bare detail-free 429 as a prompt rejection, not real quota 429s", async () => {
+    const { isAntigravityPromptRejection } = await import("../../open-sse/executors/antigravity.js");
+    const bare = JSON.stringify({
+      error: { code: 429, message: "Resource has been exhausted (e.g. check quota).", status: "RESOURCE_EXHAUSTED" },
+    });
+    const realQuota = JSON.stringify({
+      error: {
+        code: 429,
+        message: "Individual quota reached for gemini-3.8-flash-high. Resets in 1h56m",
+        status: "RESOURCE_EXHAUSTED",
+        details: [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", metadata: { quotaResetTimeStamp: "2026-11-21T23:00:00Z" } }],
+      },
+    });
+    expect(isAntigravityPromptRejection(429, bare)).toBe(true);
+    // A real quota 429 carries details and must keep the normal quota handling.
+    expect(isAntigravityPromptRejection(429, realQuota)).toBe(false);
+    expect(isAntigravityPromptRejection(500, bare)).toBe(false);
+    expect(isAntigravityPromptRejection(429, "")).toBe(false);
+  });
 });
