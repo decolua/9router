@@ -90,3 +90,17 @@ Pre-translate hooks that compress `tool_result` content in-place to cut tokens. 
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
 - **Security-first on PRs**: Security is the top priority when reviewing or creating PRs. Audit authentication, credential/token storage & leaks, header manipulation (`X-Forwarded-For`), and SSRF risks before functional logic. Always include explicit security warnings/notes when reporting PR reviews or changes to the user.
 - Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md`. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
+
+## Syncing the fork with upstream
+
+`origin` is the fork (arizzi-devops/9router), `upstream` is decolua/9router. The fork's `master` carries no commits of its own, so it always fast-forwards.
+
+1. `git checkout master && git fetch upstream master && git merge --ff-only upstream/master && git push origin master`
+   - If the merge aborts on untracked files that upstream also adds (old test logs, `.snap` files), ask before deleting them.
+2. `git checkout feat/quota-pause-threshold && git merge master`
+   - Use git's default merge message (`Merge branch 'master' into feat/...`). Do not use a Conventional Commits subject for merge commits.
+   - Conflicts are usually import lines or adjacent edits where both sides are needed. Keep both and check that each is still used.
+3. `git push origin feat/quota-pause-threshold`
+4. `package.json` usually changes, so dependencies need reinstalling. Do that in Docker, never locally.
+
+Confirm with the user before each push.
