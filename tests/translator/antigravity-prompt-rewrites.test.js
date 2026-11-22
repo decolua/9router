@@ -63,4 +63,19 @@ describe("ANTIGRAVITY_PROMPT_REWRITES — Hermes identity", () => {
       expect(rewrite(text)).toBe(text);
     });
   }
+
+  // Over-match probe for the #5650 class: unrelated prose mentioning the identity
+  // words must not be rewritten (the /opencode/gi rule has exactly this bug).
+  const prose = [
+    "The Hermes rocket launched successfully.",
+    "Project Hermes Agent migration is scheduled for Q3.",
+    "Nous Research publishes open models. Hermes Agent is one of them.",
+    "Use the hermes-agent CLI to deploy.",
+    "Hermes Agent's documentation lives at docs/hermes-agent.md",
+  ];
+  for (const text of prose) {
+    it(`does not rewrite unrelated prose: ${text.slice(0, 45)}…`, () => {
+      expect(rewrite(text), `rewrote: ${rewrite(text)}`).toBe(text);
+    });
+  }
 });
