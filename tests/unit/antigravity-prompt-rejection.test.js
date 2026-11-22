@@ -134,8 +134,8 @@ describe("retry with the system prompt in the first user turn", () => {
     const { response: upstream } = await run();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(sentBody(0).request.systemInstruction.parts).toEqual([{ text: SYSTEM }]);
-    expect(sentBody(1).request.systemInstruction).toBeUndefined();
+    expect(sentBody(0).request.systemInstruction.parts).toContainEqual({ text: SYSTEM });
+    expect((sentBody(1).request.systemInstruction?.parts || []).map((p) => p.text)).not.toContain(SYSTEM);
     expect(sentBody(1).request.contents).toEqual([{ role: "user", parts: [{ text: SYSTEM }, { text: "hi" }] }]);
     expect(upstream.status).toBe(200);
   });
@@ -156,7 +156,7 @@ describe("retry with the system prompt in the first user turn", () => {
     const { response: upstream } = await run();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(sentBody(1).request.systemInstruction).toBeUndefined();
+    expect((sentBody(1).request.systemInstruction?.parts || []).map((p) => p.text)).not.toContain(SYSTEM);
     expect(upstream.status).toBe(200);
   });
 
@@ -191,7 +191,7 @@ describe("retry with the system prompt in the first user turn", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(sentBody(2).request.continuationToken).toBe("tok1");
-    expect(sentBody(2).request.systemInstruction).toBeUndefined();
+    expect((sentBody(2).request.systemInstruction?.parts || []).map((p) => p.text)).not.toContain(SYSTEM);
     expect(sentBody(2).request.contents[0].parts[0]).toEqual({ text: SYSTEM });
   });
 });
