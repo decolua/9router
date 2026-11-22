@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { Card, Button, Input } from "@/shared/components";
+import { Card, Button, Input, Spinner } from "@/shared/components";
 
 function AuthBrandPanel() {
   const steps = [
@@ -220,7 +220,7 @@ export default function LoginPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg p-4">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <Spinner size="lg" className="text-primary" decorative />
           <p className="text-text-muted mt-4">Loading...</p>
         </div>
       </div>

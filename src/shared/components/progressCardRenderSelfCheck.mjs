@@ -121,7 +121,9 @@ run("page loading uses a solid theme canvas without a blur layer", () => {
 run("spinner and skeleton retain their semantic content and theme surfaces", () => {
   const spinner = flatten(Spinner({ size: "lg" }));
   const skeleton = flatten(Skeleton({ className: "h-4 w-24" }));
-  assert.ok(spinner.includes("autorenew"), "spinner icon");
+  assert.ok((spinner.match(/loading-boxes__square/g) || []).length === 4, "four-box spinner");
+  assert.ok(spinner.includes('role="status"'), "accessible loading status");
+  assert.ok(spinner.includes('aria-label="Loading"'), "loading label");
   assert.ok(spinner.includes("size-8"), "large spinner size");
   assert.ok(skeleton.includes("bg-surface-2"), "skeleton surface");
   assert.ok(skeleton.includes("h-4 w-24"), "caller dimensions retained");

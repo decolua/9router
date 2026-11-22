@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/shared/utils/cn";
+import { Spinner } from "@/shared/components/Loading";
 
 const variants = {
   primary:
@@ -52,7 +53,7 @@ export default function Button({
       {...props}
     >
       {loading ? (
-        <span className={cn("material-symbols-outlined animate-spin", size === "xs" ? "text-[14px]" : "text-[18px]")}>autorenew</span>
+        <Spinner size="sm" className="shrink-0 text-current" decorative />
       ) : icon ? (
         <span className={cn("material-symbols-outlined", size === "xs" ? "text-[14px]" : "text-[18px]")}>{icon}</span>
       ) : null}

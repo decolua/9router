@@ -70,6 +70,7 @@ html:not(.fonts-loading) .material-symbols-outlined { opacity: 1; transition: op
   --color-surface: #ffffff;
   --color-surface-2: #f4f4f5;
   --color-surface-3: #e7e7e9;
+  --color-loading-box-idle: rgba(139, 137, 133, 0.1);
   --color-sidebar: rgba(244, 241, 236, 0.85);
 
   /* Borders */
@@ -462,11 +463,83 @@ button:disabled,
 /* ============================================================
    Animations
    ============================================================ */
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+/* Gray keeps inactive squares visible; brand color marks only the active step. */
+.loading-boxes {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.12em;
+  vertical-align: middle;
+  flex: none;
 }
-.animate-spin { animation: spin 1s linear infinite; }
+.loading-boxes__square {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--color-loading-box-idle);
+  background: var(--color-loading-box-idle);
+  box-shadow: none;
+  animation: loading-box-step 1s steps(1, end) infinite;
+}
+.loading-boxes__square:nth-child(2) { animation-delay: -0.75s; }
+.loading-boxes__square:nth-child(3) { animation-delay: -0.5s; }
+.loading-boxes__square:nth-child(4) { animation-delay: -0.25s; }
+@keyframes loading-box-step {
+  0%, 24.99% {
+    background-color: currentColor;
+    border-color: currentColor;
+  }
+  25%, 100% {
+    background-color: var(--color-loading-box-idle);
+    border-color: var(--color-loading-box-idle);
+  }
+}
+
+/* Existing icon spinners across the app now render the same four-square sequence. */
+.animate-spin { animation: none; }
+.material-symbols-outlined.animate-spin {
+  position: relative;
+  display: inline-block;
+  -webkit-text-fill-color: transparent;
+}
+.material-symbols-outlined.animate-spin::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(currentColor 0 0),
+    linear-gradient(currentColor 0 0),
+    linear-gradient(currentColor 0 0),
+    linear-gradient(currentColor 0 0),
+    linear-gradient(var(--color-loading-box-idle) 0 0),
+    linear-gradient(var(--color-loading-box-idle) 0 0),
+    linear-gradient(var(--color-loading-box-idle) 0 0),
+    linear-gradient(var(--color-loading-box-idle) 0 0);
+  background-position:
+    left top, right top, left bottom, right bottom,
+    left top, right top, left bottom, right bottom;
+  background-repeat: no-repeat;
+  background-size:
+    0 0, 0 0, 0 0, 0 0,
+    30% 30%, 30% 30%, 30% 30%, 30% 30%;
+  animation: legacy-loading-box-step 1s steps(1, end) infinite;
+}
+@keyframes legacy-loading-box-step {
+  0%, 24.99% {
+    background-size: 30% 30%, 0 0, 0 0, 0 0, 30% 30%, 30% 30%, 30% 30%, 30% 30%;
+  }
+  25%, 49.99% {
+    background-size: 0 0, 30% 30%, 0 0, 0 0, 30% 30%, 30% 30%, 30% 30%, 30% 30%;
+  }
+  50%, 74.99% {
+    background-size: 0 0, 0 0, 30% 30%, 0 0, 30% 30%, 30% 30%, 30% 30%, 30% 30%;
+  }
+  75%, 99.99% {
+    background-size: 0 0, 0 0, 0 0, 30% 30%, 30% 30%, 30% 30%, 30% 30%, 30% 30%;
+  }
+  100% {
+    background-size: 30% 30%, 0 0, 0 0, 0 0, 30% 30%, 30% 30%, 30% 30%, 30% 30%;
+  }
+}
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -508,6 +581,17 @@ button:disabled,
   will-change: transform;
 }
 @media (prefers-reduced-motion: reduce) {
+  .loading-boxes__square { animation: none; }
+  .loading-boxes__square:first-child {
+    background-color: currentColor;
+    border-color: currentColor;
+  }
+  .material-symbols-outlined.animate-spin::before {
+    animation: none;
+    background-size:
+      30% 30%, 0 0, 0 0, 0 0,
+      30% 30%, 30% 30%, 30% 30%, 30% 30%;
+  }
   .progress-indeterminate { animation: none; transform: translateX(0); width: 40%; }
 }
 .fade-in { animation: fadeIn 0.2s ease-out forwards; }

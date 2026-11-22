@@ -7,6 +7,12 @@
 - Kept account-scoped or dynamically fetched catalogs unconfirmed where no exact authenticated endpoint result was available; did not infer retirements from catalog absence.
 - Rebuilt the post-login welcome message around provider setup, model routing, and traffic review.
 - Changelog headings and release cards now show dates only.
+- Replaced circular loading indicators with a repeating 2×2 square sequence that advances one box at a time and settles into a static grid for reduced-motion settings.
+- Kept inactive loading squares filled in neutral gray, with the active step in brand orange.
+- Set inactive gray loading squares to 55% opacity and removed their box shadow, keeping the active orange step and existing sequence.
+- Lowered inactive loading squares to 35% opacity while preserving the orange active step, shadowless styling, and reduced-motion fallback.
+- Lowered inactive gray loading squares to 10% opacity, preserving the orange 2×2 sequence, no-shadow styling, and reduced-motion fallback.
+- Updated the loading component self-check to verify four square cells and its accessible status label.
 
 # 21-11-2026
 ## WHAT'S UPDATED?
