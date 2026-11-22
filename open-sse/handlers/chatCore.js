@@ -183,8 +183,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
   if (!passthrough) {
     const caps = getCapabilitiesForModel(provider, model);
+    console.log("[STRIPDBG] provider=%s model=%s vision=%s sourceFormat=%s", provider, model, caps?.vision, sourceFormat);
     if (stripUnsupportedModalities(body, sourceFormat, caps)) {
       log?.debug?.("MODALITY", `stripped unsupported media for ${provider}/${model}`);
+      console.log("[STRIPDBG] STRIPPED for %s/%s", provider, model);
     }
     // Convert remote image URLs to base64 for targets that can't fetch URLs.
     try {
