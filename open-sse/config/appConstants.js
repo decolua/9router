@@ -196,7 +196,22 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: /^[ \t]*When the user asks you to build, run, or verify something, the deliverable is a working artifact[^\n]*(?:\r?\n)?/gm, to: "" },
   { from: /^[ \t]*For help with Hermes Agent itself[^\n]*(?:\r?\n)?/gm, to: "" },
   { from: /^[ \t]*Mid-turn, the user can steer you: Hermes delivers their message[^\n]*(?:\r?\n)?/gm, to: "" },
-  { from: /You are Hermes(?: Agent)?(?:,\s*(?:an intelligent AI assistant|an AI assistant|an AI agent))?(?:,?\s*(?:built|created)\s+by\s+Nous Research)?\./gi, to: "You are an AI assistant." },
+  // Generic Hermes / Nous Research identity rule. The backend filters the identity
+  // rather than one exact sentence, so a narrow pattern is a silent gap: one reworded
+  // variant sails through and the request is answered with a fake 429
+  // RESOURCE_EXHAUSTED (see #3358).
+  //
+  // Every alternative is anchored to a sentence start. An earlier revision left the
+  // bare "Hermes Agent" alternative unanchored, so ordinary prose was rewritten and
+  // destroyed:
+  //   "Project Hermes Agent migration is scheduled for Q3."
+  //     -> "Project You are an AI assistant.migration is scheduled for Q3."
+  // That is the same over-match class reported against the /opencode/gi rule in #5650.
+  // The trailing \.? is consumed so a sentence-final period is not left doubled.
+  {
+    from: /(?:^|(?<=[.!?]\s))(?:You are\s+)?Hermes(?:\s+Agent)?[^.\n]*?\bNous Research\b[^.\n]*\.?|(?:^|(?<=[.!?]\s))(?:You are\s+)?Hermes(?:\s+Agent)?\s*[,:;\u2014\u2013-]?[^.\n]*?\b(?:AI assistant|AI agent)\b[^.\n]*\.?|(?:^|(?<=[.!?]\s))(?:You are\s+)?Hermes\s+Agent\b(?=\s*(?:[.!?\n]|$))\.?/gi,
+    to: "You are an AI assistant.",
+  },
   // Claude Code prepends this line to its system prompt. The Claude-format translator strips it,
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
   // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
