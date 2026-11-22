@@ -1,3 +1,7 @@
+# 23-11-2026
+## WHAT'S FIXED?
+- Fixed DeepSeek Web model routing so Flash uses Default mode, Pro and Reasoner use Expert, and Reasoner and R1 aliases enable thinking.
+
 # 22-11-2026
 ## WHAT'S UPDATED?
 - Added the currently listed Chutes models, MiniMax Code Global models, documented Recraft image models, Runway video generation, Stable Diffusion Flash, and Voyage embedding IDs that remain API-accessible.

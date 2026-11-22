@@ -134,9 +134,14 @@ function createFinishedDrainScheduler(finishStream, drainMs = 750) {
   };
 }
 
-function resolveModelOptions(model, bodyObj) {
+export function resolveModelOptions(model, bodyObj) {
   const m = (model || "").toLowerCase();
-  const modelType = m.includes("pro") || m.includes("expert") ? "expert" : "default";
+  const isExpertModel =
+    m.includes("pro") ||
+    m.includes("expert") ||
+    m.includes("reason") ||
+    m.includes("r1");
+  const modelType = isExpertModel ? "expert" : "default";
   const thinkingEnabled =
     m.includes("r1") ||
     m.includes("think") ||
