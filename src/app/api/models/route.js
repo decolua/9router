@@ -48,6 +48,7 @@ export async function GET() {
      */
     const applyPluginMarks = () => [];
 
+    const seenStaticRoutes = new Set();
     const models = AI_MODELS
       .filter((m) => {
         const alias = getProviderAlias(m.provider) || m.provider;
@@ -76,6 +77,11 @@ export async function GET() {
           caps,
         pluginMarks,
         };
+      })
+      .filter((model) => {
+        if (seenStaticRoutes.has(model.routedModel)) return false;
+        seenStaticRoutes.add(model.routedModel);
+        return true;
       });
 
     // Custom-model ids and live-catalogue ids both live in this set.
@@ -94,8 +100,9 @@ export async function GET() {
     for (const [alias, , liveModels] of liveFree) {
       for (const live of onlyFree(liveModels)) {
         const fullModel = `${alias}/${live.id}`;
-        if (seenFull.has(fullModel)) continue;
+        if (seenFull.has(fullModel) || seenRouted.has(fullModel)) continue;
         seenFull.add(fullModel);
+        seenRouted.add(fullModel);
         const c = getCapabilitiesForModel(alias, live.id);
         const caps = {
           vision: c.vision,

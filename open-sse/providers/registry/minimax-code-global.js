@@ -45,6 +45,7 @@ export default {
     refreshLeadMs: 10 * 60 * 1000,
   },
   models: [
+    { id: "MiniMax-M3.1-Flash", name: "MiniMax M3.1 Flash" },
     { id: "MiniMax-M3.1-Flash-Preview", name: "MiniMax M3.1 Flash Preview" },
     { id: "MiniMax-M3", name: "MiniMax M3" },
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },

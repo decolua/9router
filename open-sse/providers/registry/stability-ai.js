@@ -25,6 +25,7 @@ export default {
     { id: "sd3.5-large", name: "Stable Diffusion 3.5 Large", params: ["size"], kind: "image" },
     { id: "sd3.5-large-turbo", name: "Stable Diffusion 3.5 Large Turbo", params: ["size"], kind: "image" },
     { id: "sd3.5-medium", name: "Stable Diffusion 3.5 Medium", params: ["size"], kind: "image" },
+    { id: "sd3.5-flash", name: "Stable Diffusion 3.5 Flash", params: ["size"], kind: "image" },
   ],
   serviceKinds: ["image"],
   imageConfig: { baseUrl: "https://api.stability.ai/v2beta/stable-image/generate" },

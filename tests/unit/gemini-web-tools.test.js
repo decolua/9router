@@ -22,16 +22,15 @@ import {
 } from "../../open-sse/executors/webCookieToolBridge.js";
 
 describe("gemini-web registry and models", () => {
-  it("lists all 8 supported models in registry", () => {
+  it("lists only current Gemini Web models supported by the executor", () => {
     const expectedModelIds = [
-      "gemini-3.8-flash",
       "gemini-3.5-flash-lite",
-      "gemini-3.1-pro",
-      "gemini-4-argon",
-      "gemini-3.8-flash-thinking",
+      "gemini-4-hydrogen",
+      "gemini-4-neon",
+      "gemini-4-carbon",
       "gemini-3.5-flash-lite-thinking",
-      "gemini-3.1-pro-thinking",
-      "gemini-4-argon-thinking",
+      "gemini-4-hydrogen-thinking",
+      "gemini-4-neon-thinking",
     ];
     const registeredIds = geminiWebRegistry.models.map((m) => m.id);
     expect(registeredIds).toEqual(expectedModelIds);
@@ -64,6 +63,29 @@ describe("gemini-web model table", () => {
     expect(resolveGeminiWebModel("gemini-3.8-flash").hexID).toBe("56fdd199312815e2");
     expect(resolveGeminiWebModel("gemini-3.5-flash-lite").hexID).toBe("8c46e95b1a07cecc");
     expect(resolveGeminiWebModel("gemini-4-argon").hexID).toBe("95a4c0abcba24364");
+  });
+
+  it("maps current Gemini Web model IDs to the supported endpoint slots", () => {
+    expect(resolveGeminiWebModel("gemini-4-hydrogen")).toMatchObject({
+      hexID: HEX.flash,
+      mode: 1,
+      needsCookie: true,
+      thinking: false,
+    });
+    expect(resolveGeminiWebModel("gemini-4-neon")).toMatchObject({
+      hexID: HEX.pro,
+      mode: 3,
+      needsCookie: true,
+      thinking: false,
+    });
+    expect(resolveGeminiWebModel("gemini-4-carbon")).toMatchObject({
+      hexID: HEX.argon,
+      mode: 8,
+      needsCookie: true,
+      thinking: false,
+    });
+    expect(resolveGeminiWebModel("gemini-4-hydrogen-thinking").thinking).toBe(true);
+    expect(resolveGeminiWebModel("gemini-4-neon-thinking").thinking).toBe(true);
   });
 
   it("resolves active hexes directly to their corresponding models", () => {
@@ -164,6 +186,10 @@ describe("gemini-web model table", () => {
     const cfg = resolveGeminiWebModel("no-such-model");
     expect(cfg.hexID).toBe("");
     expect(buildModelHeader(cfg.hexID, 1, 1, "x")).toBe("");
+
+    const unsupportedGeminiId = resolveGeminiWebModel("gemini-4-neon-preview");
+    expect(unsupportedGeminiId.hexID).toBe("");
+    expect(unsupportedGeminiId.unknown).toBe(true);
   });
 });
 

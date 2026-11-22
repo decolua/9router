@@ -32,9 +32,9 @@ describe("Fish Audio TTS provider", () => {
     expect(typeof FORMAT_HANDLERS["fish-audio"]).toBe("function");
   });
 
-  it("exposes the four documented models", () => {
+  it("exposes the documented models", () => {
     const ids = (entry.ttsConfig.models || []).map((m) => m.id);
-    expect(ids).toEqual(["s2.1-pro-free", "s2.1-pro", "s2-pro", "s1"]);
+    expect(ids).toEqual(["drama-3", "s2.1-pro-free", "s2.1-pro", "s2-pro", "s1"]);
   });
 
   it("keeps registry ids and aliases unique", () => {

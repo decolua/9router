@@ -33,6 +33,32 @@ export default {
       params: ["language", "response_format", "timestamps_granularity", "tag_audio_events", "diarize", "num_speakers"],
       kind: "stt"
     },
+    {
+      id: "scribe_v3",
+      name: "Scribe v3",
+      params: ["language", "response_format", "timestamps_granularity", "tag_audio_events", "diarize", "num_speakers"],
+      kind: "stt"
+    },
+    {
+      id: "scribe_v2",
+      name: "Scribe v2",
+      params: ["language", "response_format", "timestamps_granularity", "tag_audio_events", "diarize", "num_speakers"],
+      kind: "stt"
+    },
+    {
+      id: "scribe_v3",
+      name: "Scribe v3",
+      params: ["language", "response_format", "timestamps_granularity", "tag_audio_events", "diarize", "num_speakers"],
+      kind: "stt"
+    },
+    {
+      id: "scribe_v2_medical",
+      name: "Scribe v2 Medical",
+      params: ["language", "response_format", "timestamps_granularity", "tag_audio_events", "diarize", "num_speakers"],
+      kind: "stt"
+    },
+    { id: "eleven_multilingual_v2", name: "Eleven Multilingual v2", kind: "tts" },
+    { id: "eleven_turbo_v2_5", name: "Eleven Turbo v2.5", kind: "tts" },
   ],
   ttsConfig: {
     baseUrl: "https://api.elevenlabs.io/v1/text-to-speech",

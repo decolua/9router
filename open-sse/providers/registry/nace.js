@@ -29,7 +29,9 @@ export default {
   models: [
     { id: "drex-max", name: "Drex Max", kind: "systemone" },
     { id: "drex-v2.0", name: "Drex 2.0", kind: "systemone" },
-  ],
+      { id: "drex-max-finance", name: "drex-max-finance", kind: "systemone" },
+    { id: "drex-v1.5", name: "drex-v1.5", kind: "systemone" },
+],
   serviceKinds: ["systemone"],
   systemoneConfig: {
     baseUrl: "https://console.nace.ai/v1/systemone",

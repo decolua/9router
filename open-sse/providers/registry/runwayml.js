@@ -24,6 +24,7 @@ export default {
     { id: "gen4_image_turbo", name: "Gen-4 Image Turbo", params: ["size"], kind: "image" },
     { id: "gen4_turbo", name: "Gen-4 Turbo", params: [], kind: "video" },
     { id: "gen3a_turbo", name: "Gen-3 Alpha Turbo", params: [], kind: "video" },
+    { id: "gen4.5", name: "Gen-4.5", params: [], kind: "video" },
   ],
   serviceKinds: ["image"],
   imageConfig: { baseUrl: "https://api.dev.runwayml.com/v1" },

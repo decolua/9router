@@ -28,6 +28,8 @@ export default {
     { id: "seed-2-0-mini-260215", name: "Seed 2.0 Mini" },
     { id: "seed-2-0-lite-260228", name: "Seed 2.0 Lite" },
     { id: "kimi-k2-thinking-251104", name: "Kimi K2 Thinking" },
+    { id: "seed-2-0-lite-260428", name: "Seed 2.0 Lite (260428)" },
+    { id: "seed-2-0-mini-260428", name: "Seed 2.0 Mini (260428)" },
     { id: "glm-4-7-251222", name: "GLM 4.7" },
     { id: "gpt-oss-120b-250805", name: "GPT-OSS-120B" },
   ],

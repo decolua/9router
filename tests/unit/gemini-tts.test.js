@@ -85,6 +85,8 @@ describe("Gemini TTS", () => {
 
     expect(entries["gemini-tts-models"].map((model) => model.id)).toEqual([
       "gemini-3.1-flash-tts-preview",
+      "gemini-3.8-flash-tts",
+      "gemini-3.8-flash-lite-tts",
       "gemini-2.5-flash-preview-tts",
       "gemini-2.5-pro-preview-tts",
     ]);

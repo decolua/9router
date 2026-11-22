@@ -73,7 +73,11 @@ export default {
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
     { id: "kimi-latest", name: "Kimi Latest" },
-  ],
+      { id: "k3.1-pro", name: "k3.1-pro" },
+    { id: "k3.1-pro-highspeed", name: "k3.1-pro-highspeed" },
+    { id: "k3-256k", name: "k3-256k" },
+    { id: "k2.8-preview", name: "k2.8-preview" },
+],
   serviceKinds: ["llm", "webSearch"],
   searchViaChat: {
     defaultModel: "kimi-k3",

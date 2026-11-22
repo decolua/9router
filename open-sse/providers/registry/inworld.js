@@ -17,12 +17,26 @@ export default {
   serviceKinds: [
     "tts"
   ],
+  models: [
+    { id: "inworld-tts-2", name: "Inworld TTS 2", kind: "tts" },
+    { id: "inworld-tts-2-flash", name: "Inworld TTS 2 Flash", kind: "tts" },
+    { id: "inworld-tts-1.5-mini", name: "Inworld TTS 1.5 Mini", kind: "tts" },
+    { id: "inworld-tts-1.5-max", name: "Inworld TTS 1.5 Max", kind: "tts" },
+  ],
   ttsConfig: {
     baseUrl: "https://api.inworld.ai/tts/v1/voice",
     authType: "apikey",
     authHeader: "basic",
     format: "inworld",
     models: [
+      {
+        id: "inworld-tts-2",
+        name: "Inworld TTS 2"
+      },
+      {
+        id: "inworld-tts-2-flash",
+        name: "Inworld TTS 2 Flash"
+      },
       {
         id: "inworld-tts-1.5-mini",
         name: "Inworld TTS 1.5 Mini ($0.01/min)"

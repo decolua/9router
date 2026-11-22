@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { getModelUpstreamId } from "../../open-sse/config/providerModels.js";
+import { getModelUpstreamId, getModelsByProviderId } from "../../open-sse/config/providerModels.js";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 import { applyThinking, stripThinkingSuffix } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import gemini from "../../open-sse/providers/registry/gemini.js";
@@ -49,6 +49,26 @@ describe("Gemini 3.8 Antigravity tiers", () => {
       });
     }
   );
+});
+
+describe("Antigravity account model catalog", () => {
+  const accountModelIds = [
+    "gemini-3.8-flash-high",
+    "gemini-3.8-flash-medium",
+    "gemini-3.8-flash-low",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6-thinking",
+    "gpt-oss-120b-medium",
+  ];
+
+  it("keeps the account-listed IDs visible and resolves each final request ID exactly", () => {
+    const models = getModelsByProviderId("antigravity");
+    expect(models.map((model) => model.id)).toEqual(expect.arrayContaining(accountModelIds));
+
+    for (const id of accountModelIds) {
+      expect(stripThinkingSuffix(getModelUpstreamId("ag", id))).toBe(id);
+    }
+  });
 });
 
 describe("Gemini 3.8 MITM model extraction", () => {

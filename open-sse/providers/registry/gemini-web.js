@@ -16,7 +16,7 @@ export default {
     notice: {
       signupUrl: "https://gemini.google.com",
       apiKeyUrl: "https://gemini.google.com",
-      text: "Gemini free web chat (Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Pro, 4 Argon, and thinking variants). Open gemini.google.com, log in, then copy the \"__Secure-1PSID\" cookie (and optional \"__Secure-1PSIDTS\") from DevTools → Application → Cookies → gemini.google.com and paste it here. For best session longevity, exporting from Firefox is recommended.",
+      text: "Gemini web chat (Gemini 3.5 Flash Lite, 4 Hydrogen, 4 Neon, 4 Carbon, and supported thinking variants). Open gemini.google.com, log in, then copy the \"__Secure-1PSID\" cookie (and optional \"__Secure-1PSIDTS\") from DevTools → Application → Cookies → gemini.google.com and paste it here. For best session longevity, exporting from Firefox is recommended.",
     },
   },
   category: "webCookie",
@@ -28,14 +28,13 @@ export default {
     authType: "cookie",
   },
   models: [
-    { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash" },
     { id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite" },
-    { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro" },
-    { id: "gemini-4-argon", name: "Gemini 4 Argon" },
-    { id: "gemini-3.8-flash-thinking", name: "Gemini 3.8 Flash Thinking" },
+    { id: "gemini-4-hydrogen", name: "Gemini 4 Hydrogen" },
+    { id: "gemini-4-neon", name: "Gemini 4 Neon" },
+    { id: "gemini-4-carbon", name: "Gemini 4 Carbon" },
     { id: "gemini-3.5-flash-lite-thinking", name: "Gemini 3.5 Flash Lite Thinking" },
-    { id: "gemini-3.1-pro-thinking", name: "Gemini 3.1 Pro Thinking" },
-    { id: "gemini-4-argon-thinking", name: "Gemini 4 Argon Thinking" },
+    { id: "gemini-4-hydrogen-thinking", name: "Gemini 4 Hydrogen Thinking" },
+    { id: "gemini-4-neon-thinking", name: "Gemini 4 Neon Thinking" },
   ],
   passthroughModels: true,
 };

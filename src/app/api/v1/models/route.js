@@ -25,6 +25,7 @@ import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 import { fetchSuggestedModelsServer, onlyFree } from "@/app/api/providers/suggested-models/filters.js";
+import { isOpencodeFreeModel } from "@/shared/utils/modelTier";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -499,10 +500,14 @@ export async function buildModelsList(kindFilter, options = {}) {
       const isCompatibleProvider =
         isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
-      // Build kind lookup for static models so we can filter even when only IDs are exposed
-      const staticModelKindById = new Map(
-        providerModels.map((m) => [m.id, modelKind(m)])
-      );
+      // Keep every static kind: a model ID can be supported by more than one service.
+      const staticModelKindsById = new Map();
+      for (const model of providerModels) {
+        if (!model?.id) continue;
+        const kinds = staticModelKindsById.get(model.id) || new Set();
+        kinds.add(modelKind(model));
+        staticModelKindsById.set(model.id, kinds);
+      }
       // Registry entries publish a human name for most models; keep it for the
       // entries below instead of making clients render the raw id.
       const staticModelNameById = new Map(
@@ -612,7 +617,11 @@ export async function buildModelsList(kindFilter, options = {}) {
         // Resolve kind: prefer custom/live metadata, then static, then ID heuristics.
         const customKind = customModelKindById.get(modelId);
         const liveKind = liveModelKindById.get(modelId);
-        const kind = customKind || liveKind || staticModelKindById.get(modelId) || inferKindFromUnknownModelId(modelId);
+        const staticKinds = staticModelKindsById.get(modelId);
+        const filteredStaticKind = staticKinds
+          ? kindFilter.find((filterKind) => staticKinds.has(filterKind))
+          : null;
+        const kind = customKind || liveKind || filteredStaticKind || staticKinds?.values().next().value || inferKindFromUnknownModelId(modelId);
         // imageToText custom models stay in the LLM list (vision-capable chat models)
         const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
         if (!kindFilter.includes(kind) && !allowAsLlm) continue;

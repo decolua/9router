@@ -24,6 +24,7 @@ export default {
     { id: "qwen3.5-plus", name: "Qwen3.5 Plus" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "glm-5", name: "GLM 5" },
+    { id: "qwen3.8-max", name: "Qwen3.8 Max" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next" },
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },

@@ -102,6 +102,10 @@ export const GEMINI_WEB_MODELS = {
   "gemini-3.6-flash": { hexID: HEX.flash, mode: 1, needsCookie: true, aliasOf: "gemini-3.8-flash" },
   "gemini-3.1-pro": { hexID: HEX.pro, mode: 3, needsCookie: true },
   "gemini-4-argon": { hexID: HEX.argon, mode: 8, needsCookie: true },
+  // Current Gemini Web names reuse the active endpoint slots for Hydrogen, Neon, and Carbon.
+  "gemini-4-hydrogen": { hexID: HEX.flash, mode: 1, needsCookie: true },
+  "gemini-4-neon": { hexID: HEX.pro, mode: 3, needsCookie: true },
+  "gemini-4-carbon": { hexID: HEX.argon, mode: 8, needsCookie: true },
   // Extended thinking variants: orthogonal to the base models, so a
   // -thinking entry pairs with a base hex rather than being its own model.
   "gemini-3.5-flash-lite-thinking": { hexID: HEX.flashLite, mode: 6, thinking: true, needsCookie: true },
@@ -110,6 +114,8 @@ export const GEMINI_WEB_MODELS = {
   "gemini-3.6-flash-thinking": { hexID: HEX.flash, mode: 1, thinking: true, needsCookie: true, aliasOf: "gemini-3.8-flash-thinking" },
   "gemini-3.1-pro-thinking": { hexID: HEX.pro, mode: 3, thinking: true, needsCookie: true },
   "gemini-4-argon-thinking": { hexID: HEX.argon, mode: 8, thinking: true, needsCookie: true },
+  "gemini-4-hydrogen-thinking": { hexID: HEX.flash, mode: 1, thinking: true, needsCookie: true },
+  "gemini-4-neon-thinking": { hexID: HEX.pro, mode: 3, thinking: true, needsCookie: true },
 };
 
 export const MODEL_ALIASES = {
@@ -236,7 +242,7 @@ export function resolveGeminiWebModel(model) {
     familyModel = "gemini-3.5-flash-lite";
   } else if (baseName.includes("pro")) {
     familyModel = "gemini-3.1-pro";
-  } else if (baseName.includes("flash") || baseName.includes("gemini")) {
+  } else if (baseName.includes("flash")) {
     familyModel = "gemini-3.8-flash";
   }
 

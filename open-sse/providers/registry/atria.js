@@ -13,7 +13,7 @@ export default {
     textIcon: "AD",
     website: "https://atria-asi.ai",
     notice: {
-      text: "OpenAI-compatible endpoint from Atria Dawn (AtomInnoLab). Currently a research preview offering a single text model, Atria-Dawn-Preview.",
+      text: "OpenAI-compatible endpoint from Atria Dawn (AtomInnoLab). Text model IDs include Atria-Dawn and Atria-Dawn-Preview.",
       apiKeyUrl: "https://api.atria-asi.ai/dashboard",
     },
   },
@@ -23,9 +23,10 @@ export default {
     baseUrl: "https://api.atria-asi.ai/v1/chat/completions",
     validateUrl: "https://api.atria-asi.ai/v1/models",
   },
-  // Docs pin the model field to one case-sensitive id. Text-only for now: the
-  // service ships a hook that blocks image/PDF input, so no vision is claimed.
+  // Model IDs are case-sensitive. Text-only for now: the service ships a hook
+  // that blocks image/PDF input, so no vision is claimed.
   models: [
+    { id: "Atria-Dawn", name: "Atria Dawn" },
     { id: "Atria-Dawn-Preview", name: "Atria Dawn Preview" },
   ],
   passthroughModels: true,

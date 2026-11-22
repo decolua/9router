@@ -37,7 +37,9 @@ export default {
     { id: "minimax-m2.7", name: "MiniMax-M2.7" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-  ],
+      { id: "glm-5.2-fp8", name: "glm-5.2-fp8" },
+    { id: "deepseek-v4-flash", name: "deepseek-v4-flash" },
+],
   serviceKinds: ["llm", "imageToText"],
   oauth: {
     webAppUrl: "https://app.kimchi.dev",

@@ -1,3 +1,24 @@
+# 22-11-2026 - v0.5.400
+## WHAT'S UPDATED?
+- Added the currently listed Chutes models, MiniMax Code Global's MiniMax-M3.1-Flash, documented Recraft V4 image models, Runway Gen-4.5, Stable Diffusion 3.5 Flash, and Voyage embedding IDs that remain API-accessible.
+- Added regression coverage for all six Antigravity account-listed model IDs, checking that the catalog exposes them and the final routed model name matches the account-listed ID after thinking suffix handling.
+- Revalidated all 2,327 current static model rows across 143 providers: each is present in the registry-backed catalog and resolves to its configured upstream ID.
+- Mapped the existing WHAT'S UPDATED and WHAT'S FIXED headings to the established Features and Fixes styles so both remain visually categorized.
+- Kept account-scoped or dynamically fetched catalogs unconfirmed where no exact authenticated endpoint result was available; did not infer retirements from catalog absence.
+
+# 21-11-2026 - v0.5.400
+## WHAT'S UPDATED?
+- Updated Gemini Web Cookie with Gemini 4 Hydrogen, Neon, and Carbon models supported by its current web endpoint mappings, while retaining Gemini 3.5 Flash Lite and supported thinking variants.
+- Kept legacy model requests working and stopped inferring unsupported Gemini IDs as the default Flash route.
+- Updated verifiable provider catalogs from official current model sources and aligned modality-specific model choices with supported runtime handlers.
+- Added Fish Audio's officially documented `drama-3` TTS model; retained `s1` until its announced retirement date of 31 December 2026.
+- Added verified Gemini API IDs across supported chat, image, embedding, STT, and TTS routes; removed the two model IDs Google explicitly marks retired.
+- Fixed connected model-list filtering so a model registered for multiple modalities remains visible under each supported filter without duplicate IDs.
+- Deduplicated static and live model entries by routed alias, and restored OpenCode Free markers in the v1 models listing.
+- Regenerated the provider registry index to remove 12 identical duplicates, leaving 143 unique providers and no alias collisions.
+- Kept Antigravity's OAuth catalog unchanged because public documentation does not provide exact runtime IDs; API model IDs were not substituted.
+- Audited 143 providers: 38 verified, 60 partial, 33 unconfirmed, and 12 not applicable. Account-specific and OAuth or IDE catalogs remain unconfirmed where exact public IDs were unavailable.
+
 # v0.5.420 (2026-11-11)
 
 ## What Looks Different?

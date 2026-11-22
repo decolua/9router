@@ -46,6 +46,8 @@ export default {
   models: [
     { id: "us.xai.grok-4.6", name: "Grok 4.6" },
     { id: "global.xai.grok-4.6", name: "Grok 4.6 (global)" },
+    { id: "us.xai.grok-4.7", name: "Grok 4.7" },
+    { id: "global.xai.grok-4.7", name: "Grok 4.7 (global)" },
   ],
   hasProviderSpecificData: true,
 };
