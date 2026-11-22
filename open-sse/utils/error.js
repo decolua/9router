@@ -106,9 +106,41 @@ export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders 
   };
 }
 
+/** Recoverable upstream statuses that must not be relabelled as a hard outage. */
+const PROPAGATABLE_UPSTREAM_STATUSES = new Set([429, 402, 401, 403, 409]);
+const STATUS_SERVICE_UNAVAILABLE = 503;
+
 /**
- * Create unavailable response when all accounts are rate limited
- * @param {number} statusCode - Original error status code
+ * Decide which HTTP status the client sees when every account in a provider is
+ * rate-limited / exhausted before an upstream response could be relayed.
+ *
+ * The upstream status must win when it is known and recoverable: relabelling a
+ * genuine 429 as a synthetic 503 tells the caller "the service is down" when the
+ * truth is "you are being rate-limited, retry after the reset". 9router's own
+ * retry config already treats the two differently (429 -> no retry, 503 -> 3
+ * retries), so the mislabel actively changes client behaviour.
+ *
+ * 503 is reserved for the case it describes: no usable upstream code at all.
+ *
+ * @param {number|null|undefined} lastUpstreamStatus - status from the last failed hop
+ * @param {number|string|null|undefined} lastErrorCode - status recorded by the cooldown layer
+ * @returns {number} status code to send to the client
+ */
+export function resolveExhaustedStatus(lastUpstreamStatus, lastErrorCode) {
+  const candidates = [lastUpstreamStatus, Number(lastErrorCode)];
+  for (const raw of candidates) {
+    const code = Number(raw);
+    if (Number.isInteger(code) && PROPAGATABLE_UPSTREAM_STATUSES.has(code)) return code;
+  }
+  // A non-recoverable 4xx/5xx from upstream is still more truthful than inventing 503.
+  const up = Number(lastUpstreamStatus);
+  if (Number.isInteger(up) && up >= 400 && up < 600) return up;
+  return STATUS_SERVICE_UNAVAILABLE;
+}
+
+/**
+ * Build an "all accounts unavailable" response with an upstream retry hint.
+ * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message (without retry info)
  * @param {string} retryAfter - ISO timestamp when earliest account becomes available
  * @param {string} retryAfterHuman - Human-readable retry info e.g. "reset after 30s"

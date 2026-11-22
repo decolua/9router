@@ -14,7 +14,7 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
-import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { errorResponse, unavailableResponse, resolveExhaustedStatus } from "open-sse/utils/error.js";
 import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
@@ -283,8 +283,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
-        log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
+        // Propagate the real upstream status (typically 429) instead of
+        // flattening everything to 503. A saturated-but-alive upstream is not an
+        // outage; see #4663 / #4140.
+        const status = resolveExhaustedStatus(lastStatus, credentials.lastErrorCode);
+        log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman}) -> ${status}`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
       if (excludeConnectionIds.size === 0) {
