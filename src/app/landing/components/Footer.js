@@ -1,61 +1,20 @@
 "use client";
-
 export default function Footer() {
   return (
-    <footer className="border-t border-[#3a2f27] bg-[#120f0d] pt-16 pb-8 px-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-16">
-          {/* Brand */}
-          <div className="col-span-2 lg:col-span-2">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="size-6 rounded bg-[#f97815] flex items-center justify-center text-white">
-                <span className="material-symbols-outlined text-[16px]">hub</span>
-              </div>
-              <h3 className="text-white text-lg font-bold">9Router</h3>
-            </div>
-            <p className="text-gray-500 text-sm max-w-xs mb-6">
-              Connect, route, and manage your AI providers from one endpoint.
-            </p>
-            <div className="flex gap-4">
-              <a className="text-gray-400 hover:text-white transition-colors" href="https://github.com/decolua/9router" target="_blank" rel="noopener noreferrer">
-                <span className="material-symbols-outlined">code</span>
-              </a>
-            </div>
+    <footer className="border-t-2 border-[#191817] bg-[#efe4d1] px-6 pb-8 pt-12 md:pt-16">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-10 border-b-2 border-[#191817] pb-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr] lg:gap-8 lg:pb-14">
+          <div className="sm:col-span-2 lg:col-span-1">
+            <a href="/" className="mb-5 inline-flex items-center gap-3"><span className="flex size-10 items-center justify-center border-2 border-[#191817] bg-[#ff7657] text-[#191817] shadow-[3px_3px_0_#191817]"><span className="material-symbols-outlined text-[18px]">route</span></span><span className="text-xl font-black text-[#191817]">9Router</span></a>
+            <p className="mb-5 max-w-xs text-sm leading-relaxed text-[#514c43]">Connect, route, and manage your AI providers from one endpoint.</p>
+            <a className="inline-flex border-b-2 border-[#191817] pb-1 text-sm font-bold text-[#191817] hover:text-[#b83b26]" href="https://github.com/serenhope/9router" target="_blank" rel="noopener noreferrer" aria-label="9Router on GitHub">GitHub ↗</a>
           </div>
-          
-          {/* Product */}
-          <div className="flex flex-col gap-4">
-            <h4 className="font-bold text-white">Product</h4>
-            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="#features">Features</a>
-            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="/dashboard">Dashboard</a>
-            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="https://github.com/decolua/9router" target="_blank" rel="noopener noreferrer">Changelog</a>
-          </div>
-          
-          {/* Resources */}
-          <div className="flex flex-col gap-4">
-            <h4 className="font-bold text-white">Resources</h4>
-            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="https://github.com/decolua/9router#readme" target="_blank" rel="noopener noreferrer">Documentation</a>
-            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="https://github.com/decolua/9router" target="_blank" rel="noopener noreferrer">GitHub</a>
-            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="https://www.npmjs.com/package/9router" target="_blank" rel="noopener noreferrer">NPM</a>
-          </div>
-          
-          {/* Legal */}
-          <div className="flex flex-col gap-4">
-            <h4 className="font-bold text-white">Legal</h4>
-            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="https://github.com/decolua/9router/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>
-          </div>
+          <div className="flex flex-col gap-3"><h4 className="mb-1 font-black text-[#191817]">Product</h4><a className="text-sm font-medium text-[#39352f] hover:text-[#b83b26]" href="#features">Features</a><a className="text-sm font-medium text-[#39352f] hover:text-[#b83b26]" href="/dashboard">Dashboard</a><a className="text-sm font-medium text-[#39352f] hover:text-[#b83b26]" href="https://github.com/serenhope/9router" target="_blank" rel="noopener noreferrer">Changelog</a></div>
+          <div className="flex flex-col gap-3"><h4 className="mb-1 font-black text-[#191817]">Resources</h4><a className="text-sm font-medium text-[#39352f] hover:text-[#b83b26]" href="https://github.com/serenhope/9router#readme" target="_blank" rel="noopener noreferrer">Documentation</a><a className="text-sm font-medium text-[#39352f] hover:text-[#b83b26]" href="https://github.com/serenhope/9router" target="_blank" rel="noopener noreferrer">GitHub repository</a><a className="text-sm font-medium text-[#39352f] hover:text-[#b83b26]" href="https://www.npmjs.com/package/9router" target="_blank" rel="noopener noreferrer">NPM package</a></div>
+          <div className="flex flex-col gap-3"><h4 className="mb-1 font-black text-[#191817]">Legal</h4><a className="text-sm font-medium text-[#39352f] hover:text-[#b83b26]" href="https://github.com/serenhope/9router/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a></div>
         </div>
-        
-        {/* Bottom */}
-        <div className="border-t border-[#3a2f27] pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-gray-600 text-sm">© 2025 9Router. All rights reserved.</p>
-          <div className="flex gap-6">
-            <a className="text-gray-600 hover:text-white text-sm transition-colors" href="https://github.com/decolua/9router" target="_blank" rel="noopener noreferrer">GitHub</a>
-            <a className="text-gray-600 hover:text-white text-sm transition-colors" href="https://www.npmjs.com/package/9router" target="_blank" rel="noopener noreferrer">NPM</a>
-          </div>
-        </div>
+        <div className="flex flex-col items-start justify-between gap-4 pt-6 sm:flex-row sm:items-center"><p className="text-xs font-medium text-[#514c43]">© 2025 9Router. All rights reserved.</p><div className="flex gap-5"><a className="text-xs font-bold text-[#514c43] hover:text-[#b83b26]" href="https://github.com/serenhope/9router" target="_blank" rel="noopener noreferrer">GitHub ↗</a><a className="text-xs font-bold text-[#514c43] hover:text-[#b83b26]" href="https://www.npmjs.com/package/9router" target="_blank" rel="noopener noreferrer">NPM ↗</a></div></div>
       </div>
     </footer>
   );
 }
-

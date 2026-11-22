@@ -102,7 +102,7 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
             />
             <Button
               variant="secondary"
-              icon="science"
+              icon="experiment"
               loading={testStatus === "testing"}
               onClick={handleTest}
               disabled={!modelId.trim() || testStatus === "testing"}
@@ -217,13 +217,13 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
         {/* Test result */}
         {testStatus === "ok" && (
           <div className="flex items-center gap-2 text-sm text-green-600">
-            <span className="material-symbols-outlined text-base">check_circle</span>
+            <span className="material-symbols-outlined text-base">task_alt</span>
             Model is reachable
           </div>
         )}
         {testStatus === "error" && (
           <div className="flex items-start gap-2 text-sm text-red-500">
-            <span className="material-symbols-outlined text-base shrink-0">cancel</span>
+            <span className="material-symbols-outlined text-base shrink-0">close_small</span>
             <span>{testError || "Model not reachable"}</span>
           </div>
         )}

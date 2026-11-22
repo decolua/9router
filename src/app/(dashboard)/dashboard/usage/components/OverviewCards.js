@@ -80,7 +80,7 @@ export default function OverviewCards({ stats, trends }) {
         label="Total Requests"
         value={fmt(stats.totalRequests)}
         title={fmt(stats.totalRequests)}
-        icon="dns"
+        icon="query_stats"
         trend={t.requests}
         footnote={<span>{stats.totalRequests ? "Global volume" : "Zero requests"}</span>}
       />
@@ -88,7 +88,7 @@ export default function OverviewCards({ stats, trends }) {
         label="Input Tokens"
         value={fmt(stats.totalPromptTokens)}
         title={fmt(stats.totalPromptTokens)}
-        icon="arrow_upward"
+        icon="north"
         tone="text-text-main"
         trend={t.input}
         footnote={<span>Context payload</span>}
@@ -97,7 +97,7 @@ export default function OverviewCards({ stats, trends }) {
         label="Cached Tokens"
         value={fmt(stats.totalCachedTokens)}
         title={fmt(stats.totalCachedTokens)}
-        icon="bolt"
+        icon="electric_bolt"
         tone="text-info"
         trend={t.cached}
         footnote={cacheHitRate > 0 ? (
@@ -110,7 +110,7 @@ export default function OverviewCards({ stats, trends }) {
         label="Output Tokens"
         value={fmt(stats.totalCompletionTokens)}
         title={fmt(stats.totalCompletionTokens)}
-        icon="arrow_downward"
+        icon="south"
         tone="text-success"
         trend={t.output}
         footnote={<span>Generated completion</span>}
@@ -119,7 +119,7 @@ export default function OverviewCards({ stats, trends }) {
         label="Est. Cost"
         value={`~${fmtCost(stats.totalCost)}`}
         title={`~${fmtCost(stats.totalCost)}`}
-        icon="payments"
+        icon="account_balance_wallet"
         tone="text-warning"
         trend={t.cost}
         footnote={<span className="text-text-muted/70">Rate estimate, not billing</span>}

@@ -28,8 +28,9 @@ export default function Card({
 }) {
   return (
     <div
+      data-neo-card="true"
       className={cn(
-        "bg-surface border border-border-subtle",
+        "neo-panel flex min-w-0 flex-col bg-surface border-2 border-text-main",
         "rounded-[var(--r-card)]",
         elev ? "shadow-[var(--elev-2)]" : "shadow-[var(--elev-1)]",
         // The lift (and the pointer cursor) is opt-in and means exactly one
@@ -42,10 +43,10 @@ export default function Card({
       {...props}
     >
       {(title || action) && (
-        <div className="flex items-center justify-between mb-5">
+        <div className="mb-4 flex min-h-12 items-center justify-between gap-3 border-b-2 border-text-main pb-3">
           <div className="flex items-center gap-3">
             {icon && (
-              <div className="p-2 rounded-[var(--r-control)] bg-brand-500/10 border border-brand-500/20">
+              <div className="flex size-9 shrink-0 items-center justify-center border-2 border-text-main bg-surface-2 shadow-[2px_2px_0_var(--neo-ink)]">
                 <span className="material-symbols-outlined text-[20px] text-primary">{icon}</span>
               </div>
             )}
@@ -70,7 +71,7 @@ Card.Section = function CardSection({ children, className, ...props }) {
   return (
     <div
       className={cn(
-        "p-4 rounded-[var(--r-control)]",
+        "neo-inset p-4 rounded-[var(--r-control)]",
         "bg-bg/80 border border-border-subtle",
         // The same 1px top hairline every elevation tier carries, so an inset
         // section reads as part of the lit-from-above system instead of as a

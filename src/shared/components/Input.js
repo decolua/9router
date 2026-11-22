@@ -41,7 +41,7 @@ export default function Input({
           className={cn(
             // Same .chrome-field geometry as Select; only the icon inset is
             // per-instance, which is why it stays a utility.
-            "chrome-field chrome-focus w-full text-text-main bg-surface-2",
+            "neo-field chrome-field chrome-focus w-full text-text-main bg-surface-2",
             "border border-border/50 placeholder-text-muted/70",
             "focus:bg-surface focus:border-brand-500/50",
             disabled && "chrome-disabled",
@@ -54,7 +54,7 @@ export default function Input({
       </div>
       {error && (
         <p className="text-xs text-danger flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">error</span>
+          <span className="material-symbols-outlined text-[14px]">report_problem</span>
           {error}
         </p>
       )}

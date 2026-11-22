@@ -773,14 +773,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                   onClick={() => { setAuthMode("browser"); setError(null); setStep("waiting"); startOAuthFlow(); }}
                   className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
                 >
-                  <span className="inline-flex items-center gap-1.5"><span className="material-symbols-outlined text-[14px] leading-none">language</span>Sign in with browser</span>
+                  <span className="inline-flex items-center gap-1.5"><span className="material-symbols-outlined text-[14px] leading-none">translate</span>Sign in with browser</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => { setAuthMode("paste-token"); setError(null); setStep("input"); }}
                   className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
                 >
-                  <span className="inline-flex items-center gap-1.5"><span className="material-symbols-outlined text-[14px] leading-none">key</span>Paste token</span>
+                  <span className="inline-flex items-center gap-1.5"><span className="material-symbols-outlined text-[14px] leading-none">vpn_key</span>Paste token</span>
                 </button>
               </div>
             )}
@@ -789,7 +789,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <>
                 {step === "waiting" && (
                   <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
-                    <span className="material-symbols-outlined text-base text-primary animate-spin">progress_activity</span>
+                    <span className="material-symbols-outlined text-base text-primary animate-spin">autorenew</span>
                     <span className="text-sm">Waiting for browser authorization…</span>
                   </div>
                 )}
@@ -845,7 +845,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             {/* Option A: Auto via popup */}
             <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
               <span className="material-symbols-outlined text-base text-primary animate-spin">
-                progress_activity
+                autorenew
               </span>
               <span className="text-sm">
                 {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
@@ -925,7 +925,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                   <Button
                     size="sm"
                     variant="ghost"
-                    icon="open_in_new"
+                    icon="launch"
                     onClick={() => window.open(deviceLoginUrl, "_blank", "noopener,noreferrer")}
                     disabled={!deviceLoginUrl}
                   >
@@ -950,7 +950,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             </div>
             {polling && (
               <div className="flex items-center justify-center gap-2 text-sm text-text-muted">
-                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                <span className="material-symbols-outlined animate-spin">autorenew</span>
                 Waiting for authorization...
               </div>
             )}
@@ -961,7 +961,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {step === "success" && (
           <div className="text-center py-6">
             <div className="size-16 mx-auto mb-4 rounded-full bg-success/15 border border-success/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-green-600">check_circle</span>
+              <span className="material-symbols-outlined text-3xl text-green-600">task_alt</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connected Successfully!</h3>
             <p className="text-sm text-text-muted mb-4">
@@ -977,7 +977,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {step === "error" && (
           <div className="text-center py-6">
             <div className="size-16 mx-auto mb-4 rounded-full bg-danger/15 border border-danger/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-red-600">error</span>
+              <span className="material-symbols-outlined text-3xl text-red-600">report_problem</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connection Failed</h3>
             <p className="text-sm text-red-600 mb-4">{error}</p>

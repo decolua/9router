@@ -204,16 +204,16 @@ export default function TranslatorPage() {
 
   // Render action button per step
   const getAction = (stepId) => {
-    if (stepId === 1) return <Button size="sm" icon="arrow_forward" loading={loading["toOpenAI"]} onClick={handleToOpenAI}>→ OpenAI</Button>;
-    if (stepId === 3) return <Button size="sm" icon="arrow_forward" loading={loading["toTarget"]} onClick={handleToTarget}>→ Target</Button>;
-    if (stepId === 4) return <Button size="sm" icon="send" loading={loading["send"]} onClick={handleSend}>Send</Button>;
+    if (stepId === 1) return <Button size="sm" icon="transform" loading={loading["toOpenAI"]} onClick={handleToOpenAI}>→ OpenAI</Button>;
+    if (stepId === 3) return <Button size="sm" icon="transform" loading={loading["toTarget"]} onClick={handleToTarget}>→ Target</Button>;
+    if (stepId === 4) return <Button size="sm" icon="outbound" loading={loading["send"]} onClick={handleSend}>Send</Button>;
     return null;
   };
 
   return (
-    <div className="p-8 space-y-3">
+    <div className="grid grid-cols-1 gap-4 px-3 py-4 sm:px-6 sm:py-6 lg:px-8 xl:grid-cols-2">
       {/* Header */}
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex flex-col gap-3 rounded-2xl border border-border-subtle p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 xl:col-span-2">
         <div>
           <h1 className="text-2xl font-bold text-text-main">Translator Debug</h1>
           <p className="text-sm text-text-muted mt-1">Replay request flow - matches log files</p>
@@ -221,7 +221,7 @@ export default function TranslatorPage() {
         {meta && (
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <MetaBadge label="src" value={meta.sourceFormat} color="blue" />
-            <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+            <span className="material-symbols-outlined text-text-muted text-[14px]">compare_arrows</span>
             <MetaBadge label="dst" value={meta.targetFormat} color="orange" />
             <MetaBadge label="provider" value={meta.provider} color="green" />
             <MetaBadge label="model" value={meta.model} color="purple" />
@@ -235,22 +235,22 @@ export default function TranslatorPage() {
         const content = contents[step.id] || "";
 
         return (
-          <Card key={step.id}>
-            <div className="p-4 space-y-3">
+          <Card key={step.id} className="rounded-2xl">
+            <div className="p-3 sm:p-4 space-y-3">
               {/* Step header */}
               <div className="flex items-center justify-between">
-                <button onClick={() => toggle(step.id)} className="flex items-center gap-2 flex-1 text-left group">
+                <button onClick={() => toggle(step.id)} className="flex min-h-11 min-w-0 items-center gap-2 flex-1 text-left group rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
                   <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-primary transition-colors">
-                    {isExpanded ? "expand_more" : "chevron_right"}
+                    {isExpanded ? "keyboard_arrow_down" : "keyboard_arrow_right"}
                   </span>
                   <span className="text-xs font-mono text-text-muted/60 w-4">{step.id}</span>
-                  <h3 className="text-sm font-semibold text-text-main">{step.label}</h3>
-                  <span className="text-xs text-text-muted/60 font-mono">{step.file}</span>
-                  {content && <span className="text-xs text-green-500">({content.length} chars)</span>}
+                  <h3 className="shrink-0 text-sm font-semibold text-text-main">{step.label}</h3>
+                  <span className="min-w-0 truncate text-xs text-text-muted/60 font-mono">{step.file}</span>
+                  {content && <span className="hidden shrink-0 text-xs text-green-500 sm:inline">({content.length} chars)</span>}
                 </button>
                 {!isExpanded && (
                   <div className="flex gap-1 shrink-0">
-                    <Button size="sm" variant="ghost" icon="folder_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)} />
+                    <Button size="sm" variant="ghost" icon="file_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)} />
                     {action}
                   </div>
                 )}
@@ -273,9 +273,9 @@ export default function TranslatorPage() {
                     />
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <Button size="sm" variant="outline" icon="folder_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)}>Load</Button>
-                    <Button size="sm" variant="outline" icon="data_object" onClick={() => handleFormat(step.id)}>Format</Button>
-                    <Button size="sm" variant="outline" icon="content_copy" onClick={() => handleCopy(step.id)}>Copy</Button>
+                    <Button size="sm" variant="outline" icon="file_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)}>Load</Button>
+                    <Button size="sm" variant="outline" icon="code" onClick={() => handleFormat(step.id)}>Format</Button>
+                    <Button size="sm" variant="outline" icon="file_copy" onClick={() => handleCopy(step.id)}>Copy</Button>
                     {action}
                   </div>
                 </>

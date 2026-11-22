@@ -9,27 +9,27 @@ function getStatusBadge(code) {
     return {
       bg: "bg-danger/10 text-danger border border-danger/25",
       label: num,
-      icon: "error",
+      icon: "report_problem",
     };
   }
   if (num === 429) {
     return {
       bg: "bg-warning/10 text-warning border border-warning/25",
       label: "429 Limit",
-      icon: "speed",
+      icon: "timer",
     };
   }
   if (num === 401 || num === 403) {
     return {
       bg: "bg-primary/10 text-primary border border-primary/25",
       label: num === 403 ? "403 Forbidden" : "401 Auth",
-      icon: "lock",
+      icon: "verified_user",
     };
   }
   return {
     bg: "bg-surface-2 text-text-muted border border-border-subtle",
     label: num,
-    icon: "warning",
+    icon: "notification_important",
   };
 }
 
@@ -148,12 +148,12 @@ export default function ErrorLogClient() {
 
   return (
     <PageShell width="full" className="min-w-0">
-      <div className="flex flex-col gap-4 max-w-5xl">
+      <div className="flex flex-col gap-5 max-w-6xl">
         {/* Header & Metrics */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 rounded-2xl border border-border-subtle px-4 py-4 sm:px-5">
           <div>
             <h1 className="text-xl font-bold text-text-main flex items-center gap-2">
-              <span className="material-symbols-outlined text-[24px] text-rose-500">bug_report</span>
+              <span className="material-symbols-outlined text-[24px] text-rose-500">troubleshoot</span>
               Error Monitor
             </h1>
             <p className="text-xs text-text-muted mt-0.5">
@@ -167,22 +167,22 @@ export default function ErrorLogClient() {
                 <Button
                   size="sm"
                   variant="outline"
-                  icon={copiedId === "all" ? "check" : "content_copy"}
+                  icon={copiedId === "all" ? "task_alt" : "file_copy"}
                   onClick={copyAll}
                 >
                   {copiedId === "all" ? "Copied" : "Copy Filtered"}
                 </Button>
-                <Button size="sm" variant="danger" icon="delete" onClick={handleClear}>
+                <Button size="sm" variant="danger" icon="delete_sweep" onClick={handleClear}>
                   Clear All
                 </Button>
               </>
             )}
-            <Button size="sm" variant="ghost" icon="refresh" onClick={fetchLogs} title="Refresh logs" />
+            <Button size="sm" variant="ghost" icon="sync" onClick={fetchLogs} title="Refresh logs" />
           </div>
         </div>
 
         {/* Quick Metric Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           <div className="p-3 rounded-xl border border-border-subtle bg-surface flex flex-col">
             <span className="text-[11px] text-text-muted font-medium uppercase tracking-wider">Total Recorded</span>
             <span className="text-lg font-bold text-text-main mt-0.5">{metrics.total}</span>
@@ -202,10 +202,10 @@ export default function ErrorLogClient() {
         </div>
 
         {/* Search & Status Filters */}
-        <Card className="flex flex-col overflow-hidden border-border bg-surface">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-border/60 bg-surface-2/30">
-            <div className="flex items-center gap-2 flex-1 min-w-[220px]">
-              <span className="material-symbols-outlined text-[18px] text-text-muted">search</span>
+        <Card className="flex flex-col overflow-hidden rounded-2xl border-border bg-surface">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-4 py-3 border-b border-border/60 bg-surface-2/30">
+            <div className="flex items-center gap-2 flex-1 min-w-[220px] rounded-xl border border-border-subtle px-3 min-h-10">
+              <span className="material-symbols-outlined text-[18px] text-text-muted">manage_search</span>
               <input
                 type="text"
                 placeholder="Search error message, model, or provider..."
@@ -215,7 +215,7 @@ export default function ErrorLogClient() {
               />
               {search && (
                 <button onClick={() => setSearch("")} className="text-text-muted hover:text-text-main">
-                  <span className="material-symbols-outlined text-[14px]">close</span>
+                  <span className="material-symbols-outlined text-[14px]">cancel</span>
                 </button>
               )}
             </div>
@@ -261,7 +261,7 @@ export default function ErrorLogClient() {
               <div className="py-16 text-center text-text-muted text-xs">Loading error records...</div>
             ) : filteredLogs.length === 0 ? (
               <div className="py-16 flex flex-col items-center justify-center text-center text-text-muted text-xs gap-2">
-                <span className="material-symbols-outlined text-4xl text-emerald-500">check_circle</span>
+                <span className="material-symbols-outlined text-4xl text-emerald-500">task_alt</span>
                 <span className="text-sm font-semibold text-text-main">All Systems Operational</span>
                 <span className="max-w-xs text-text-muted">
                   {logs.length === 0
@@ -322,7 +322,7 @@ export default function ErrorLogClient() {
                           title="Copy error details"
                         >
                           <span className="material-symbols-outlined text-[16px]">
-                            {copiedId === log.id ? "check" : "content_copy"}
+                            {copiedId === log.id ? "task_alt" : "file_copy"}
                           </span>
                         </button>
 
@@ -334,7 +334,7 @@ export default function ErrorLogClient() {
                             title={isExpanded ? "Collapse trace" : "View stack trace"}
                           >
                             <span className="material-symbols-outlined text-[16px]">
-                              {isExpanded ? "expand_less" : "expand_more"}
+                              {isExpanded ? "keyboard_arrow_up" : "keyboard_arrow_down"}
                             </span>
                           </button>
                         )}

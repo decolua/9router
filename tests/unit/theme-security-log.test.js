@@ -6,13 +6,14 @@ const root = resolve(__dirname, "../..");
 const read = (p) => readFileSync(resolve(root, p), "utf8");
 
 describe("theme: the site-wide mode is a password-session setting", () => {
-  it("defaults the site to glass in settings", () => {
-    expect(read("src/lib/db/repos/settingsRepo.js")).toMatch(/theme:\s*"glass"/);
+  it("defaults the site to neobrutalism in settings", () => {
+    expect(read("src/lib/db/repos/settingsRepo.js")).toMatch(/theme:\s*"neobrutalism"/);
   });
 
   it("GET /api/theme answers one value and never leaks the rest", () => {
     const route = read("src/app/api/theme/route.js");
     expect(route).toMatch(/json\(\s*\{\s*theme:/);
+    expect(route).toContain('{ theme: "neobrutalism" }');
     // GET never reads anything but the one value
     expect(route).not.toMatch(/const settings = await getSettings\(\);[\s\S]{0,120}json\(settings/);
   });
@@ -40,10 +41,11 @@ describe("theme: the site-wide mode is a password-session setting", () => {
     expect(menu).not.toContain('label="Theme"');
   });
 
-  it("the theme is loaded from the server for every visitor", () => {
+  it("the neobrutalism theme is locked without per-browser persistence", () => {
     const store = read("src/store/themeStore.js");
     expect(store).toContain("setServerTheme");
-    expect(store).toContain("/api/theme");
+    expect(store).toContain('const THEME_ID = "neobrutalism"');
+    expect(store).toContain("theme: THEME_ID");
     // no per-browser persistence as the source of truth anymore
     expect(store).not.toContain('zustand/middleware');
   });

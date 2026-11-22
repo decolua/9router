@@ -102,7 +102,7 @@ function ComboList({ combos }) {
         <Link key={combo.id} href={`/dashboard/media-providers/combo/${combo.id}`}>
           <Card padding="xs" className="hover:bg-surface-2 transition-colors cursor-pointer">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
+              <span className="material-symbols-outlined text-primary text-[18px]">view_module</span>
               <code className="text-sm font-mono font-medium flex-1 truncate">{combo.name}</code>
               <div className="flex flex-wrap items-center gap-1 sm:shrink-0">
                 {combo.models.slice(0, 6).map((entry, i) => {
@@ -126,7 +126,7 @@ function ComboList({ combos }) {
                 )}
               </div>
               <span className="text-[11px] text-text-muted shrink-0">{combo.models.length}</span>
-              <span className="material-symbols-outlined text-text-muted text-[16px]">chevron_right</span>
+              <span className="material-symbols-outlined text-text-muted text-[16px]">navigate_next</span>
             </div>
           </Card>
         </Link>
@@ -227,14 +227,15 @@ export default function MediaProviderKindPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+      <aside className="flex min-w-0 flex-col gap-6 lg:col-span-3">
       {(isEmbedding || supportsCombo) && (
         <div className="flex items-center justify-end gap-2">
           {supportsCombo && (
-            <Button size="sm" icon="add" onClick={handleCreateCombo}>Create Combo</Button>
+            <Button size="sm" icon="add_circle" onClick={handleCreateCombo}>Create Combo</Button>
           )}
           {isEmbedding && (
-            <Button size="sm" icon="add" onClick={() => setShowAddCustomEmbedding(true)}>
+            <Button size="sm" icon="add_circle" onClick={() => setShowAddCustomEmbedding(true)}>
               Add Custom Embedding
             </Button>
           )}
@@ -245,6 +246,8 @@ export default function MediaProviderKindPage() {
         <ComboList combos={kindCombos} />
       )}
 
+      </aside>
+      <main className={`min-w-0 ${isEmbedding || supportsCombo ? "lg:col-span-9" : "lg:col-span-12"}`}>
       {allProviders.length === 0 ? (
         <div className="text-center py-12 border border-dashed border-border rounded-xl text-text-muted text-sm">
           No providers support <strong>{kindConfig.label}</strong> yet.
@@ -272,6 +275,7 @@ export default function MediaProviderKindPage() {
           ))}
         </div>
       )}
+      </main>
 
       {isEmbedding && (
         <AddCustomEmbeddingModal

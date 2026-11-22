@@ -172,7 +172,7 @@ Cursor Settings → Models → Advanced:
 **代替案:** パブリックドメインでVPSにセルフホスト:
 ```bash
 # VPSへデプロイ
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/serenhope/9router.git
 cd 9router/app
 npm install && npm run build
 npm start
@@ -206,7 +206,7 @@ npm install -g 9router
 
 ### VPS/クラウド
 ```bash
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/serenhope/9router.git
 cd 9router/app
 npm install && npm run build
 
@@ -316,7 +316,7 @@ docker run -d \
 ```
 
 **破壊的変更:**
-- [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)を確認
+- [CHANGELOG.md](https://github.com/serenhope/9router/blob/main/CHANGELOG.md)を確認
 - メジャー更新前に`~/.9router`をバックアップ
 - メジャーバージョンの移行ガイドを確認
 
@@ -329,11 +329,11 @@ docker run -d \
 ### 貢献方法:
 
 1. **バグを報告:**
-   - [GitHub Issues](https://github.com/decolua/9router/issues)
+   - [GitHub Issues](https://github.com/serenhope/9router/issues)
    - エラーログ、再現手順を含める
 
 2. **機能をリクエスト:**
-   - [GitHub Discussions](https://github.com/decolua/9router/discussions)
+   - [GitHub Discussions](https://github.com/serenhope/9router/discussions)
    - ユースケースと利点を説明
 
 3. **コードを提出:**
@@ -375,13 +375,13 @@ docker run -d \
 - ドキュメントを更新
 - コミットは小さく、わかりやすく
 
-詳細は[CONTRIBUTING.md](https://github.com/decolua/9router/blob/main/CONTRIBUTING.md)を参照。
+詳細は[CONTRIBUTING.md](https://github.com/serenhope/9router/blob/main/CONTRIBUTING.md)を参照。
 
 ---
 
 ## さらにヘルプが必要?
 
 - **ドキュメント:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **GitHub:** [github.com/serenhope/9router](https://github.com/serenhope/9router)
+- **Issues:** [github.com/serenhope/9router/issues](https://github.com/serenhope/9router/issues)
 - **トラブルシューティング:** [troubleshooting.md](troubleshooting.md)

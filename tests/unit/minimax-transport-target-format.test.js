@@ -3,7 +3,7 @@
  * the same wire format. MiniMax-M3 declares a Claude target for compatibility,
  * but an OpenAI client should use MiniMax's matching OpenAI transport without
  * an OpenAI -> Claude translation.
- * Regression: https://github.com/decolua/9router/issues/3418
+ * Regression: https://github.com/serenhope/9router/issues/3418
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

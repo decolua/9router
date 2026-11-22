@@ -11,7 +11,7 @@ export default function ModelTierBadge({ model, providerId, isFree, className = 
       title="Free Model (Free Tier)"
       className={`shrink-0 inline-flex items-center gap-1 text-xs font-bold tracking-wider text-success bg-emerald-500/10 border border-emerald-500/25 px-1.5 py-0.5 rounded leading-none align-middle ${className}`}
     >
-      <span className="material-symbols-outlined text-[10px] leading-none select-none">sell</span>
+      <span className="material-symbols-outlined text-[10px] leading-none select-none">redeem</span>
       FREE
     </span>
   );

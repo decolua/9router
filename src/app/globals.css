@@ -6,6 +6,7 @@
    sitting in a component's className list. Import position is irrelevant to
    that ordering - only the layer - so right after tailwindcss is just tidy. */
 @import "../shared/styles/chrome.css";
+@import "../shared/styles/neobrutalism.css";
 /* Icon font comes from the material-symbols package; declared here instead of importing
    the package stylesheet because its unlayered .material-symbols-outlined rule would
    outrank every Tailwind text-[..] utility and pin all icons to 24px.
@@ -112,7 +113,7 @@ html:not(.fonts-loading) .material-symbols-outlined { opacity: 1; transition: op
      (`bg-bg-subtle`, `text-text-primary`, `hover:bg-bg-hover`) but no token
      backed them, so the utility never emitted any colour at all - the element
      rendered transparent in EVERY theme. Declared as real custom properties
-     (not just @theme entries) so the glass theme can retune them per-mode
+     (not just @theme entries) so the active theme can retune them in one place
      exactly like the base tokens, and pointed at vars so they flip with
      .dark automatically. */
   --color-bg-base: var(--color-bg);
@@ -243,7 +244,7 @@ select {
   --color-state-press: var(--state-press);
 
   /* Derived surfaces (see :root). Self-referential so the utility carries the
-     var() reference and the glass theme can retune it per-mode. */
+     var() reference and the active theme can retune it per-mode. */
   --color-bg-base: var(--color-bg-base);
   --color-bg-subtle: var(--color-bg-subtle);
   --color-bg-secondary: var(--color-bg-secondary);
@@ -387,15 +388,8 @@ input, textarea {
   background: linear-gradient(180deg, var(--color-bg-alt) 0%, var(--color-bg) 100%);
 }
 
-/* macOS Vibrancy */
-.bg-vibrancy {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  background: rgba(255, 255, 255, 0.72);
-}
-.dark .bg-vibrancy {
-  background: rgba(38, 38, 38, 0.72);
-}
+/* Legacy sidebar surface alias; active themes provide a solid fill. */
+.bg-vibrancy { background: var(--color-sidebar); }
 
 /* macOS Traffic Lights */
 .traffic-lights {
@@ -734,118 +728,3 @@ button:disabled,
   border-top: 1px solid var(--color-border);
   margin: 1.5rem 0;
 }
-
-/* ============================================================
-   Glassmorphism theme - dark base with frosted translucent surfaces
-   Applied as `<html class="dark glass">`.
-
-   Why explicit colours instead of token overrides: `@theme inline` bakes each
-   design token into the utilities that use it, so `.bg-surface` in the built
-   CSS contains the literal `#262626` rather than `var(--color-surface)`.
-   Overriding `--color-surface` under `.glass` therefore changed the variable
-   but not the rendered panel. The rules below set the glass colours directly
-   and use `!important` where a utility would otherwise win, which is the only
-   reliable lever here.
-   ============================================================ */
-/* GLASS-REWORK */
-.dark.glass,
-.dark.glass body {
-  background-color: #0b0e14;
-}
-.dark.glass body {
-  background-image:
-    radial-gradient(42rem 30rem at 8% 6%, rgba(229, 106, 74, 0.55), transparent 60%),
-    radial-gradient(40rem 28rem at 94% 8%, rgba(129, 140, 248, 0.5), transparent 58%),
-    radial-gradient(46rem 32rem at 78% 96%, rgba(56, 189, 248, 0.42), transparent 60%),
-    radial-gradient(34rem 26rem at 22% 78%, rgba(16, 185, 129, 0.28), transparent 62%);
-  background-attachment: fixed;
-}
-
-.dark.glass aside {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  border-color: rgba(255, 255, 255, 0.12) !important;
-}
-
-.dark.glass .bg-surface {
-  background-color: rgba(255, 255, 255, 0.07) !important;
-}
-.dark.glass .bg-surface-2 {
-  background-color: rgba(255, 255, 255, 0.11) !important;
-}
-.dark.glass .bg-surface-3 {
-  background-color: rgba(255, 255, 255, 0.15) !important;
-}
-.dark.glass .bg-bg-alt {
-  background-color: rgba(255, 255, 255, 0.04) !important;
-}
-
-/* The shell's opaque bg-bg would bury the aurora; let it show through. */
-.dark.glass .bg-bg {
-  background-color: transparent !important;
-}
-
-/* Modal and long-task scrim. The glass body paints a colourful aurora, so the
-   dark theme's 55% black veil turned every overlay muddy brown-black. A
-   lighter veil keeps the frost readable and lets the theme's colour survive
-   underneath instead of being buried. */
-.dark.glass {
-  --color-scrim: rgba(8, 11, 16, 0.34);
-  --color-border: rgba(255, 255, 255, 0.12);
-  --color-border-subtle: rgba(255, 255, 255, 0.08);
-  --color-text-subtle: #9ca3af;
-}
-
-.dark.glass .border-border {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-}
-
-.dark.glass .border-border-subtle {
-  border-color: rgba(255, 255, 255, 0.08) !important;
-}
-
-/* Derived surfaces follow the same frost ladder the explicit utilities above
-   use (bg -> transparent, bg-alt -> 4%, surface-2 -> 11%, surface-3 -> 15%),
-   so `bg-bg-subtle`/`bg-bg-secondary`/`bg-bg-tertiary` frosted panels match
-   their `bg-bg-alt`/`bg-surface-2`/`bg-surface-3` neighbours instead of
-   landing on an opaque dark block over the aurora. Because the utilities carry
-   a var() reference (see @theme inline), retuning the var here also reaches
-   the opacity variants (`bg-bg-subtle/30`). */
-.dark.glass {
-  --color-bg-base: rgba(255, 255, 255, 0.07);
-  --color-bg-subtle: rgba(255, 255, 255, 0.04);
-  --color-bg-secondary: rgba(255, 255, 255, 0.11);
-  --color-bg-tertiary: rgba(255, 255, 255, 0.15);
-  --color-surface-secondary: rgba(255, 255, 255, 0.11);
-}
-
-/* Nested menus, modals, cards and popovers inherit the same frost. */
-.dark.glass [class*="bg-surface"],
-.dark.glass [class*="bg-bg-alt"],
-.dark.glass [class*="bg-bg-subtle"] {
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
-}
-
-.dark.glass select option {
-  background-color: #171b24;
-  color: #ededed;
-}
-
-/* Inputs keep a solid base; a translucent field loses the caret against blur. */
-.dark.glass input,
-.dark.glass select,
-.dark.glass textarea {
-  background-color: rgba(13, 17, 23, 0.72) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-}
-
-/* Scrollbars have to stay visible against a translucent track. */
-.dark.glass ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
-}
-.dark.glass ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.26);
-}
-

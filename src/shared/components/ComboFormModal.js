@@ -40,15 +40,15 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
         </span>
         <button onClick={onMoveUp} disabled={isFirst}
           className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`} title="Move up">
-          <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
+          <span className="material-symbols-outlined text-[12px]">north</span>
         </button>
         <button onClick={onMoveDown} disabled={isLast}
           className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`} title="Move down">
-          <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
+          <span className="material-symbols-outlined text-[12px]">south</span>
         </button>
       </div>
       <button onClick={onRemove} className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all" title="Remove">
-        <span className="material-symbols-outlined text-[12px]">close</span>
+        <span className="material-symbols-outlined text-[12px]">cancel</span>
       </button>
     </div>
   );
@@ -155,7 +155,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
             <label className="text-sm font-medium mb-1.5 block">Models</label>
             {models.length === 0 ? (
               <div className="text-center py-4 border border-dashed border-border-subtle rounded-lg bg-surface-2/40">
-                <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
+                <span className="material-symbols-outlined text-text-muted text-xl mb-1">stacks</span>
                 <p className="text-xs text-text-muted">No models added yet</p>
               </div>
             ) : (
@@ -173,7 +173,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
             )}
             <button onClick={() => setShowModelSelect(true)}
               className="w-full mt-2 py-2 border border-dashed border-border-subtle rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1">
-              <span className="material-symbols-outlined text-[16px]">add</span>
+              <span className="material-symbols-outlined text-[16px]">playlist_add</span>
               Add Model
             </button>
           </div>

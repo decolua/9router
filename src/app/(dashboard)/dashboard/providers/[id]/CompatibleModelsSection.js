@@ -65,7 +65,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         className="p-1 hover:bg-red-50 rounded text-red-500"
         title="Remove model"
       >
-        <span className="material-symbols-outlined text-sm">delete</span>
+        <span className="material-symbols-outlined text-sm">delete_sweep</span>
       </button>
     </div>
   );
@@ -228,10 +228,10 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
             className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
           />
         </div>
-        <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
+        <Button size="sm" icon="add_circle" onClick={handleAdd} disabled={!newModel.trim() || adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
-        <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
+        <Button size="sm" variant="secondary" icon="download_for_offline" onClick={handleImport} disabled={!canImport || importing}>
           Import from /models
         </Button>
       </div>

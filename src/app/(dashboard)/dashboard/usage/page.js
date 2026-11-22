@@ -45,31 +45,34 @@ function UsageContent() {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      {/* Tabs + period selector on same row */}
-      <div className="flex flex-col flex-wrap gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="grid min-w-0 grid-cols-1 gap-6 px-1 sm:px-0 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="min-w-0">
         <SegmentedControl
           options={[
             { value: "overview", label: "Overview" },
             { value: "details", label: "Details" },
- { value: "errors", label: "Errors" },
- { value: "leaderboard", label: "Leaderboard" },
+            { value: "errors", label: "Errors" },
+            { value: "leaderboard", label: "Leaderboard" },
             { value: "savings", label: "Savings" },
           ]}
           value={activeTab}
           onChange={handleTabChange}
-          className="w-full sm:w-auto"
+          className="w-full"
         />
+      </aside>
+
+      <main className="flex min-w-0 flex-col gap-6">
         {(activeTab === "overview" || activeTab === "errors" || activeTab === "leaderboard" || activeTab === "savings") && (
-          <SegmentedControl
-            options={PERIODS}
-            value={period}
-            onChange={setPeriod}
-            size="sm"
-            className="w-full sm:w-auto"
-          />
+          <div className="flex justify-start sm:justify-end">
+            <SegmentedControl
+              options={PERIODS}
+              value={period}
+              onChange={setPeriod}
+              size="sm"
+              className="w-full sm:w-auto"
+            />
+          </div>
         )}
-      </div>
 
       {activeTab === "overview" && (
         <Suspense fallback={<CardSkeleton />}>
@@ -78,9 +81,10 @@ function UsageContent() {
       )}
       {activeTab === "logs" && <RequestLogger />}
       {activeTab === "details" && <RequestDetailsTab />}
- {activeTab === "errors" && <ErrorClassificationTab period={period} />}
- {activeTab === "leaderboard" && <ModelLeaderboardTab period={period} />}
+      {activeTab === "errors" && <ErrorClassificationTab period={period} />}
+      {activeTab === "leaderboard" && <ModelLeaderboardTab period={period} />}
       {activeTab === "savings" && <TokenSavingsTab period={period} />}
+      </main>
     </div>
   );
 }

@@ -64,8 +64,8 @@ function QuotaBar({ used, limit, percent, kind = "tokens" }) {
 function KeyCard({ k, expanded, onToggle }) {
   const disabled = !k.isActive;
   return (
-    <Card className={disabled ? "opacity-60" : ""}>
-      <div className="flex items-start justify-between gap-3 mb-3">
+    <Card className={`h-full ${disabled ? "opacity-60" : ""}`}>
+      <div className="mb-4 flex items-start justify-between gap-3 border-b border-border-subtle pb-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-sm truncate">{k.name}</h3>
@@ -80,7 +80,7 @@ function KeyCard({ k, expanded, onToggle }) {
         <button
           type="button"
           onClick={onToggle}
-          className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
+          className="chrome-focus min-h-9 shrink-0 cursor-pointer rounded-lg px-3 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
         >
           {expanded ? "Hide detail" : "Detail"}
         </button>
@@ -181,8 +181,8 @@ export default function ApiKeyUsagePage() {
   }, [autoRefresh, load]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(220px,0.7fr)_minmax(0,2fr)]">
+      <aside className="flex flex-col gap-4">
         <div>
           <h1 className="text-2xl font-bold text-text-main">API Key Usage</h1>
           <p className="text-sm text-text-muted mt-1">
@@ -194,38 +194,40 @@ export default function ApiKeyUsagePage() {
           <span className="text-xs text-text-muted">Auto refresh 10s</span>
           <Toggle checked={autoRefresh} onChange={setAutoRefresh} />
         </div>
-      </div>
+      </aside>
 
-      {error && (
-        <Card className="border-red-300 bg-red-500/5">
-          <p className="text-sm text-red-500">{error}</p>
-        </Card>
-      )}
+      <main className="flex min-w-0 flex-col gap-6">
+        {error && (
+          <Card className="border-red-300 bg-red-500/5">
+            <p className="text-sm text-red-500">{error}</p>
+          </Card>
+        )}
 
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[0, 1, 2, 3].map((i) => (
-            <Card key={i} className="h-40 animate-pulse bg-surface-2/40" />
-          ))}
-        </div>
-      ) : keys.length === 0 ? (
-        <Card>
-          <p className="text-sm text-text-muted text-center py-6">
-            No API keys yet. Create one under Endpoint &amp; Key.
-          </p>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {keys.map((k) => (
-            <KeyCard
-              key={k.id}
-              k={k}
-              expanded={expandedId === k.id}
-              onToggle={() => setExpandedId(expandedId === k.id ? null : k.id)}
-            />
-          ))}
-        </div>
-      )}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Card key={i} className="h-40 animate-pulse bg-surface-2/40" />
+            ))}
+          </div>
+        ) : keys.length === 0 ? (
+          <Card>
+            <p className="text-sm text-text-muted text-center py-6">
+              No API keys yet. Create one under Endpoint &amp; Key.
+            </p>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {keys.map((k) => (
+              <KeyCard
+                key={k.id}
+                k={k}
+                expanded={expandedId === k.id}
+                onToggle={() => setExpandedId(expandedId === k.id ? null : k.id)}
+              />
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   );
 }

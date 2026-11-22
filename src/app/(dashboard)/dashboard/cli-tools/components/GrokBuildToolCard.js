@@ -24,7 +24,7 @@ function ModelField({ label, value, placeholder, onChange, onSelect, disabled, h
         <span className="text-xs font-semibold text-text-main sm:text-sm">{label}</span>
         {help && <p className="mt-0.5 text-[10px] leading-tight text-text-muted">{help}</p>}
       </div>
-      <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+      <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
       <div className="relative w-full min-w-0">
         <input
           type="text"
@@ -40,7 +40,7 @@ function ModelField({ label, value, placeholder, onChange, onSelect, disabled, h
             className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
             title="Clear (inherit main model for subagents)"
           >
-            <span className="material-symbols-outlined text-[14px]">close</span>
+            <span className="material-symbols-outlined text-[14px]">cancel</span>
           </button>
         )}
       </div>
@@ -278,23 +278,23 @@ export default function GrokBuildToolCard({
             <p className="text-xs text-text-muted truncate">{tool.description}</p>
           </div>
         </div>
-        <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
+        <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>keyboard_arrow_down</span>
       </div>
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checking && <div className="flex items-center gap-2 text-text-muted"><span className="material-symbols-outlined animate-spin">progress_activity</span><span>Checking Grok Build...</span></div>}
+          {checking && <div className="flex items-center gap-2 text-text-muted"><span className="material-symbols-outlined animate-spin">autorenew</span><span>Checking Grok Build...</span></div>}
 
           {!checking && grokStatus && !grokStatus.installed && (
             <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-yellow-500">warning</span>
+                <span className="material-symbols-outlined text-yellow-500">priority_high</span>
                 <div className="flex-1">
                   <p className="font-medium text-warning">Grok Build not detected locally</p>
                   <code className="block mt-2 p-2 bg-surface-2 rounded text-xs font-mono">curl -fsSL https://x.ai/cli/install.sh | bash</code>
                 </div>
               </div>
-              <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>Manual Config</Button>
+              <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[18px] mr-1">file_copy</span>Manual Config</Button>
             </div>
           )}
 
@@ -313,21 +313,21 @@ export default function GrokBuildToolCard({
                 )}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                   <BaseUrlSelect value={customBaseUrl || getEffectiveBaseUrl()} onChange={setCustomBaseUrl} requiresExternalUrl={tool.requiresExternalUrl} tunnelEnabled={tunnelEnabled} tunnelPublicUrl={tunnelPublicUrl} tailscaleEnabled={tailscaleEnabled} tailscaleUrl={tailscaleUrl} currentUrl={currentBaseUrl} />
                 </div>
 
                 {configuredModel?.base_url && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
-                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                     <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">{configuredModel.base_url} · {configuredModel.model}{configuredModel.context_window ? ` · ${(configuredModel.context_window / 1000).toLocaleString()}K ctx` : ""}</span>
                   </div>
                 )}
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                   <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
@@ -335,7 +335,7 @@ export default function GrokBuildToolCard({
 
                 <div className="my-1 border-t border-border pt-3">
                   <div className="mb-2 flex items-start gap-2">
-                    <span className="material-symbols-outlined text-primary text-[16px]">account_tree</span>
+                    <span className="material-symbols-outlined text-primary text-[16px]">schema</span>
                     <div>
                       <p className="text-xs font-semibold text-text-main">Subagent model overrides</p>
                       <p className="text-[10px] text-text-muted">Leave blank to inherit the Main Model, and each override keeps its own context window</p>
@@ -357,12 +357,12 @@ export default function GrokBuildToolCard({
                 ))}
               </div>
 
-              {message && <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}><span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span><span>{message.text}</span></div>}
+              {message && <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}><span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "task_alt" : "report_problem"}</span><span>{message.text}</span></div>}
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply</Button>
-                <Button variant="outline" size="sm" onClick={handleReset} disabled={!grokStatus?.has9Router} loading={restoring} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset</Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config</Button>
+                <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[14px] mr-1">archive</span>Apply</Button>
+                <Button variant="outline" size="sm" onClick={handleReset} disabled={!grokStatus?.has9Router} loading={restoring} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[14px] mr-1">settings_backup_restore</span>Reset</Button>
+                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[14px] mr-1">file_copy</span>Manual Config</Button>
               </div>
             </>
           )}

@@ -465,7 +465,15 @@ export default function ProvidersPage() {
 
   return (
     <PageShell>
-      <div className="flex items-center justify-end">
+      <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(17rem,0.85fr)_minmax(0,3fr)] lg:items-start">
+        <aside className="flex min-w-0 flex-col gap-5">
+      <div className="border-2 border-black bg-surface p-4 shadow-[5px_5px_0_0_rgba(0,0,0,0.9)]">
+        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">UPSTREAMS / 02</p>
+        <h1 className="mt-1 text-2xl font-black tracking-tight text-text-main">Providers</h1>
+        <p className="mt-2 text-sm leading-relaxed text-text-muted">Manage provider connections, availability and custom endpoints.</p>
+      </div>
+      <div className="flex items-center justify-between gap-3 border-2 border-black bg-surface p-3 shadow-[4px_4px_0_0_rgba(0,0,0,0.9)]">
+        <span className="text-xs font-bold uppercase tracking-wide">Connection status</span>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -483,7 +491,7 @@ export default function ProvidersPage() {
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
-            search_off
+            manage_search
           </span>
           <p className="text-text-muted text-sm">
             No providers match your search or filters
@@ -492,16 +500,16 @@ export default function ProvidersPage() {
       )}
 
       {/* Custom Providers (OpenAI/Anthropic/MoonshotAI Compatible) - dynamic */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
-            Custom Providers (OpenAI/Anthropic/MoonshotAI){" "}
+      <div className="flex flex-col gap-4 border-2 border-black bg-surface p-4 shadow-[5px_5px_0_0_rgba(0,0,0,0.9)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:items-stretch lg:flex-col">
+          <h2 className="min-w-0 break-words text-lg sm:text-xl font-semibold leading-tight">
+            Custom Providers (OpenAI/<wbr />Anthropic/<wbr />MoonshotAI)
           </h2>
-          <div className="grid grid-cols-1 sm:flex sm:items-center gap-2 w-full sm:w-auto">
+          <div className="grid grid-cols-1 sm:flex sm:items-center gap-2 w-full sm:w-auto lg:grid lg:grid-cols-1 lg:w-full">
             <Button
               size="sm"
               variant="secondary"
-              icon="add"
+              icon="add_circle"
               onClick={() => setShowAddAnthropicCompatibleModal(true)}
               className="w-full sm:w-auto text-xs"
             >
@@ -510,7 +518,7 @@ export default function ProvidersPage() {
             <Button
               size="sm"
               variant="secondary"
-              icon="add"
+              icon="add_circle"
               onClick={() => setShowAddCompatibleModal(true)}
               className="w-full sm:w-auto text-xs"
             >
@@ -519,7 +527,7 @@ export default function ProvidersPage() {
             <Button
               size="sm"
               variant="secondary"
-              icon="add"
+              icon="add_circle"
               onClick={() => setShowAddMoonshotCompatibleModal(true)}
               className="w-full sm:w-auto text-xs"
             >
@@ -530,11 +538,11 @@ export default function ProvidersPage() {
         {compatibleProviders.length === 0 &&
         anthropicCompatibleProviders.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-text-muted text-sm">
-            <span className="material-symbols-outlined text-[18px]">extension</span>
+            <span className="material-symbols-outlined text-[18px]">extension_off</span>
             <span>No custom providers - use buttons above to add OpenAI/Anthropic/MoonshotAI compatible endpoints</span>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3">
             {[...compatibleProviders, ...anthropicCompatibleProviders].map(
               (info) => (
                 <ApiKeyProviderCard
@@ -553,10 +561,12 @@ export default function ProvidersPage() {
         )}
       </div>
 
+        </aside>
+        <main className="flex min-w-0 flex-col gap-6">
       {/* OAuth Providers */}
       {oauthEntries.length > 0 && (
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-b-2 border-black pb-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             OAuth Providers
           </h2>
@@ -576,13 +586,13 @@ export default function ProvidersPage() {
               <span
                 className={`material-symbols-outlined text-[14px]${testingMode === "oauth" ? " animate-spin" : ""}`}
               >
-                play_arrow
+                play_circle
               </span>
               Test All
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 auto-rows-fr gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {oauthEntries.map(([key, info]) => {
             const authTypes = dualAuthTypes(info, key);
             return (
@@ -603,12 +613,12 @@ export default function ProvidersPage() {
       {/* Unauthenticated Providers */}
       {unauthEntries.length > 0 && (
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-b-2 border-black pb-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             Unauthenticated Providers
           </h2>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 auto-rows-fr gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {unauthEntries.map(([key, info]) => {
             const unauthAuthTypes = dualAuthTypes(info, key);
             return (
@@ -629,7 +639,7 @@ export default function ProvidersPage() {
       {/* Free Tier Providers */}
       {(freeEntries.length > 0 || freeTierEntries.length > 0) && (
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-b-2 border-black pb-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             Free Tier Providers
           </h2>
@@ -647,12 +657,12 @@ export default function ProvidersPage() {
             <span
               className={`material-symbols-outlined text-[14px]${testingMode === "free" ? " animate-spin" : ""}`}
             >
-              play_arrow
+              play_circle
             </span>
             Test All
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 auto-rows-fr gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {freeEntries.map(([key, info]) => {
             // Dual-auth (e.g. kiro): count/toggle oauth + apikey/api_key so the
             // card total matches the provider detail page.
@@ -701,7 +711,7 @@ export default function ProvidersPage() {
             Web Cookie Providers{" "}
           </h2>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 auto-rows-fr gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {webCookieEntries.map(([key, info]) => (
             <ApiKeyProviderCard
               key={key}
@@ -719,7 +729,7 @@ export default function ProvidersPage() {
       {/* API Key Providers - fixed list */}
       {apikeyEntries.length > 0 && (
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-b-2 border-black pb-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             API Key Providers{" "}
           </h2>
@@ -737,12 +747,12 @@ export default function ProvidersPage() {
             <span
               className={`material-symbols-outlined text-[14px]${testingMode === "apikey" ? " animate-spin" : ""}`}
             >
-              play_arrow
+              play_circle
             </span>
             Test All
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 auto-rows-fr gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {visibleApikeyEntries.map(([key, info]) => (
             <ApiKeyProviderCard
               key={key}
@@ -759,13 +769,15 @@ export default function ProvidersPage() {
             onClick={() => setShowAllApikey(true)}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/5"
           >
-            <span className="material-symbols-outlined text-[16px]">expand_more</span>
+            <span className="material-symbols-outlined text-[16px]">keyboard_arrow_down</span>
             Show all {apikeyEntries.length} providers
           </button>
         )}
       </div>
       )}
 
+        </main>
+      </div>
       <AddCompatibleModal
         variant="openai"
         isOpen={showAddCompatibleModal}
@@ -803,7 +815,7 @@ export default function ProvidersPage() {
       >
         <div className="flex flex-col gap-4 text-sm text-text-muted">
           <div className="flex items-center gap-2 p-3 rounded-lg border border-border-subtle bg-surface-2">
-            <span className="material-symbols-outlined text-[20px] text-brand-500">handyman</span>
+            <span className="material-symbols-outlined text-[20px] text-brand-500">build_circle</span>
             <div>
               <p className="text-xs text-text-muted">Current Active Lane</p>
               <p className="text-sm font-semibold text-text-main">
@@ -820,11 +832,11 @@ export default function ProvidersPage() {
             >
               <div className="flex items-center justify-between gap-2 mb-1">
                 <div className="flex items-center gap-2 font-medium text-text-main">
-                  <span className="material-symbols-outlined text-[18px] text-success">bolt</span>
+                  <span className="material-symbols-outlined text-[18px] text-success">electric_bolt</span>
                   <span>Direct Lane (Default / Recommended)</span>
                 </div>
                 {!selectedLaneMode && (
-                  <span className="material-symbols-outlined text-[18px] text-brand-500">check_circle</span>
+                  <span className="material-symbols-outlined text-[18px] text-brand-500">task_alt</span>
                 )}
               </div>
               <p className="text-xs text-text-muted leading-relaxed">
@@ -839,11 +851,11 @@ export default function ProvidersPage() {
             >
               <div className="flex items-center justify-between gap-2 mb-1">
                 <div className="flex items-center gap-2 font-medium text-text-main">
-                  <span className="material-symbols-outlined text-[18px] text-warning">terminal</span>
+                  <span className="material-symbols-outlined text-[18px] text-warning">code</span>
                   <span>CLI Lane</span>
                 </div>
                 {selectedLaneMode && (
-                  <span className="material-symbols-outlined text-[18px] text-brand-500">check_circle</span>
+                  <span className="material-symbols-outlined text-[18px] text-brand-500">task_alt</span>
                 )}
               </div>
               <p className="text-xs text-text-muted leading-relaxed">
@@ -885,19 +897,19 @@ export default function ProvidersPage() {
           className="fixed inset-0 z-50 flex items-start justify-center px-3 pt-[6vh] sm:pt-[10vh]"
           onClick={() => setTestResults(null)}
         >
-          <div className="absolute inset-0 bg-scrim backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-scrim " />
           <div
             className="relative bg-surface border border-border rounded-xl w-full max-w-[600px] max-h-[86vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b border-border bg-surface/95 backdrop-blur-sm rounded-t-xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b border-border bg-surface/95  rounded-t-xl">
               <h3 className="font-semibold">Test Results</h3>
               <button
                 onClick={() => setTestResults(null)}
                 className="p-1 rounded-lg hover:bg-bg text-text-muted hover:text-text-main transition-colors"
                 aria-label="Close test results"
               >
-                <span className="material-symbols-outlined text-lg">close</span>
+                <span className="material-symbols-outlined text-lg">close_small</span>
               </button>
             </div>
             <div className="p-5">
@@ -928,19 +940,20 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle, opencod
   };
 
   return (
-    <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
+    <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0 chrome-focus">
       <Card
         padding="xs"
-        className={`h-full hover:bg-surface-2/60 transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        hover
+        className={`provider-directory-card h-full min-h-[92px] ${allDisabled ? "opacity-50" : ""}`}
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="size-8 shrink-0 flex items-center justify-center overflow-hidden">
+            {/* The paper stamp gives each complete logo a clear, consistent stage. */}
+            <div className="provider-logo-frame flex size-11 shrink-0 items-center justify-center p-1">
               <ProviderIcon
                 src={`/providers/${provider.id}.png`}
                 alt={provider.name}
                 size={32}
-                className="object-cover rounded-xl"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }
@@ -956,7 +969,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle, opencod
                   <Badge variant="default" size="sm">
                     <span className="flex items-center gap-1">
                       <span className="material-symbols-outlined text-[12px]">
-                        pause_circle
+                        pause_circle_filled
                       </span>
                       Disabled
                     </span>
@@ -997,7 +1010,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle, opencod
                     : "border-border/60 bg-surface text-text-muted hover:text-text-main hover:border-border"
                 }`}
               >
-                <span className="material-symbols-outlined text-[16px]">handyman</span>
+                <span className="material-symbols-outlined text-[16px]">build_circle</span>
               </button>
             )}
             {stats.total > 0 && (
@@ -1082,19 +1095,19 @@ function ApiKeyProviderCard({
   };
 
   return (
-    <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
+    <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0 chrome-focus">
       <Card
         padding="xs"
-        className={`h-full hover:bg-surface-2/60 transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        hover
+        className={`provider-directory-card h-full min-h-[92px] ${allDisabled ? "opacity-50" : ""}`}
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="size-8 shrink-0 flex items-center justify-center overflow-hidden">
+            <div className="provider-logo-frame flex size-11 shrink-0 items-center justify-center p-1">
               <ProviderIcon
                 src={getIconPath()}
                 alt={provider.name}
                 size={32}
-                className="object-cover rounded-xl"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }
@@ -1110,7 +1123,7 @@ function ApiKeyProviderCard({
                   <Badge variant="default" size="sm">
                     <span className="flex items-center gap-1">
                       <span className="material-symbols-outlined text-[12px]">
-                        pause_circle
+                        pause_circle_filled
                       </span>
                       Disabled
                     </span>
@@ -1187,7 +1200,7 @@ function ProviderTestResultsView({ results }) {
     return (
       <div className="text-center py-6">
         <span className="material-symbols-outlined text-red-500 text-[32px] mb-2 block">
-          error
+          error_outline
         </span>
         <p className="text-sm text-red-400">{results.error}</p>
       </div>

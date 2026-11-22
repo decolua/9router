@@ -181,7 +181,7 @@ export default function NotifToast({ jobs = [], onPick = null }) {
                     aria-label={`Remove ${task.title || "task"}`}
                     className="flex size-6 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-2 hover:text-text-main"
                   >
-                    <span className="material-symbols-outlined text-[15px]">close</span>
+                    <span className="material-symbols-outlined text-[15px]">cancel</span>
                   </button>
                 </div>
               </div>

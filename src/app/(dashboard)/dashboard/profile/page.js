@@ -1062,15 +1062,28 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-0">
-      <div className="flex flex-col gap-6">
+    <div className="w-full max-w-6xl mx-auto px-4 sm:px-0 min-w-0">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+        <header className="space-y-1 lg:col-span-2">
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-text-main">Profile &amp; Settings</h1>
+          <p className="text-sm text-text-muted">Manage access, integrations, backups, and dashboard preferences.</p>
+        </header>
         {/* Local Mode Info */}
         <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+              <span className="material-symbols-outlined text-[20px]">database</span>
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-semibold text-text-main">Database &amp; Backups</h2>
+              <p className="text-xs sm:text-sm text-text-muted">Local storage and backup operations.</p>
+            </div>
+          </div>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
               <div>
                 <p className="font-medium text-sm sm:text-base">Database Location</p>
-                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db/data.sqlite</p>
+                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db/data.sqlite (default)</p>
               </div>
             </div>
             <div className="flex flex-col gap-2">
@@ -1082,7 +1095,7 @@ export default function ProfilePage() {
                 )}
                 <Button
                   variant="secondary"
-                  icon="cloud_sync"
+                  icon="sync"
                   onClick={() => { setTgModalOpen(true); loadAutoBackup(); }}
                   className="w-full sm:w-auto"
                 >
@@ -1092,7 +1105,7 @@ export default function ProfilePage() {
                 <div className="flex flex-col sm:flex-row gap-2">
                   <Button
                     variant="secondary"
-                    icon="download"
+                    icon="file_download"
                     onClick={() => setShowDownloadBackupModal(true)}
                     loading={dbLoading}
                     className="w-full sm:w-auto"
@@ -1101,7 +1114,7 @@ export default function ProfilePage() {
                   </Button>
                   <Button
                     variant="outline"
-                    icon="upload"
+                    icon="drive_folder_upload"
                     onClick={() => importFileRef.current?.click()}
                     disabled={dbLoading}
                     className="w-full sm:w-auto"
@@ -1130,7 +1143,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
-              <span className="material-symbols-outlined text-[20px]">shield</span>
+              <span className="material-symbols-outlined text-[20px]">shield_person</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Security</h3>
           </div>
@@ -1209,7 +1222,7 @@ export default function ProfilePage() {
             className="w-full flex items-center gap-3 text-left"
           >
             <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500 shrink-0">
-              <span className="material-symbols-outlined text-[20px]">lock_open</span>
+              <span className="material-symbols-outlined text-[20px]">password</span>
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-base sm:text-lg font-semibold">Single Sign-On (SSO)</h3>
@@ -1222,7 +1235,7 @@ export default function ProfilePage() {
               </p>
             </div>
             <span className="material-symbols-outlined text-text-muted shrink-0">
-              {oidcExpanded ? "expand_less" : "expand_more"}
+              {oidcExpanded ? "expand_less" : "keyboard_arrow_down"}
             </span>
           </button>
           {oidcExpanded && (
@@ -1322,7 +1335,7 @@ export default function ProfilePage() {
                       className="w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-surface/50 transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-primary text-lg">menu_book</span>
+                        <span className="material-symbols-outlined text-primary text-lg">help</span>
                         <div>
                           <p className="font-semibold text-xs sm:text-sm text-text-main">
                             IdP Setup Guidelines & Provider Configuration Instructions
@@ -1336,14 +1349,14 @@ export default function ProfilePage() {
                         className="material-symbols-outlined text-text-muted transition-transform text-lg"
                         style={{ transform: showSamlGuide ? "rotate(180deg)" : "none" }}
                       >
-                        expand_more
+                        keyboard_arrow_down
                       </span>
                     </button>
 
                     {showSamlGuide && (
                       <div className="p-4 border-t border-border bg-surface/30 text-xs text-text-main flex flex-col gap-3">
                         <div className="p-2.5 rounded border border-primary/20 bg-primary/5 text-primary text-xs">
-                          <p className="mb-1 flex items-center gap-1.5 font-semibold"><span className="material-symbols-outlined text-[14px] leading-none">key</span>Required Service Provider (SP) Values for your IdP Setup:</p>
+                          <p className="mb-1 flex items-center gap-1.5 font-semibold"><span className="material-symbols-outlined text-[14px] leading-none">vpn_key</span>Required Service Provider (SP) Values for your IdP Setup:</p>
                           <ul className="list-disc pl-4 space-y-1 font-mono text-[11px]">
                             <li>
                               <b>Assertion Consumer Service (ACS) URL:</b>{" "}
@@ -1363,7 +1376,7 @@ export default function ProfilePage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                           <div className="p-3 rounded border border-border bg-bg/50 flex flex-col gap-1.5">
                             <p className="font-semibold text-text-main flex items-center gap-1.5">
-                              <span className="material-symbols-outlined text-[15px] leading-none text-text-muted">cloud</span> AWS IAM Identity Center
+                              <span className="material-symbols-outlined text-[15px] leading-none text-text-muted">cloud_queue</span> AWS IAM Identity Center
                             </p>
                             <ol className="list-decimal pl-4 text-text-muted space-y-1">
                               <li>Applications → <b>Add application</b> → Select <b>Add custom SAML 2.0 application</b>.</li>
@@ -1376,7 +1389,7 @@ export default function ProfilePage() {
 
                           <div className="p-3 rounded border border-border bg-bg/50 flex flex-col gap-1.5">
                             <p className="font-semibold text-text-main flex items-center gap-1.5">
-                              <span className="material-symbols-outlined text-[15px] leading-none text-text-muted">security</span> Microsoft Entra ID (Azure AD)
+                              <span className="material-symbols-outlined text-[15px] leading-none text-text-muted">admin_panel_settings</span> Microsoft Entra ID (Azure AD)
                             </p>
                             <ol className="list-decimal pl-4 text-text-muted space-y-1">
                               <li>Enterprise Applications → <b>New application</b> → <b>Create your own application</b>.</li>
@@ -1389,7 +1402,7 @@ export default function ProfilePage() {
 
                           <div className="p-3 rounded border border-border bg-bg/50 flex flex-col gap-1.5">
                             <p className="font-semibold text-text-main flex items-center gap-1.5">
-                              <span className="material-symbols-outlined text-[15px] leading-none text-text-muted">verified_user</span> Okta / Auth0
+                              <span className="material-symbols-outlined text-[15px] leading-none text-text-muted">verified</span> Okta / Auth0
                             </p>
                             <ol className="list-decimal pl-4 text-text-muted space-y-1">
                               <li>Applications → <b>Create App Integration</b> → Select <b>SAML 2.0</b>.</li>
@@ -1402,7 +1415,7 @@ export default function ProfilePage() {
 
                           <div className="p-3 rounded border border-border bg-bg/50 flex flex-col gap-1.5">
                             <p className="font-semibold text-text-main flex items-center gap-1.5">
-                              <span className="material-symbols-outlined text-[15px] leading-none text-text-muted">shield_lock</span> Keycloak / Authentik
+                              <span className="material-symbols-outlined text-[15px] leading-none text-text-muted">lock</span> Keycloak / Authentik
                             </p>
                             <ol className="list-decimal pl-4 text-text-muted space-y-1">
                               <li>Clients → <b>Create client</b> → Select <b>SAML</b>.</li>
@@ -1426,7 +1439,7 @@ export default function ProfilePage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      icon="upload_file"
+                      icon="drive_folder_upload"
                       onClick={() => idpMetadataFileRef.current?.click()}
                     >
                       Upload Metadata XML
@@ -1468,7 +1481,7 @@ export default function ProfilePage() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          icon="file_upload"
+                          icon="drive_file_move"
                           onClick={() => certFileRef.current?.click()}
                         >
                           Upload Certificate
@@ -1535,7 +1548,7 @@ export default function ProfilePage() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        icon="content_copy"
+                        icon="file_copy"
                         onClick={() => {
                           navigator.clipboard.writeText(samlAcsUrl);
                           setSamlStatus({ type: "success", message: "ACS URL copied to clipboard!" });
@@ -1556,7 +1569,7 @@ export default function ProfilePage() {
                         download="9router-sp-metadata.xml"
                         className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                       >
-                        <span className="material-symbols-outlined text-[16px]">download</span>
+                        <span className="material-symbols-outlined text-[16px]">file_download</span>
                         Download XML
                       </a>
                     </div>
@@ -1699,7 +1712,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
-              <span className="material-symbols-outlined text-[20px]">route</span>
+              <span className="material-symbols-outlined text-[20px]">alt_route</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Routing Strategy</h3>
           </div>
@@ -1790,7 +1803,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
-              <span className="material-symbols-outlined text-[20px]">wifi</span>
+              <span className="material-symbols-outlined text-[20px]">router</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Network</h3>
           </div>
@@ -1862,7 +1875,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
-              <span className="material-symbols-outlined text-[20px]">monitoring</span>
+              <span className="material-symbols-outlined text-[20px]">analytics</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Observability</h3>
           </div>
@@ -1896,7 +1909,7 @@ export default function ProfilePage() {
             <Button
               variant="outline"
               fullWidth
-              icon="power_settings_new"
+              icon="power_off"
               onClick={() => setShutdownOpen(true)}
               className="text-danger border-danger/30 hover:bg-danger/10 hover:border-danger/40"
             >
@@ -1906,7 +1919,7 @@ export default function ProfilePage() {
           <Button
             variant="outline"
             fullWidth
-            icon="logout"
+            icon="exit_to_app"
             onClick={handleLogout}
           >
             Logout
@@ -2021,7 +2034,7 @@ export default function ProfilePage() {
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-4 border-t border-border/50">
         <Button
         variant="secondary"
-        icon="send"
+        icon="outgoing_mail"
         onClick={() => setDbAuth({ open: true, mode: "tgtest", password: "" })}
         loading={tgLoading}
         disabled={!tgHasTgToken && !tgHasGhToken}

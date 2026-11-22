@@ -857,7 +857,7 @@ export default function ProviderLimits() {
       <Card padding="lg">
         <div className="text-center py-12">
           <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
-            cloud_off
+            cloud
           </span>
           <h3 className="mt-4 text-lg font-semibold text-text-primary">
             No Providers Connected
@@ -890,10 +890,11 @@ export default function ProviderLimits() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)]">
+      <aside className="min-w-0">
       {/* Header Controls */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-start">
+        <div className="flex flex-wrap items-center gap-1.5 lg:flex-col lg:items-stretch">
           <div className="relative">
             <button
               type="button"
@@ -906,7 +907,7 @@ export default function ProviderLimits() {
               <span className="flex min-w-0 items-center gap-1.5">
                 {providerFilter === "all" ? (
                   <span className="material-symbols-outlined text-[14px] text-text-muted">
-                    apps
+                    grid_view
                   </span>
                 ) : (
                   <ProviderIcon
@@ -922,7 +923,7 @@ export default function ProviderLimits() {
                 </span>
               </span>
               <span className="material-symbols-outlined text-[14px] text-text-muted">
-                expand_more
+                expand_less
               </span>
             </button>
 
@@ -934,7 +935,7 @@ export default function ProviderLimits() {
                   aria-label="Close provider filter"
                   onClick={() => setProviderMenuOpen(false)}
                 />
-                <div className="absolute left-0 z-40 mt-2 w-64 overflow-hidden rounded-2xl border border-black/10 bg-surface/95 p-1.5 shadow-xl shadow-black/10 backdrop-blur dark:border-white/10 dark:bg-surface/95 sm:w-72">
+                <div className="absolute left-0 z-40 mt-2 w-64 overflow-hidden rounded-2xl border border-black/10 bg-surface/95 p-1.5 shadow-xl shadow-black/10  dark:border-white/10 dark:bg-surface/95 sm:w-72">
                   <button
                     type="button"
                     onClick={() => {
@@ -947,12 +948,12 @@ export default function ProviderLimits() {
                     className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === "all" ? "bg-primary/10 text-primary" : "text-text-primary hover:bg-black/5 dark:hover:bg-white/10"}`}
                   >
                     <span className="material-symbols-outlined text-[22px]">
-                      apps
+                      grid_view
                     </span>
                     <span className="font-medium">All providers</span>
                     {providerFilter === "all" && (
                       <span className="material-symbols-outlined ml-auto text-[20px]">
-                        check
+                        done_all
                       </span>
                     )}
                   </button>
@@ -983,7 +984,7 @@ export default function ProviderLimits() {
                         </span>
                         {providerFilter === provider && (
                           <span className="material-symbols-outlined ml-auto text-[20px]">
-                            check
+                            done_all
                           </span>
                         )}
                       </button>
@@ -1035,7 +1036,7 @@ export default function ProviderLimits() {
             title="Sort accounts by earliest quota reset time"
           >
             <span className="material-symbols-outlined text-[14px]">
-              hourglass_top
+              hourglass_bottom
             </span>
             <span className="hidden sm:inline">Expiring first</span>
           </button>
@@ -1048,7 +1049,7 @@ export default function ProviderLimits() {
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-red-500/30 px-2 text-xs text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-50"
             title="Disable connections with depleted quota on the current page"
           >
-            <span className="material-symbols-outlined text-[14px]">block</span>
+            <span className="material-symbols-outlined text-[14px]">do_not_disturb_on</span>
             <span className="hidden sm:inline">Turn off Empty</span>
           </button>
 
@@ -1061,7 +1062,7 @@ export default function ProviderLimits() {
             title="Enable connections that still have quota on the current page"
           >
             <span className="material-symbols-outlined text-[14px]">
-              check_circle
+              task_alt
             </span>
             <span className="hidden sm:inline">Turn on Available</span>
           </button>
@@ -1077,7 +1078,7 @@ export default function ProviderLimits() {
                 autoRefresh ? "text-primary" : "text-text-muted"
               }`}
             >
-              {autoRefresh ? "toggle_on" : "toggle_off"}
+              {autoRefresh ? "switch_right" : "switch_left"}
             </span>
             <span className="hidden text-text-primary sm:inline">
               Auto-refresh
@@ -1101,12 +1102,14 @@ export default function ProviderLimits() {
             <span
               className={`material-symbols-outlined text-[14px] ${refreshingAll ? "animate-spin" : ""}`}
             >
-              refresh
+              sync
             </span>
           </button>
         </div>
       </div>
 
+      </aside>
+      <section className="min-w-0 space-y-6" aria-label="Quota results">
       {/* Provider cards: 2 columns, compact */}
       {expiringFirst && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
@@ -1197,7 +1200,7 @@ export default function ProviderLimits() {
                               className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:text-primary"
                             >
                               <span className="material-symbols-outlined text-[12px]">
-                                {copied === conn.id ? "check" : "content_copy"}
+                                {copied === conn.id ? "done_all" : "file_copy"}
                               </span>
                               <code className="truncate font-mono">
                                 {conn.providerSpecificData.profileArn}
@@ -1237,7 +1240,7 @@ export default function ProviderLimits() {
                             }`}
                           >
                             <span className={`material-symbols-outlined text-[15px] ${isResettingLimit ? "animate-spin" : ""}`}>
-                              {isResettingLimit ? "progress_activity" : "restart_alt"}
+                              {isResettingLimit ? "autorenew" : "settings_backup_restore"}
                             </span>
                             <span>{resetCreditCount}</span>
                           </button>
@@ -1250,7 +1253,7 @@ export default function ProviderLimits() {
                             aria-label={isCodex ? "View Codex reset credit expiry" : "View Claude Code reset expiry"}
                             className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-text-muted transition-colors hover:bg-black/5 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:hover:bg-white/5"
                           >
-                            <span className="material-symbols-outlined text-[17px]">schedule</span>
+                            <span className="material-symbols-outlined text-[17px]">calendar_clock</span>
                           </button>
                         </Tooltip>
                       </>
@@ -1282,7 +1285,7 @@ export default function ProviderLimits() {
                             aria-label="Configure auto-ping"
                             className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${isActive ? "text-primary" : "text-text-muted"}`}
                           >
-                            <span className="material-symbols-outlined text-[18px]">bolt</span>
+                            <span className="material-symbols-outlined text-[18px]">electric_bolt</span>
                           </button>
                         </Tooltip>
                       );
@@ -1298,7 +1301,7 @@ export default function ProviderLimits() {
                         <span
                           className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
                         >
-                          refresh
+                          sync
                         </span>
                       </button>
                     </Tooltip>
@@ -1314,7 +1317,7 @@ export default function ProviderLimits() {
                         className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50"
                       >
                         <span className="material-symbols-outlined text-[18px]">
-                          edit
+                          edit_note
                         </span>
                       </button>
                     </Tooltip>
@@ -1329,7 +1332,7 @@ export default function ProviderLimits() {
                         <span
                           className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
                         >
-                          delete
+                          delete_forever
                         </span>
                       </button>
                     </Tooltip>
@@ -1358,13 +1361,13 @@ export default function ProviderLimits() {
                 {isLoading ? (
                   <div className="text-center py-5 text-text-muted">
                     <span className="material-symbols-outlined text-[28px] animate-spin">
-                      progress_activity
+                      autorenew
                     </span>
                   </div>
                 ) : error ? (
                   <div className="text-center py-5">
                     <span className="material-symbols-outlined text-[28px] text-red-500">
-                      error
+                      warning
                     </span>
                     <p className="mt-1.5 text-xs text-text-muted">{error}</p>
                   </div>
@@ -1391,7 +1394,7 @@ export default function ProviderLimits() {
                 {hiddenQuotaRows.length > 0 && (
                   <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-black/5 pt-2 text-[10px] text-text-muted dark:border-white/5">
                     <span className="material-symbols-outlined shrink-0 text-[14px]">
-                      visibility_off
+                      visibility
                     </span>
                     <span className="shrink-0">Hidden:</span>
                     <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-2">
@@ -1500,7 +1503,7 @@ export default function ProviderLimits() {
                 aria-label="Previous accounts page"
               >
                 <span className="material-symbols-outlined text-[16px]">
-                  chevron_left
+                  arrow_back_ios
                 </span>
               </button>
               <button
@@ -1519,7 +1522,7 @@ export default function ProviderLimits() {
                 aria-label="Next accounts page"
               >
                 <span className="material-symbols-outlined text-[16px]">
-                  chevron_right
+                  arrow_forward_ios
                 </span>
               </button>
               <button
@@ -1538,6 +1541,7 @@ export default function ProviderLimits() {
           </div>
         </div>
 
+      </section>
       <ConfirmModal
         isOpen={Boolean(resetConfirmState)}
         onClose={() => {
@@ -1560,7 +1564,7 @@ export default function ProviderLimits() {
       />
 
       {resetCreditsState && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim px-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim px-4 ">
           <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl ring-1 ring-border">
             <div className="flex items-start justify-between gap-3 border-b border-black/10 bg-black/[0.03] px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
               <div className="min-w-0">
@@ -1577,14 +1581,14 @@ export default function ProviderLimits() {
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
                 aria-label="Close reset credit expiry modal"
               >
-                <span className="material-symbols-outlined text-[18px]">close</span>
+                <span className="material-symbols-outlined text-[18px]">cancel</span>
               </button>
             </div>
 
             <div className="max-h-[70vh] overflow-auto bg-surface p-4">
               {resetCreditsState.loading ? (
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-text-muted">
-                  <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
+                  <span className="material-symbols-outlined animate-spin text-[20px]">autorenew</span>
                   Loading reset credits...
                 </div>
               ) : resetCreditsState.error ? (
@@ -1694,4 +1698,3 @@ export default function ProviderLimits() {
     </div>
   );
 }
-

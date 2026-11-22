@@ -15,44 +15,44 @@ function getLocaleFromCookie() {
   return normalizeLocale(value);
 }
 
-// Locale display names - will be translated by runtime i18n
+// Locale display names stay in English so the language menu remains readable.
 const getLocaleInfo = (locale) => {
   const locales = {
     "en": { name: "English" },
-    "vi": { name: "Tiếng Việt" },
-    "zh-CN": { name: "简体中文" },
-    "zh-TW": { name: "繁體中文" },
-    "ja": { name: "日本語" },
-    "pt-BR": { name: "Português (Brasil)" },
-    "pt-PT": { name: "Português (Portugal)" },
-    "ko": { name: "한국어" },
-    "es": { name: "Español" },
-    "de": { name: "Deutsch" },
-    "fr": { name: "Français" },
-    "he": { name: "עברית" },
-    "ar": { name: "العربية" },
-    "ru": { name: "Русский" },
-    "pl": { name: "Polski" },
-    "cs": { name: "Čeština" },
-    "nl": { name: "Nederlands" },
-    "tr": { name: "Türkçe" },
-    "uk": { name: "Українська" },
+    "vi": { name: "Vietnamese" },
+    "zh-CN": { name: "Chinese (Simplified)" },
+    "zh-TW": { name: "Chinese (Traditional)" },
+    "ja": { name: "Japanese" },
+    "pt-BR": { name: "Portuguese (Brazil)" },
+    "pt-PT": { name: "Portuguese (Portugal)" },
+    "ko": { name: "Korean" },
+    "es": { name: "Spanish" },
+    "de": { name: "German" },
+    "fr": { name: "French" },
+    "he": { name: "Hebrew" },
+    "ar": { name: "Arabic" },
+    "ru": { name: "Russian" },
+    "pl": { name: "Polish" },
+    "cs": { name: "Czech" },
+    "nl": { name: "Dutch" },
+    "tr": { name: "Turkish" },
+    "uk": { name: "Ukrainian" },
     "tl": { name: "Tagalog" },
-    "id": { name: "Indonesia" },
-    "th": { name: "ไทย" },
-    "km": { name: "ខ្មែរ" },
-    "hi": { name: "हिन्दी" },
-    "bn": { name: "বাংলা" },
-    "ur": { name: "اردو" },
-    "ro": { name: "Română" },
-    "sv": { name: "Svenska" },
-    "it": { name: "Italiano" },
-    "el": { name: "Ελληνικά" },
-    "hu": { name: "Magyar" },
-    "fi": { name: "Suomi" },
-    "da": { name: "Dansk" },
-    "no": { name: "Norsk" },
-    "fa": { name: "فارسی" }
+    "id": { name: "Indonesian" },
+    "th": { name: "Thai" },
+    "km": { name: "Khmer" },
+    "hi": { name: "Hindi" },
+    "bn": { name: "Bengali" },
+    "ur": { name: "Urdu" },
+    "ro": { name: "Romanian" },
+    "sv": { name: "Swedish" },
+    "it": { name: "Italian" },
+    "el": { name: "Greek" },
+    "hu": { name: "Hungarian" },
+    "fi": { name: "Finnish" },
+    "da": { name: "Danish" },
+    "no": { name: "Norwegian" },
+    "fa": { name: "Persian" }
   };
   return locales[locale] || { name: locale };
 };
@@ -123,7 +123,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
           title="Language"
           data-i18n-skip="true"
         >
-          <span className="material-symbols-outlined text-[20px]">language</span>
+          <span className="material-symbols-outlined text-[20px]">translate</span>
           <LocaleBadge locale={locale} />
           <span className="text-sm font-medium">{getLocaleInfo(locale).name}</span>
         </button>
@@ -134,7 +134,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" data-i18n-skip="true">
           {/* Overlay */}
           <div
-            className="absolute inset-0 backdrop-blur-sm"
+            className="absolute inset-0 "
             style={{ backgroundColor: "var(--color-scrim)" }}
             onClick={() => setIsOpen(false)}
           />
@@ -152,7 +152,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
                 className="p-1.5 rounded-lg text-text-muted hover:bg-surface-2 transition-colors"
                 aria-label="Close"
               >
-                <span className="material-symbols-outlined text-[20px]">close</span>
+                <span className="material-symbols-outlined text-[20px]">cancel</span>
               </button>
             </div>
 
@@ -178,7 +178,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
                       {/* Fixed 2-line height so all cards are uniform */}
                       <span className="text-center leading-tight line-clamp-2 h-8 flex items-center">{info.name}</span>
                       {active && (
-                        <span className="material-symbols-outlined text-sm">check</span>
+                        <span className="material-symbols-outlined text-sm">done_all</span>
                       )}
                     </button>
                   );

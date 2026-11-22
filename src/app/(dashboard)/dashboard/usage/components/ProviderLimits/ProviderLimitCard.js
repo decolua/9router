@@ -102,7 +102,7 @@ export default function ProviderLimitCard({
               refreshing || loading ? "animate-spin" : ""
             }`}
           >
-            refresh
+            sync
           </span>
         </button>
       </div>
@@ -126,7 +126,7 @@ export default function ProviderLimitCard({
         <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
           <div className="flex items-start gap-2">
             <span className="material-symbols-outlined text-red-500 text-[20px]">
-              error
+              warning
             </span>
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           </div>
@@ -138,7 +138,7 @@ export default function ProviderLimitCard({
         <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
           <div className="flex items-start gap-2">
             <span className="material-symbols-outlined text-blue-500 text-[20px]">
-              info
+              help
             </span>
             <p className="text-sm text-blue-600 dark:text-blue-400">
               {message}
@@ -178,7 +178,7 @@ export default function ProviderLimitCard({
       {!loading && !error && !message && quotas?.length === 0 && (
         <div className="text-center py-8 text-text-muted">
           <span className="material-symbols-outlined text-[48px] opacity-20">
-            data_usage
+            monitoring
           </span>
           <p className="text-sm mt-2">No quota data available</p>
         </div>

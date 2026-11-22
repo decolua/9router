@@ -110,7 +110,7 @@ export default function SettingsHistory({ onReverted }) {
               variant="secondary"
               onClick={() => revert(entry.id)}
               loading={reverting === entry.id}
-              icon="history"
+              icon="history_toggle_off"
             >
               Revert
             </Button>

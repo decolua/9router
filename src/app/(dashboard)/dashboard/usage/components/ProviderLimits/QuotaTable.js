@@ -186,7 +186,7 @@ export default function QuotaTable({
                 aria-label={`Open usage details for ${quota.name}`}
               >
                 {resetDisplay}
-                <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                <span className="material-symbols-outlined text-[12px]">launch</span>
               </a>
             ) : (
               resetDisplay
@@ -256,7 +256,7 @@ export default function QuotaTable({
                         aria-label={`Hide quota ${quota.name}`}
                       >
                         <span className="material-symbols-outlined text-[13px]">
-                          visibility_off
+                          visibility
                         </span>
                       </button>
                     )}

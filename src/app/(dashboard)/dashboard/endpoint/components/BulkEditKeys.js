@@ -151,7 +151,7 @@ export default function BulkEditKeys({ selectedCount, onApply, onClose }) {
                     <Button
                       size="sm"
                       variant="ghost"
-                      icon="add"
+                      icon="add_circle"
                       disabled={!fields[name].on}
                       onClick={() => setModelPickerOpen(true)}
                     >

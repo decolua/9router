@@ -131,7 +131,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
 
         {loading && (
           <div className="flex items-center gap-2 text-text-muted text-xs py-4 justify-center">
-            <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+            <span className="material-symbols-outlined animate-spin text-[18px]">autorenew</span>
             <span>Loading registry...</span>
           </div>
         )}
@@ -192,13 +192,13 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                     <div className="px-3 py-2 bg-surface/40 border-t border-border flex flex-col gap-2">
                       {isLoadingTools && (
                         <div className="flex items-center gap-2 text-text-muted text-[10px] py-1">
-                          <span className="material-symbols-outlined animate-spin text-[14px]">progress_activity</span>
+                          <span className="material-symbols-outlined animate-spin text-[14px]">autorenew</span>
                           <span>Probing server for tools...</span>
                         </div>
                       )}
                       {!isLoadingTools && cache?.requiresAuth && (
                         <p className="flex items-start gap-1 text-[10px] text-amber-600 bg-amber-500/10 px-2 py-1 rounded">
-                          <span className="material-symbols-outlined text-[12px] leading-none">lock</span>
+                          <span className="material-symbols-outlined text-[12px] leading-none">lock_person</span>
                           Add it now, authenticate after Apply, and the tool list is discovered on first connect.
                         </p>
                       )}
@@ -237,7 +237,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                         onClick={() => confirmAdd(s)}
                         className="self-end px-2 py-1 rounded text-[10px] font-medium bg-primary text-white hover:bg-primary/90"
                       >
-                        <span className="inline-flex items-center gap-1"><span className="material-symbols-outlined text-[12px] leading-none">check</span>Confirm Add</span>
+                        <span className="inline-flex items-center gap-1"><span className="material-symbols-outlined text-[12px] leading-none">done_all</span>Confirm Add</span>
                       </button>
                     </div>
                   )}

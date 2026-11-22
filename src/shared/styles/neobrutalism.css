@@ -1,0 +1,469 @@
+/*
+ * 9Router neobrutalism system
+ * Paper-and-ink surfaces, bright editorial color blocks, heavy outlines and
+ * offset shadows. Keep the original content flow and interactions; change the
+ * visual language consistently at the token and primitive levels.
+ */
+html.neobrutalism {
+  color-scheme: light;
+
+  --neo-ink: #191817;
+  --neo-paper: #f7f1e4;
+  --neo-paper-deep: #eee4d2;
+  --neo-white: #fffdf8;
+  --neo-coral: #ff7657;
+  --neo-lime: #c8ee68;
+  --neo-lilac: #c6b5ff;
+  --neo-cyan: #83d8e8;
+  --neo-sun: #ffd45c;
+  --neo-rose: #ffb4a8;
+
+  --color-brand-50: #fff2ec;
+  --color-brand-100: #ffded3;
+  --color-brand-200: #ffc1ae;
+  --color-brand-300: #ff9f83;
+  --color-brand-400: #ff8867;
+  --color-brand-500: var(--neo-coral);
+  --color-brand-600: #e95437;
+  --color-brand-700: #b63b26;
+  --color-brand-800: #812b1d;
+  --color-brand-900: #4a1e18;
+  --color-primary: #b83b26;
+  --color-primary-hover: #94321f;
+
+  --color-bg: var(--neo-paper);
+  --color-bg-alt: var(--neo-paper-deep);
+  --color-surface: var(--neo-white);
+  --color-surface-2: #fff1bf;
+  --color-surface-3: #dff4f2;
+  --color-sidebar: #efe4d1;
+  --color-border: var(--neo-ink);
+  --color-border-subtle: #877e70;
+  --color-text: var(--neo-ink);
+  --color-text-main: var(--neo-ink);
+  --color-text-muted: #514c43;
+  --color-text-subtle: #71695e;
+  --color-danger: #eb5360;
+  --color-success: #9bcf43;
+  --color-warning: #f2bb2e;
+  --color-info: #37a9c4;
+
+  --color-bg-base: var(--color-bg);
+  --color-bg-subtle: var(--color-bg-alt);
+  --color-bg-secondary: var(--color-surface-2);
+  --color-bg-tertiary: var(--color-surface-3);
+  --color-surface-secondary: var(--color-surface-2);
+  --color-text-primary: var(--color-text-main);
+  --color-border-hover: var(--neo-ink);
+  --color-bg-hover: color-mix(in srgb, var(--neo-sun) 58%, white);
+  --color-bg-dark: var(--neo-ink);
+  --color-surface-dark: var(--neo-white);
+  --color-sidebar-dark: var(--color-sidebar);
+  --color-border-dark: var(--neo-ink);
+  --color-text-main-dark: var(--neo-ink);
+  --color-text-muted-dark: var(--color-text-muted);
+  --color-scrim: rgba(25, 24, 23, 0.68);
+
+  --radius-brand: 3px;
+  --radius-brand-lg: 3px;
+  --r-chip: 3px;
+  --r-control: 3px;
+  --r-card: 3px;
+  --r-card-lg: 3px;
+  --neo-card-stroke: 2px;
+  --neo-card-lift: 5px;
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 3px;
+  --motion-fast: 120ms;
+  --motion-panel: 180ms;
+  --edge-highlight: transparent;
+  --state-hover: color-mix(in srgb, var(--neo-sun) 48%, white);
+  --state-press: color-mix(in srgb, var(--neo-coral) 25%, white);
+
+  --shadow-soft: 4px 4px 0 var(--neo-ink);
+  --shadow-warm: 4px 4px 0 var(--neo-coral);
+  --shadow-elevated: 6px 6px 0 var(--neo-ink);
+  --shadow-elev: 6px 6px 0 var(--neo-ink);
+  --shadow-focus: 0 0 0 3px var(--neo-cyan);
+  --elev-1: 4px 4px 0 var(--neo-ink);
+  --elev-2: 6px 6px 0 var(--neo-ink);
+  --elev-3: 8px 8px 0 var(--neo-ink);
+  --elev-2-hover: 7px 7px 0 var(--neo-ink);
+}
+
+html.neobrutalism body {
+  color: var(--neo-ink);
+  background-color: var(--neo-paper);
+  background-image: radial-gradient(circle, rgba(25, 24, 23, 0.14) 0.8px, transparent 1px) !important;
+  background-size: 20px 20px;
+  background-attachment: fixed;
+}
+
+/* The app canvas is paper over a restrained halftone field, not a glass layer. */
+html.neobrutalism .neo-shell,
+html.neobrutalism .neo-canvas {
+  background-color: transparent !important;
+}
+html.neobrutalism .landing-grid {
+  background: none !important;
+  opacity: 0 !important;
+}
+html.neobrutalism .dot-grid-bg {
+  background-color: transparent !important;
+  background-image: radial-gradient(circle, rgba(25, 24, 23, 0.14) 0.8px, transparent 1px) !important;
+  background-size: 20px 20px !important;
+}
+
+/* No frosted surfaces or translucent utility variants survive in this theme. */
+html.neobrutalism [class*="backdrop-blur"],
+html.neobrutalism [class*="backdrop-filter"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html.neobrutalism [class*="bg-surface/"] { background-color: var(--neo-white) !important; }
+html.neobrutalism [class*="bg-surface-2/"] { background-color: var(--color-surface-2) !important; }
+html.neobrutalism [class*="bg-surface-3/"] { background-color: var(--color-surface-3) !important; }
+html.neobrutalism [class*="bg-bg/"] { background-color: var(--neo-paper-deep) !important; }
+html.neobrutalism [class*="bg-sidebar/"] { background-color: var(--color-sidebar) !important; }
+html.neobrutalism [class~="bg-surface"] { background-color: var(--neo-white) !important; }
+html.neobrutalism [class~="bg-surface-2"] { background-color: var(--color-surface-2) !important; }
+html.neobrutalism [class~="bg-surface-3"] { background-color: var(--color-surface-3) !important; }
+html.neobrutalism [class~="bg-bg"] { background-color: var(--neo-paper) !important; }
+html.neobrutalism [class~="bg-bg-alt"],
+html.neobrutalism [class~="bg-bg-subtle"] { background-color: var(--neo-paper-deep) !important; }
+html.neobrutalism [class~="bg-vibrancy"],
+html.neobrutalism [class~="bg-sidebar"] { background-color: var(--color-sidebar) !important; }
+html.neobrutalism [class*="bg-brand-500/"],
+html.neobrutalism [class*="bg-primary/"] { background-color: #ffe4a0 !important; }
+html.neobrutalism [class*="bg-success/"],
+html.neobrutalism [class*="bg-green-"] { background-color: #e6f3c9 !important; }
+html.neobrutalism [class*="bg-danger/"],
+html.neobrutalism [class*="bg-red-"] { background-color: #ffe0e1 !important; }
+html.neobrutalism [class*="bg-info/"],
+html.neobrutalism [class*="bg-blue-"],
+html.neobrutalism [class*="bg-cyan-"] { background-color: #d9f2f4 !important; }
+html.neobrutalism [class*="text-danger"],
+html.neobrutalism [class*="text-red-"] { color: #a91e2b !important; }
+html.neobrutalism [class*="text-success"],
+html.neobrutalism [class*="text-green-"] { color: #31590e !important; }
+html.neobrutalism [class*="text-info"],
+html.neobrutalism [class*="text-blue-"],
+html.neobrutalism [class*="text-cyan-"] { color: #064c5b !important; }
+html.neobrutalism [class*="text-yellow-"],
+html.neobrutalism [class*="text-amber-"] { color: #684300 !important; }
+
+/* Gradients become deliberate, solid color blocks; gradient text stays readable. */
+html.neobrutalism [class*="bg-gradient-"] {
+  background-image: none !important;
+  background-color: var(--neo-lilac) !important;
+}
+html.neobrutalism [class*="from-green-"],
+html.neobrutalism [class*="from-lime-"] { background-color: var(--neo-lime) !important; }
+html.neobrutalism [class*="from-yellow-"],
+html.neobrutalism [class*="from-amber-"] { background-color: var(--neo-sun) !important; }
+html.neobrutalism [class*="from-blue-"],
+html.neobrutalism [class*="from-cyan-"] { background-color: var(--neo-cyan) !important; }
+html.neobrutalism [class*="from-pink-"],
+html.neobrutalism [class*="from-rose-"] { background-color: var(--neo-rose) !important; }
+html.neobrutalism [class*="bg-clip-text"] {
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--neo-ink) !important;
+}
+html.neobrutalism .proxy-text-gradient,
+html.neobrutalism .proxy-shimmer-beam {
+  animation: none !important;
+  background-image: none !important;
+}
+html.neobrutalism .proxy-text-gradient { color: var(--neo-coral) !important; -webkit-text-fill-color: var(--neo-coral) !important; }
+html.neobrutalism .proxy-shimmer-beam { opacity: 0 !important; }
+html.neobrutalism .btn-cta::before { display: none !important; }
+
+/* A consistent compact geometry replaces the previous zero-radius treatment. */
+html.neobrutalism [class*="rounded-"]:not([class~="rounded-full"]),
+html.neobrutalism .rounded:not(.rounded-full) {
+  border-radius: 3px !important;
+}
+html.neobrutalism [class*="border-border"],
+html.neobrutalism [class~="border-border"] {
+  border-color: var(--neo-ink) !important;
+}
+
+/* Panels, dialogs, menus, and bespoke card surfaces all share one hard-edge rule. */
+html.neobrutalism .neo-panel,
+html.neobrutalism .neo-inset,
+html.neobrutalism .card-soft,
+html.neobrutalism .card-elev,
+html.neobrutalism [class*="bg-surface"][class*="border"]:not(input):not(select):not(textarea):not(button),
+html.neobrutalism [class*="bg-bg-alt"][class*="border"],
+html.neobrutalism [class*="bg-bg-subtle"][class*="border"],
+html.neobrutalism [role="dialog"],
+html.neobrutalism dialog,
+html.neobrutalism [role="menu"],
+html.neobrutalism [role="listbox"] {
+  border: var(--neo-card-stroke) solid var(--neo-ink) !important;
+  border-radius: 3px !important;
+  box-shadow: var(--neo-card-lift) var(--neo-card-lift) 0 var(--neo-ink) !important;
+}
+html.neobrutalism .neo-panel,
+html.neobrutalism .card-soft,
+html.neobrutalism .card-elev {
+  background-color: var(--neo-white) !important;
+  box-sizing: border-box;
+  align-self: stretch;
+}
+html.neobrutalism .neo-equal-grid { align-items: stretch; }
+html.neobrutalism .neo-equal-grid > [data-neo-card="true"] {
+  height: 100%;
+  min-width: 0;
+}
+html.neobrutalism .neo-inset {
+  background-color: var(--color-surface-2) !important;
+  box-shadow: 3px 3px 0 var(--neo-ink) !important;
+}
+/* Provider and CLI marks use a warm stamp so full artwork stays legible on paper. */
+html.neobrutalism .provider-logo-frame {
+  box-sizing: border-box;
+  border: 2px solid var(--neo-ink);
+  background-color: var(--neo-sun);
+  box-shadow: 2px 2px 0 var(--neo-ink);
+}
+html.neobrutalism .provider-logo-frame img {
+  /* A fine ink edge makes white marks read on the yellow stage without altering the artwork. */
+  filter: drop-shadow(0 0 1px var(--neo-ink));
+}
+html.neobrutalism .provider-directory-card {
+  border-color: var(--neo-ink) !important;
+  background-color: var(--neo-white) !important;
+  box-shadow: 4px 4px 0 var(--neo-ink) !important;
+}
+@media (hover: hover) {
+  html.neobrutalism .provider-directory-card:hover {
+    box-shadow: 6px 6px 0 var(--neo-ink) !important;
+    transform: translate(-1px, -1px);
+  }
+}
+html.neobrutalism .provider-directory-card:active {
+  box-shadow: 1px 1px 0 var(--neo-ink) !important;
+  transform: translate(3px, 3px);
+}
+@media (prefers-reduced-motion: reduce) {
+  html.neobrutalism .provider-directory-card,
+  html.neobrutalism .provider-directory-card:hover,
+  html.neobrutalism .provider-directory-card:active {
+    transform: none;
+  }
+}
+html.neobrutalism [role="dialog"],
+html.neobrutalism dialog,
+html.neobrutalism [role="menu"],
+html.neobrutalism [role="listbox"] {
+  background-color: var(--neo-white) !important;
+}
+
+/* Every legacy Tailwind shadow becomes a crisp offset; explicit flat states stay flat. */
+html.neobrutalism [class*="shadow-"]:not([class~="shadow-none"]) {
+  box-shadow: 4px 4px 0 var(--neo-ink) !important;
+}
+html.neobrutalism [class~="shadow-none"] { box-shadow: none !important; }
+html.neobrutalism .neo-panel { box-shadow: 5px 5px 0 var(--neo-ink) !important; }
+html.neobrutalism .neo-inset { box-shadow: 3px 3px 0 var(--neo-ink) !important; }
+
+/* Colorful but opaque page chrome; the left rail and existing logo remain intact. */
+html.neobrutalism .neo-topbar {
+  background: var(--neo-paper) !important;
+  border-bottom: 3px solid var(--neo-ink) !important;
+  box-shadow: 0 3px 0 var(--neo-ink) !important;
+}
+html.neobrutalism .neo-sidebar {
+  background: var(--color-sidebar) !important;
+  border-color: var(--neo-ink) !important;
+  border-right-width: 3px !important;
+  box-shadow: 5px 0 0 var(--neo-ink) !important;
+}
+html.neobrutalism .neo-sidebar nav section {
+  border-color: color-mix(in srgb, var(--neo-ink) 55%, transparent) !important;
+}
+html.neobrutalism .neo-sidebar nav section h2 {
+  color: var(--neo-ink) !important;
+  font-weight: 850 !important;
+  letter-spacing: 0.12em;
+}
+html.neobrutalism .neo-sidebar nav a:not([aria-current="page"]),
+html.neobrutalism .neo-sidebar nav button {
+  border: 2px solid transparent !important;
+  border-radius: 3px !important;
+  color: var(--neo-ink) !important;
+  transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease !important;
+}
+html.neobrutalism .neo-sidebar nav a:not([aria-current="page"]):hover,
+html.neobrutalism .neo-sidebar nav button:hover {
+  background: var(--neo-sun) !important;
+  border-color: var(--neo-ink) !important;
+  box-shadow: 3px 3px 0 var(--neo-ink) !important;
+  transform: translate(-1px, -1px);
+}
+html.neobrutalism .neo-sidebar [aria-current="page"] {
+  color: var(--neo-ink) !important;
+  background: var(--neo-coral) !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 3px !important;
+  box-shadow: 3px 3px 0 var(--neo-ink) !important;
+  font-weight: 850 !important;
+}
+html.neobrutalism .neo-sidebar [aria-current="page"] > span:first-child {
+  display: block !important;
+  width: 5px;
+  height: 60%;
+  background: var(--neo-lime) !important;
+  border: 1px solid var(--neo-ink);
+  border-radius: 0 !important;
+}
+html.neobrutalism .neo-sidebar [aria-current="page"] .material-symbols-outlined {
+  color: var(--neo-ink) !important;
+}
+
+/* A compact block label gives each page a clear, tactile title anchor. */
+html.neobrutalism h1,
+html.neobrutalism h2,
+html.neobrutalism h3 {
+  color: var(--neo-ink);
+  font-weight: 850;
+  letter-spacing: -0.035em;
+}
+html.neobrutalism main h1 {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.18rem 0.55rem !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-left-width: 2px !important;
+  border-radius: 3px !important;
+  background: var(--neo-lime) !important;
+  box-shadow: 4px 4px 0 var(--neo-ink) !important;
+  color: var(--neo-ink) !important;
+}
+html.neobrutalism .neo-sidebar h1 {
+  display: block;
+  padding: 0;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Buttons: bold outline, a lifted hover, and a literal press-down interaction. */
+html.neobrutalism button:not(.neo-button) {
+  border-radius: 3px !important;
+  border-color: var(--neo-ink) !important;
+  font-weight: 750;
+  box-shadow: 3px 3px 0 var(--neo-ink);
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease !important;
+}
+html.neobrutalism button:not(:disabled):hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--neo-ink);
+}
+html.neobrutalism button:not(:disabled):active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--neo-ink);
+}
+html.neobrutalism .neo-button {
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 3px !important;
+  font-weight: 850 !important;
+  letter-spacing: 0.035em;
+  box-shadow: 4px 4px 0 var(--neo-ink) !important;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease !important;
+}
+html.neobrutalism .neo-button:not(:disabled):hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--neo-ink) !important;
+}
+html.neobrutalism .neo-button:active:not(:disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: none !important;
+}
+html.neobrutalism .neo-button:disabled,
+html.neobrutalism .neo-button.shadow-none { box-shadow: none !important; }
+
+/* Form controls and focus states are solid, high-contrast, and thumb-friendly. */
+html.neobrutalism input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html.neobrutalism select,
+html.neobrutalism textarea {
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 3px !important;
+  background: var(--neo-white) !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 3px 3px 0 var(--neo-ink) !important;
+}
+html.neobrutalism input::placeholder,
+html.neobrutalism textarea::placeholder { color: #71695e !important; opacity: 1; }
+html.neobrutalism input:focus-visible,
+html.neobrutalism select:focus-visible,
+html.neobrutalism textarea:focus-visible,
+html.neobrutalism .neo-field:focus-visible {
+  outline: 3px solid var(--neo-cyan) !important;
+  outline-offset: 3px !important;
+  border-color: var(--neo-ink) !important;
+  box-shadow: 4px 4px 0 var(--neo-coral) !important;
+}
+html.neobrutalism input[type="checkbox"],
+html.neobrutalism input[type="radio"] {
+  accent-color: var(--neo-coral);
+  border: 2px solid var(--neo-ink);
+}
+html.neobrutalism input[type="range"] { accent-color: var(--neo-coral); }
+html.neobrutalism input:disabled,
+html.neobrutalism select:disabled,
+html.neobrutalism textarea:disabled {
+  background: #e4ddcf !important;
+  color: #71695e !important;
+  box-shadow: 2px 2px 0 #71695e !important;
+}
+
+/* Tables, menu rows, toasts, and status chips inherit the same ink-first system. */
+html.neobrutalism table { border-collapse: separate; border-spacing: 0; }
+html.neobrutalism thead th {
+  background: var(--neo-sun) !important;
+  color: var(--neo-ink) !important;
+  border-block: 2px solid var(--neo-ink) !important;
+  font-weight: 850 !important;
+}
+html.neobrutalism tbody td { border-bottom: 1px solid color-mix(in srgb, var(--neo-ink) 42%, transparent); }
+html.neobrutalism tbody tr:hover td { background: #fff1bf !important; }
+html.neobrutalism [role="alert"],
+html.neobrutalism [role="status"] {
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 3px !important;
+  box-shadow: 4px 4px 0 var(--neo-ink) !important;
+}
+html.neobrutalism ::selection { color: var(--neo-ink); background: var(--neo-lime); }
+html.neobrutalism :focus-visible { outline-color: var(--neo-cyan); }
+html.neobrutalism .chrome-focus:focus-visible { outline-offset: 3px; }
+html.neobrutalism .chrome-interactive:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--neo-ink) !important;
+}
+html.neobrutalism .chrome-interactive:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--neo-ink) !important;
+}
+html.neobrutalism hr { border-color: var(--neo-ink); opacity: 0.55; }
+html.neobrutalism ::-webkit-scrollbar-thumb {
+  background: var(--neo-coral);
+  border: 1px solid var(--neo-ink);
+  border-radius: 2px;
+}
+html.neobrutalism ::-webkit-scrollbar-thumb:hover { background: var(--neo-lime); }
+html.neobrutalism select,
+html.neobrutalism select option { color-scheme: light; }
+html.neobrutalism select option { background: var(--neo-white); color: var(--neo-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  html.neobrutalism *,
+  html.neobrutalism *::before,
+  html.neobrutalism *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

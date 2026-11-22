@@ -48,7 +48,7 @@ export async function GET(request, { params }) {
   const consoleSnippet = `localStorage.setItem('zcodejwttoken', '${zcodeJwtToken}');\nlocalStorage.setItem('oauth:zai:access_token', '${accessToken}');\nlocalStorage.setItem('oauth:active_provider', 'zai');\nlocation.reload();`;
 
   const html = `<!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -215,25 +215,25 @@ export async function GET(request, { params }) {
   <div class="card">
     <div class="header">
       <span class="badge">ZCode Web Claim</span>
-      <h1>Klaim Voucher ZCode di Browser</h1>
+      <h1>Claim a ZCode Voucher in Your Browser</h1>
       <div class="account">${email}</div>
     </div>
 
     <div class="alert-box">
-      Halaman Rewards ZCode memerlukan sesi login di browser kamu. Ikuti 2 langkah mudah di bawah untuk membukanya langsung:
+      ZCode Rewards requires a browser login session. Follow the two steps below to open the page directly:
     </div>
 
     <!-- Step 1 -->
     <div class="step-box">
       <div class="step-header">
         <span class="step-num">1</span>
-        <span class="step-title">Login ke ZCode (Satu Kali)</span>
+        <span class="step-title">Sign in to ZCode (One Time)</span>
       </div>
       <p class="step-desc">
-        Buka halaman login ZCode di bawah, lalu klik tombol <b>"Continue with Z.ai"</b> menggunakan akun yang sama:
+        Open the ZCode sign-in page below, then select <b>"Continue with Z.ai"</b> using the same account:
       </p>
       <a href="https://zcode.z.ai/en/login" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
-        Buka Login ZCode Web
+        Open ZCode Web Login
       </a>
     </div>
 
@@ -241,24 +241,24 @@ export async function GET(request, { params }) {
     <div class="step-box">
       <div class="step-header">
         <span class="step-num">2</span>
-        <span class="step-title">Buka Halaman Rewards & Voucher</span>
+        <span class="step-title">Open Rewards and Vouchers</span>
       </div>
       <p class="step-desc">
-        Setelah login di Langkah 1 selesai, buka halaman Rewards. Popup tiket 500M / reward task akan langsung muncul dan siap diklaim:
+        After completing Step 1, open the Rewards page. The 500M ticket or reward task should appear, ready to claim:
       </p>
       <a href="https://zcode.z.ai/en/rewards?embedded=app&theme=zai-dark" target="_blank" rel="noopener noreferrer" class="btn btn-green">
-        Buka Halaman Rewards & Voucher 500M
+        Open Rewards and the 500M Voucher
       </a>
     </div>
 
-    <div class="divider">PENGGUNA PC / LAPTOP</div>
+    <div class="divider">DESKTOP USERS</div>
 
     <div style="background:#0F1622;border:1px solid #233045;border-radius:10px;padding:12px;">
       <p style="font-size:11px;color:#94A3B8;margin-bottom:8px;">
-        Jika di PC/Laptop, kamu bisa langsung bypass login dengan paste script token di Console (F12):
+        On a desktop or laptop, you can bypass browser login by pasting this token script into the Console (F12):
       </p>
       <button type="button" class="btn btn-secondary" onclick="copyConsoleSnippet()">
-        Salin Script Console (F12)
+        Copy Console Script (F12)
       </button>
       <div class="toast" id="toastMsg"></div>
     </div>
@@ -269,7 +269,7 @@ export async function GET(request, { params }) {
 
     function copyConsoleSnippet() {
       navigator.clipboard.writeText(consoleSnippet).then(() => {
-        showToast("Script Console disalin! Buka tab ZCode, tekan F12 -> Console -> Paste & Enter.");
+        showToast("Console script copied! Open the ZCode tab, press F12, select Console, then paste and press Enter.");
       }).catch(() => {
         fallbackCopy(consoleSnippet);
       });
@@ -288,7 +288,7 @@ export async function GET(request, { params }) {
       ta.select();
       document.execCommand("copy");
       document.body.removeChild(ta);
-      showToast("Berhasil disalin ke clipboard!");
+      showToast("Copied to clipboard!");
     }
   </script>
 </body>

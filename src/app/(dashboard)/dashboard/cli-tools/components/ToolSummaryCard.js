@@ -24,15 +24,13 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
         "chrome-interactive"
       )}>
         <div className="flex items-start gap-3">
-          <div
-            className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl"
-          >
+          <div className="provider-logo-frame flex size-11 shrink-0 items-center justify-center p-1">
             {tool.image ? (
-              <Image src={tool.image} alt={tool.name} width={44} height={44} className="size-full object-cover" sizes="44px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
+              <Image src={tool.image} alt={tool.name} width={44} height={44} className="size-full object-contain" sizes="44px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
             ) : tool.icon ? (
               <span className="material-symbols-outlined text-[24px]" style={{ color: tool.color }}>{tool.icon}</span>
             ) : (
-              <span className="material-symbols-outlined text-[24px] text-text-muted">terminal</span>
+              <span className="material-symbols-outlined text-[24px] text-text-muted">integration_instructions</span>
             )}
           </div>
 
@@ -42,7 +40,7 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
               <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-text-muted">{tool.description}</p>
             )}
           </div>
-          <span className="material-symbols-outlined text-text-muted text-[18px] shrink-0 transition-transform duration-200 group-hover:translate-x-0.5">chevron_right</span>
+          <span className="material-symbols-outlined text-text-muted text-[18px] shrink-0 transition-transform duration-200 group-hover:translate-x-0.5">navigate_next</span>
         </div>
 
         <div className="mt-3 flex items-center gap-2">

@@ -55,7 +55,7 @@ const LIMIT_KIND_OPTIONS = [
     value: "tokens",
     label: "Token volume",
     blurb: "Adds up prompt and completion tokens, so a long conversation costs more than a short one.",
-    icon: "data_usage",
+    icon: "token",
     tone: "text-sky-400",
     tint: "bg-sky-500/10",
     chip: "bg-sky-500/15",
@@ -66,7 +66,7 @@ const LIMIT_KIND_OPTIONS = [
     value: "cost",
     label: "USD spend",
     blurb: "Charges every call at the model's price in USD and starts over at midnight UTC.",
-    icon: "payments",
+    icon: "account_balance_wallet",
     tone: "text-emerald-400",
     tint: "bg-emerald-500/10",
     chip: "bg-emerald-500/15",
@@ -77,7 +77,7 @@ const LIMIT_KIND_OPTIONS = [
     value: "requests",
     label: "Request count",
     blurb: "Counts calls instead of size, so a huge prompt and a tiny one cost the same.",
-    icon: "bolt",
+    icon: "electric_bolt",
     tone: "text-violet-400",
     tint: "bg-violet-500/10",
     chip: "bg-violet-500/15",
@@ -245,14 +245,14 @@ const RESET_INTERVAL_OPTIONS = [
 ];
 
 const PERMISSION_OPTIONS = [
-  { key: "manageApiKeys", label: "Create, edit and delete API keys", icon: "key", desc: "Lets this key manage other API keys" },
-  { key: "manageModels", label: "Create, edit and delete models", icon: "auto_awesome", desc: "Custom models, aliases and combos" },
-  { key: "manageProviders", label: "Create, edit and delete providers", icon: "dns", desc: "Provider connections and API keys" },
-  { key: "manageTools", label: "Use CLI tools and token saver", icon: "terminal", desc: "Request transformers and the CLI install page" },
-  { key: "manageAdvanced", label: "Open console log, translator and proxy pools", icon: "terminal", desc: "Debugging and network plumbing" },
-  { key: "managePlugins", label: "Manage custom plugins", icon: "widgets", desc: "Plugins that change how requests are handled" },
-  { key: "manageMediaProviders", label: "Manage media providers", icon: "perm_media", desc: "Image, audio and embedding connections" },
-  { key: "viewUsage", label: "View usage", icon: "bar_chart", desc: "Usage numbers for this key only" },
+  { key: "manageApiKeys", label: "Create, edit and delete API keys", icon: "vpn_key", desc: "Lets this key manage other API keys" },
+  { key: "manageModels", label: "Create, edit and delete models", icon: "model_training", desc: "Custom models, aliases and combos" },
+  { key: "manageProviders", label: "Create, edit and delete providers", icon: "hub", desc: "Provider connections and API keys" },
+  { key: "manageTools", label: "Use CLI tools and token saver", icon: "integration_instructions", desc: "Request transformers and the CLI install page" },
+  { key: "manageAdvanced", label: "Open console log, translator and proxy pools", icon: "lan", desc: "Debugging and network plumbing" },
+  { key: "managePlugins", label: "Manage custom plugins", icon: "extension", desc: "Plugins that change how requests are handled" },
+  { key: "manageMediaProviders", label: "Manage media providers", icon: "photo_library", desc: "Image, audio and embedding connections" },
+  { key: "viewUsage", label: "View usage", icon: "monitoring", desc: "Usage numbers for this key only" },
 ];
 
 const EMPTY_PERMISSIONS = { manageApiKeys: false, manageModels: false, manageProviders: false, manageTools: false, manageAdvanced: false, managePlugins: false, manageMediaProviders: false, viewUsage: true };
@@ -1322,12 +1322,33 @@ const scopedModelPatterns =
   const currentEndpoint = baseUrl;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
+      <section className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(17rem,0.75fr)]">
+        <div className="border-2 border-[#191817] bg-[#c6b5ff] p-5 shadow-[5px_5px_0_#191817] sm:p-6">
+          <p className="font-mono text-[11px] font-black uppercase tracking-[0.16em] text-[#39352f]">Traffic desk / 01</p>
+          <h1 className="mt-3 text-2xl font-black tracking-tight text-[#191817] sm:text-3xl">Endpoint &amp; access</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#39352f]">
+            Set the address clients call, decide whether requests need a key, and issue scoped credentials.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex min-h-28 flex-col justify-between border-2 border-[#191817] bg-[#fff1bf] p-4 shadow-[4px_4px_0_#191817]">
+            <span className="font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[#514c43]">Access keys</span>
+            <strong className="text-3xl font-black tabular-nums text-[#191817]">{keys.length}</strong>
+            <span className="text-xs font-bold text-[#514c43]">issued on this instance</span>
+          </div>
+          <div className="flex min-h-28 flex-col justify-between border-2 border-[#191817] bg-[#c8ee68] p-4 shadow-[4px_4px_0_#191817]">
+            <span className="font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[#514c43]">Request gate</span>
+            <strong className="text-lg font-black leading-tight text-[#191817]">{requireApiKey ? "KEY REQUIRED" : "OPEN MODE"}</strong>
+            <span className="text-xs font-bold text-[#514c43]">{requireApiKey ? "unkeyed requests rejected" : "key checks are optional"}</span>
+          </div>
+        </div>
+      </section>
       {/* Endpoint Card */}
       <Card>
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">api</span>
-          API Endpoint
+          <span className="material-symbols-outlined text-primary">hub</span>
+          Connection Addresses
         </h2>
 
         {/* Endpoint rows */}
@@ -1356,20 +1377,20 @@ const scopedModelPatterns =
                   onClick={() => copy(`${tunnelPublicUrl || tunnelUrl}/v1`, "tunnel_url")}
                   className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
-                  <span className="material-symbols-outlined text-[18px]">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
+                  <span className="material-symbols-outlined text-[18px]">{copied === "tunnel_url" ? "task_alt" : "file_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTunnelModal(true)}
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
                   title="Disable Tunnel"
                 >
-                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                  <span className="material-symbols-outlined text-[18px]">toggle_on</span>
                 </button>
               </>
             ) : tunnelEnabled && !tunnelLoading && !tunnelReachable ? (
               <>
                 <div className="min-w-0 flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-amber-300 dark:border-amber-800 bg-amber-500/5 text-sm text-amber-600 dark:text-amber-400">
-                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  <span className="material-symbols-outlined animate-spin text-sm">sync</span>
                   {tunnelEverReachable ? "Tunnel reconnecting..." : "Tunnel checking..."}
                 </div>
                 <button
@@ -1377,13 +1398,13 @@ const scopedModelPatterns =
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
                   title="Disable Tunnel"
                 >
-                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                  <span className="material-symbols-outlined text-[18px]">toggle_on</span>
                 </button>
               </>
             ) : tunnelLoading ? (
               <>
                 <div className="min-w-0 flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-border bg-input text-sm text-text-muted">
-                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  <span className="material-symbols-outlined animate-spin text-sm">sync</span>
                   {tunnelProgress || "Creating tunnel..."}
                 </div>
                 <button
@@ -1391,21 +1412,21 @@ const scopedModelPatterns =
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
                   title="Stop"
                 >
-                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                  <span className="material-symbols-outlined text-[18px]">toggle_on</span>
                 </button>
               </>
             ) : tunnelStatus?.type === "error" ? (
               <>
                 <div className="min-w-0 flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-red-300 dark:border-red-800 bg-red-500/5 text-sm text-red-600 dark:text-red-400">
-                  <span className="material-symbols-outlined text-sm">error</span>
+                  <span className="material-symbols-outlined text-sm">report</span>
                   {tunnelStatus.message}
                 </div>
-                <Button size="sm" icon="cloud_upload" onClick={() => setShowEnableTunnelModal(true)}>Enable</Button>
+                <Button size="sm" icon="cloud_sync" onClick={() => setShowEnableTunnelModal(true)}>Enable</Button>
               </>
             ) : tunnelChecking ? (
               <>
                 <div className="min-w-0 flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-border bg-input text-sm text-text-muted">
-                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  <span className="material-symbols-outlined animate-spin text-sm">sync</span>
                   Checking...
                 </div>
                 <button
@@ -1413,13 +1434,13 @@ const scopedModelPatterns =
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
                   title="Stop"
                 >
-                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                  <span className="material-symbols-outlined text-[18px]">toggle_on</span>
                 </button>
               </>
             ) : (
               <Button
                 size="sm"
-                icon="cloud_upload"
+                icon="cloud_sync"
                 onClick={() => {
                   if (!requireApiKey) {
                     setTunnelStatus({ type: "error", message: "Security required: Enable \"Require API key\" before activating the tunnel." });
@@ -1444,20 +1465,20 @@ const scopedModelPatterns =
                   onClick={() => copy(`${tsUrl}/v1`, "ts_url")}
                   className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
-                  <span className="material-symbols-outlined text-[18px]">{copied === "ts_url" ? "check" : "content_copy"}</span>
+                  <span className="material-symbols-outlined text-[18px]">{copied === "ts_url" ? "task_alt" : "file_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTsModal(true)}
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
                   title="Disable Tailscale"
                 >
-                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                  <span className="material-symbols-outlined text-[18px]">toggle_on</span>
                 </button>
               </>
             ) : tsEnabled && !tsLoading && !tsReachable ? (
               <>
                 <div className="min-w-0 flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-amber-300 dark:border-amber-800 bg-amber-500/5 text-sm text-amber-600 dark:text-amber-400">
-                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  <span className="material-symbols-outlined animate-spin text-sm">sync</span>
                   {tsEverReachable ? "Tailscale reconnecting..." : "Tailscale checking..."}
                 </div>
                 <button
@@ -1465,19 +1486,19 @@ const scopedModelPatterns =
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
                   title="Disable Tailscale"
                 >
-                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                  <span className="material-symbols-outlined text-[18px]">toggle_on</span>
                 </button>
               </>
             ) : (tsLoading || tsConnecting) ? (
               <>
                 <div className="min-w-0 flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-border bg-input text-sm text-text-muted">
-                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  <span className="material-symbols-outlined animate-spin text-sm">sync</span>
                   {tsProgress || "Connecting..."}
                 </div>
                 {tsAuthUrl && (
                   <Button
                     size="sm"
-                    icon="open_in_new"
+                    icon="launch"
                     onClick={() => window.open(tsAuthUrl, "tailscale_auth", "width=600,height=700,noopener,noreferrer")}
                   >
                     {tsAuthLabel || "Open"}
@@ -1488,21 +1509,21 @@ const scopedModelPatterns =
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
                   title="Stop"
                 >
-                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                  <span className="material-symbols-outlined text-[18px]">toggle_on</span>
                 </button>
               </>
             ) : tsStatus?.type === "error" ? (
               <>
                 <div className="min-w-0 flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-red-300 dark:border-red-800 bg-red-500/5 text-sm text-red-600 dark:text-red-400">
-                  <span className="material-symbols-outlined text-sm">error</span>
+                  <span className="material-symbols-outlined text-sm">report</span>
                   {tsStatus.message}
                 </div>
-                <Button size="sm" icon="vpn_lock" onClick={handleOpenTsModal}>Enable</Button>
+                <Button size="sm" icon="vpn_key_off" onClick={handleOpenTsModal}>Enable</Button>
               </>
             ) : (
               <Button
                 size="sm"
-                icon="vpn_lock"
+                icon="vpn_key_off"
                 onClick={() => {
                   handleOpenTsModal();
                 }}
@@ -1548,20 +1569,20 @@ const scopedModelPatterns =
       <Card id="require-api-key">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">vpn_key</span>
-            API Keys
+            <span className="material-symbols-outlined text-primary">key</span>
+            Access Keys
           </h2>
-          <Button icon="add" onClick={() => setShowAddModal(true)}>
-            Create Key
+          <Button icon="vpn_key" onClick={() => setShowAddModal(true)}>
+            Issue Key
           </Button>
         </div>
 
         {!isApiKeyUser && (
         <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-border">
           <div className="min-w-0 flex-1">
-            <p className="font-medium">Require API key</p>
+            <p className="font-bold">Reject unkeyed requests</p>
             <p className="text-sm text-text-muted">
-              Requests without a valid key will be rejected
+              Enforce a valid access key on every incoming request.
             </p>
           </div>
           <Toggle
@@ -1582,7 +1603,7 @@ const scopedModelPatterns =
           // Bulk edit is a many-keys action, so it only offers itself once more
           // than one row is ticked: a single selection has its own editor on the
           // row and does not need a second path to the same three fields.
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-full border border-border-subtle bg-surface-2/70 py-1 pl-3 pr-1 backdrop-blur-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-full border border-border-subtle bg-surface-2/70 py-1 pl-3 pr-1 ">
             <span className="flex items-center gap-2 text-xs text-text-muted">
               <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
                 {selectedKeyIds.size}
@@ -1616,12 +1637,12 @@ const scopedModelPatterns =
         {keys.length === 0 ? (
           <div className="text-center py-12">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-              <span className="material-symbols-outlined text-[32px]">vpn_key</span>
+              <span className="material-symbols-outlined text-[32px]">key</span>
             </div>
-            <p className="text-text-main font-medium mb-1">No API keys yet</p>
-            <p className="text-sm text-text-muted mb-4">Create your first API key to get started</p>
-            <Button icon="add" onClick={() => setShowAddModal(true)}>
-              Create Key
+            <p className="text-text-main font-bold mb-1">No access keys yet</p>
+            <p className="text-sm text-text-muted mb-4">Issue a scoped key for your first client or integration.</p>
+            <Button icon="vpn_key" onClick={() => setShowAddModal(true)}>
+              Issue Key
             </Button>
           </div>
         ) : (
@@ -1629,7 +1650,7 @@ const scopedModelPatterns =
             {keys.map((key) => (
               <div
                 key={key.id}
-                className={`group flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 py-3.5 border-b border-border/30 last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+                className={`group grid min-w-0 grid-cols-1 gap-3 border-b border-border/30 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex items-start gap-3 min-w-0 flex-1">
                   {!isApiKeyUser && (
@@ -1683,7 +1704,7 @@ const scopedModelPatterns =
                           className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
                         >
                           <span className="material-symbols-outlined text-[14px]">
-                            {copied === key.id ? "check" : "content_copy"}
+                            {copied === key.id ? "task_alt" : "file_copy"}
                           </span>
                         </button>
                       </div>
@@ -1697,7 +1718,7 @@ const scopedModelPatterns =
                         <ResetCountdown resetInterval={key.resetInterval} lastResetAt={key.lastResetAt} />
                       )}
                       <span className="text-xs max-w-full truncate px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 font-medium">
-                        Models: {key.allowedModels && key.allowedModels !== "*" ? key.allowedModels : "All"}
+                        Scope: {key.allowedModels && key.allowedModels !== "*" ? key.allowedModels : "All models"}
                       </span>
                       {(key.rpmLimit > 0 || key.tpmLimit > 0) && (
                         <span className="text-xs max-w-full truncate px-2 py-0.5 rounded bg-purple-500/10 text-purple-500 font-medium">
@@ -1763,14 +1784,14 @@ const scopedModelPatterns =
                     className={cn("p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
                     title="Edit key settings & quota"
                   >
-                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                    <span className="material-symbols-outlined text-[18px]">edit_note</span>
                   </button>
  <button
  onClick={() => handleDuplicateKey(key)}
  className={cn("p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
  title="Duplicate key (copy settings)"
  >
- <span className="material-symbols-outlined text-[18px]">library_add</span>
+ <span className="material-symbols-outlined text-[18px]">file_copy</span>
  </button>
                   <button
                     onClick={() => handleManualResetUsage(key)}
@@ -1778,21 +1799,21 @@ const scopedModelPatterns =
                     className={cn("p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
                     title="Reset used tokens to 0"
                   >
-                    <span className="material-symbols-outlined text-[18px]">restart_alt</span>
+                    <span className="material-symbols-outlined text-[18px]">settings_backup_restore</span>
                   </button>
           <button
             onClick={() => { setShowSnippetModal(key); setSnippetLang("curl"); }}
             className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
             title="Code snippet"
           >
-            <span className="material-symbols-outlined text-[18px]">code</span>
+            <span className="material-symbols-outlined text-[18px]">code_blocks</span>
           </button>
                   <button
                     onClick={() => handleDeleteKey(key.id)}
                     disabled={isOwnKey(key)}
                     className={cn("p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all", isOwnKey(key) && "opacity-30 cursor-not-allowed")}
                   >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                    <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
                   </button>
                 </div>
 
@@ -1823,7 +1844,7 @@ const scopedModelPatterns =
                     className={cn("p-1.5 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
                     title="Edit key"
                   >
-                    <span className="material-symbols-outlined text-[16px]">edit</span>
+                    <span className="material-symbols-outlined text-[16px]">edit_note</span>
                   </button>
                   <button
                     onClick={() => handleDuplicateKey(key)}
@@ -1831,7 +1852,7 @@ const scopedModelPatterns =
                     className={cn("p-1.5 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
                     title="Duplicate key"
                   >
-                    <span className="material-symbols-outlined text-[16px]">library_add</span>
+                    <span className="material-symbols-outlined text-[16px]">file_copy</span>
                   </button>
                   <button
                     onClick={() => handleManualResetUsage(key)}
@@ -1839,14 +1860,14 @@ const scopedModelPatterns =
                     className={cn("p-1.5 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
                     title="Reset used tokens"
                   >
-                    <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                    <span className="material-symbols-outlined text-[16px]">settings_backup_restore</span>
                   </button>
                   <button
                     onClick={() => { setShowSnippetModal(key); setSnippetLang("curl"); }}
                     className="p-1.5 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
                     title="Code snippet"
                   >
-                    <span className="material-symbols-outlined text-[16px]">code</span>
+                    <span className="material-symbols-outlined text-[16px]">code_blocks</span>
                   </button>
                   <button
                     onClick={() => handleDeleteKey(key.id)}
@@ -1854,7 +1875,7 @@ const scopedModelPatterns =
                     className={cn("p-1.5 hover:bg-red-500/10 rounded text-red-500 transition-all", isOwnKey(key) && "opacity-30 cursor-not-allowed")}
                     title="Delete key"
                   >
-                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                    <span className="material-symbols-outlined text-[16px]">delete_sweep</span>
                   </button>
                 </div>
               </div>
@@ -1866,7 +1887,7 @@ const scopedModelPatterns =
       {/* Add Key Modal */}
       <Modal
         isOpen={showAddModal}
-        title="Create API Key"
+        title="Issue access key"
         size="lg"
         onClose={closeAddModal}
         footer={
@@ -1874,15 +1895,15 @@ const scopedModelPatterns =
             <Button onClick={closeAddModal} variant="ghost">
               Cancel
             </Button>
-            <Button onClick={handleCreateKey} disabled={!newKeyName.trim()} icon="add">
-              Create Key
+            <Button onClick={handleCreateKey} disabled={!newKeyName.trim()} icon="vpn_key">
+              Issue Key
             </Button>
           </>
         }
       >
         <div className="flex flex-col gap-5">
           <FormSection
-            icon="badge"
+            icon="assignment_ind"
             title="Identity"
             description="What you will see in the key list, and how long the key may live."
           >
@@ -1913,7 +1934,7 @@ const scopedModelPatterns =
           </FormSection>
 
           <FormSection
-            icon="speed"
+            icon="tune"
             title="Usage Limit"
             description="One budget is enforced per key. Pick the unit it is measured in."
           >
@@ -1952,7 +1973,7 @@ const scopedModelPatterns =
           </FormSection>
 
           <FormSection
-            icon="bolt"
+            icon="electric_bolt"
             title="Rate Limits"
             description="Per-minute ceilings, enforced on their own."
           >
@@ -1977,7 +1998,7 @@ const scopedModelPatterns =
           </FormSection>
 
           <FormSection
-            icon="admin_panel_settings"
+            icon="manage_accounts"
             title="Access"
             description="Which models the key may call, and what it may do in the dashboard."
           >
@@ -1986,13 +2007,13 @@ const scopedModelPatterns =
                 <label className="text-sm font-medium text-text-main">
                   Allowed Models
                 </label>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon="add"
-                  onClick={() => {
-                    setPickerTarget("create");
-                    setShowModelPicker(true);
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="add_circle"
+                    onClick={() => {
+                      setPickerTarget("create");
+                      setShowModelPicker(true);
                   }}
                 >
                   Select Models
@@ -2017,7 +2038,7 @@ const scopedModelPatterns =
                         onClick={() => removeAllowedModel("create", m)}
                         className="hover:text-red-500 transition-colors"
                       >
-                        <span className="material-symbols-outlined text-[14px]">close</span>
+                        <span className="material-symbols-outlined text-[14px]">cancel</span>
                       </button>
                     </span>
                   ))}
@@ -2046,7 +2067,7 @@ const scopedModelPatterns =
             <Button onClick={() => setEditingKey(null)} variant="ghost">
               Cancel
             </Button>
-            <Button onClick={handleSaveEditedKey} icon="save">
+            <Button onClick={handleSaveEditedKey} icon="save_as">
               Save Changes
             </Button>
           </>
@@ -2054,7 +2075,7 @@ const scopedModelPatterns =
       >
         <div className="flex flex-col gap-5">
           <FormSection
-            icon="badge"
+            icon="assignment_ind"
             title="Identity"
             description="What you will see in the key list, and how long the key may live."
           >
@@ -2074,7 +2095,7 @@ const scopedModelPatterns =
           </FormSection>
 
           <FormSection
-            icon="speed"
+            icon="tune"
             title="Usage Limit"
             description="One budget is enforced per key. Pick the unit it is measured in."
           >
@@ -2113,7 +2134,7 @@ const scopedModelPatterns =
           </FormSection>
 
           <FormSection
-            icon="bolt"
+            icon="electric_bolt"
             title="Rate Limits"
             description="Per-minute ceilings, enforced on their own."
           >
@@ -2138,7 +2159,7 @@ const scopedModelPatterns =
           </FormSection>
 
           <FormSection
-            icon="admin_panel_settings"
+            icon="manage_accounts"
             title="Access"
             description="Which models the key may call, and what it may do in the dashboard."
           >
@@ -2150,7 +2171,7 @@ const scopedModelPatterns =
                 <Button
                   size="sm"
                   variant="ghost"
-                  icon="add"
+                  icon="add_circle"
                   onClick={() => {
                     setPickerTarget("edit");
                     setShowModelPicker(true);
@@ -2178,7 +2199,7 @@ const scopedModelPatterns =
                         onClick={() => removeAllowedModel("edit", m)}
                         className="hover:text-red-500 transition-colors"
                       >
-                        <span className="material-symbols-outlined text-[14px]">close</span>
+                        <span className="material-symbols-outlined text-[14px]">cancel</span>
                       </button>
                     </span>
                   ))}
@@ -2219,7 +2240,7 @@ const scopedModelPatterns =
             />
             <Button
               variant="secondary"
-              icon={copied === "created_key" ? "check" : "content_copy"}
+              icon={copied === "created_key" ? "task_alt" : "file_copy"}
               className="flex-shrink-0"
               onClick={() => copy(createdKey, "created_key")}
             >
@@ -2257,7 +2278,7 @@ const scopedModelPatterns =
         <div className="flex flex-col gap-4">
           <div className="bg-surface-2 border border-border-subtle rounded-lg p-4">
             <div className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-primary">cloud_upload</span>
+              <span className="material-symbols-outlined text-primary">cloud_circle</span>
               <div>
                 <p className="text-sm text-text-main font-medium mb-1">
                   Cloudflare Tunnel
@@ -2319,7 +2340,7 @@ const scopedModelPatterns =
           {/* Checking state */}
           {tsInstalled === null && (
             <p className="text-sm text-text-muted flex items-center gap-2">
-              <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin text-sm">sync</span>
               Checking...
             </p>
           )}
@@ -2341,7 +2362,7 @@ const scopedModelPatterns =
           {tsInstalling && (
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2 text-sm text-text-muted">
-                <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                <span className="material-symbols-outlined animate-spin text-sm">sync</span>
                 Installing Tailscale...
               </div>
               {tsInstallLog.length > 0 && (
@@ -2358,7 +2379,7 @@ const scopedModelPatterns =
           {tsInstalled === true && !tsInstalling && (
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                <span className="material-symbols-outlined text-[16px]">task_alt</span>
                 Tailscale installed
               </div>
               <div className="flex gap-2">
@@ -2423,7 +2444,7 @@ const scopedModelPatterns =
           navigator.clipboard.writeText(text);
         }
       }}
-      icon="content_copy"
+      icon="file_copy"
       fullWidth
     >
       Copy to Clipboard

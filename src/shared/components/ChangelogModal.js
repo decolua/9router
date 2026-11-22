@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
 import { marked } from "marked";
 import { SERENHOPE_SOURCE, DECOLUA_SOURCE, DEFAULT_CHANGELOG_SOURCE, availableChangelogSources, pickChangelogSource } from "./changelogSources.js";
+import { commitMetadataForTitle, formatVersionDate, hideProductReleaseNumbers } from "./changelogVersionMetadata.js";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -58,7 +59,7 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;");
 }
 
-// A version's body runs until the next version heading, so it always ends with the
+// A release entry's body runs until the next release heading, so it always ends with the
 // `---` rule that separates versions in the file. marked turns a rule into an <hr>,
 // which drew a stray line at the bottom of a card. Only entries whose rule had a blank
 // line before it showed it: Markdown reads a `---` glued to the previous line as a
@@ -81,17 +82,16 @@ function stripSectionRules(body) {
   return kept.join("\n").replace(/\s+$/, "");
 }
 
-// Split markdown into per-version sections.
-// A version boundary is an h1/h2 heading whose text starts with an optional "v" + digit,
-// e.g. "# v0.5.71-Custom (2026-09-10)" or "## v0.5.65". Sub-headings like "## Features"
-// are intentionally NOT treated as boundaries.
+// Split markdown into per-release sections. Boundaries are version headings from
+// upstream sources or date headings from the local changelog. Category sub-headings
+// such as "## Features" are intentionally NOT treated as boundaries.
 function splitVersions(md) {
   if (!md) return [];
   const lines = md.split("\n");
   const sections = [];
   let cur = null;
   for (const line of lines) {
-    const m = line.match(/^ {0,3}#{1,2}\s+(v?\d[^\n]*)$/i);
+    const m = line.match(/^ {0,3}#{1,2}\s+((?:v?\d+(?:\.\d+)+[^\n]*|\d{4}-\d{2}-\d{2}\b[^\n]*|\d{2}-\d{2}-\d{4}\b[^\n]*))$/i);
     if (m) {
       if (cur) sections.push({ ...cur, body: stripSectionRules(cur.body) });
       cur = { title: m[1].trim(), body: "" };
@@ -101,41 +101,6 @@ function splitVersions(md) {
   }
   if (cur) sections.push({ ...cur, body: stripSectionRules(cur.body) });
   return sections;
-}
-
-// One card per day: thirty releases on one date read as one block, not thirty borders.
-function groupByReleaseDate(sections) {
- const groups = [];
- const byDate = new Map();
- for (const section of sections) {
- const date = (section.title.match(/\((\d{4}-\d{2}-\d{2})\)/) || [])[1] || section.title;
- const commits = (section.title.match(/·\s*(\d+)\s+commit/) || [])[1];
- if (!byDate.has(date)) {
- const group = { date, items: [] };
- byDate.set(date, group);
- groups.push(group);
- }
- byDate.get(date).items.push({ ...section, commits: commits ? Number(commits) : null });
- }
- return groups;
-}
-
-// Commits for one release: the heading when it already carries one
-// ("# v0.5.154 (2026-10-03) · 21 commits"), otherwise the bullet lines in the
-// body -- the changelog hook writes one bullet per commit.
-function countSectionCommits(section) {
- if (section.commits != null) return section.commits;
- return countBodyCommits(section.body);
-}
-
-function countBodyCommits(body) {
- const lines = String(body || "").split("\n");
- return lines.filter((l) => /^\s*[-*]\s+\S/.test(l)).length;
-}
-
-// Drop any existing "· N commits" so a recomputed total is never appended twice.
-function stripCommitCount(title) {
- return title.replace(/\s*·\s*\d+\s+commits?\b/i, "");
 }
 
 // How each changelog category reads at a glance. `verb` is the label shown in
@@ -181,20 +146,31 @@ const CATEGORY_ALIAS = {
   accessibility: "UI",
   a11y: "UI",
   "what's added?": "Features",
+  "what's updated": "Features",
+  "whats updated": "Features",
   "whats added?": "Features",
   "what was added?": "Features",
   "what was added": "Features",
   "what was added / fixed": "Features",
+  "what's fixed": "Fixes",
+  "whats fixed": "Fixes",
   "what was fixed?": "Fixes",
+  "what got fixed?": "Fixes",
   "what changed?": "Changed",
+  "what's changed": "Changed",
+  "what's changed?": "Changed",
   "what's new?": "Features",
   "what's new": "Features",
   "what changed": "Changed",
   "what was changed": "Changed",
   "what was fixed": "Fixes",
   "what was removed": "Removed",
+  "what's removed": "Removed",
+  "what's removed?": "Removed",
   "what was undone?": "Undone",
   "what was undone": "Undone",
+  "what's undone": "Undone",
+  "what's undone?": "Undone",
   "undone": "Undone",
   "upstream sync": "Internal",
   "skipped": "Internal",
@@ -202,6 +178,8 @@ const CATEGORY_ALIAS = {
   "what was replaced?": "Deprecated",
   "what was renamed?": "Deprecated",
   "what was hardened?": "Security",
+  "what's hardened": "Security",
+  "what's hardened?": "Security",
   "what's documented?": "Docs",
   "what was documented?": "Docs",
   "what's under the hood?": "Internal",
@@ -243,7 +221,9 @@ const CATEGORY_ALIAS = {
   "cli tools logo tiles": "UI",
   "cli tools logo tiles - transparent background, logo only": "UI",
   "upstream feature port": "Internal",
+  "upstream feature port (decolua/9router)": "Internal",
   "upstream port completion": "Internal",
+  "upstream port completion (decolua/9router)": "Internal",
   "upstream feature port (decolua/9router v0.5.112)": "Internal",
   "upstream port completion (decolua/9router v0.5.112)": "Internal",
   "opencode free lane divergence clean-up": "Internal",
@@ -266,38 +246,49 @@ function canonicalCategory(name) {
 }
 
 const CATEGORY_STYLE = {
-  Features: { verb: "Added", question: "WHAT\u2019S ADDED?", icon: "add", color: "#22c55e", tint: "rgba(34,197,94,.10)" },
-  Fixes: { verb: "Fixed", question: "WHAT WAS FIXED?", icon: "check_circle", color: "#f59e0b", tint: "rgba(245,158,11,.10)" },
-  Removed: { verb: "Removed", question: "WHAT WAS DELETED?", icon: "delete", color: "#f43f5e", tint: "rgba(244,63,94,.10)" },
-  Deprecated: { verb: "Deprecated", question: "WHAT WAS REPLACED?", icon: "restart_alt", color: "#a855f7", tint: "rgba(168,85,247,.10)" },
-  Undone: { verb: "Undone", question: "WHAT WAS UNDONE?", icon: "history", color: "#0ea5e9", tint: "rgba(14,165,233,.10)" },
-  Changed: { verb: "Changed", question: "WHAT CHANGED?", icon: "edit_note", color: "#ec4899", tint: "rgba(236,72,153,.10)" },
-  Performance: { verb: "Faster", question: "WHAT GOT FASTER?", icon: "bolt", color: "#06b6d4", tint: "rgba(6,182,212,.10)" },
-  Security: { verb: "Hardened", question: "WHAT WAS HARDENED?", icon: "shield", color: "#ef4444", tint: "rgba(239,68,68,.10)" },
-  Docs: { verb: "Documented", question: "WHAT\u2019S DOCUMENTED?", icon: "menu_book", color: "#38bdf8", tint: "rgba(56,189,248,.10)" },
-  UI: { verb: "Redesigned", question: "WHAT LOOKS DIFFERENT?", icon: "palette", color: "#f97316", tint: "rgba(249,115,22,.10)" },
-  Internal: { verb: "Internal", question: "WHAT\u2019S UNDER THE HOOD?", icon: "science", color: "#94a3b8", tint: "rgba(148,163,184,.10)" },
+  Features: { verb: "Added", question: "WHAT\u2019S ADDED?", icon: "playlist_add", color: "#22c55e", tint: "rgba(34,197,94,.10)" },
+  Fixes: { verb: "Fixed", question: "WHAT WAS FIXED?", icon: "task_alt", color: "#f59e0b", tint: "rgba(245,158,11,.10)" },
+  Removed: { verb: "Removed", question: "WHAT WAS DELETED?", icon: "delete_sweep", color: "#f43f5e", tint: "rgba(244,63,94,.10)" },
+  Deprecated: { verb: "Deprecated", question: "WHAT WAS REPLACED?", icon: "swap_horiz", color: "#a855f7", tint: "rgba(168,85,247,.10)" },
+  Undone: { verb: "Undone", question: "WHAT WAS UNDONE?", icon: "history_toggle_off", color: "#0ea5e9", tint: "rgba(14,165,233,.10)" },
+  Changed: { verb: "Changed", question: "WHAT CHANGED?", icon: "rate_review", color: "#ec4899", tint: "rgba(236,72,153,.10)" },
+  Performance: { verb: "Faster", question: "WHAT GOT FASTER?", icon: "speed", color: "#06b6d4", tint: "rgba(6,182,212,.10)" },
+  Security: { verb: "Hardened", question: "WHAT WAS HARDENED?", icon: "verified_user", color: "#ef4444", tint: "rgba(239,68,68,.10)" },
+  Docs: { verb: "Documented", question: "WHAT\u2019S DOCUMENTED?", icon: "library_books", color: "#38bdf8", tint: "rgba(56,189,248,.10)" },
+  UI: { verb: "Redesigned", question: "WHAT LOOKS DIFFERENT?", icon: "tune", color: "#f97316", tint: "rgba(249,115,22,.10)" },
+  Internal: { verb: "Internal", question: "WHAT\u2019S UNDER THE HOOD?", icon: "experiment", color: "#94a3b8", tint: "rgba(148,163,184,.10)" },
 };
 
 function categoryStyle(name) {
  const key = canonicalCategory(name);
- return (
- CATEGORY_STYLE[key] ||
- // Unknown categories still get a stable look instead of falling back to the
- // heading style that made everything blur together.
- { verb: key, question: key.toUpperCase() + "?", icon: "help", color: "#94a3b8", tint: "rgba(148,163,184,.08)" }
- );
+ const questions = {
+ Features: "WHAT'S ADDED?",
+	 Fixes: "WHAT'S FIXED?",
+	 Removed: "WHAT'S REMOVED?",
+	 Deprecated: "WHAT'S DEPRECATED?",
+	 Undone: "WHAT'S UNDONE?",
+	 Changed: "WHAT'S CHANGED?",
+	 Performance: "WHAT'S FASTER?",
+	 Security: "WHAT'S HARDENED?",
+	 Docs: "WHAT'S DOCUMENTED?",
+	 UI: "WHAT'S ADDED?",
+	 Internal: "WHAT'S UNDER THE HOOD?",
+	 };
+	 // Unknown categories still get a stable look and follow the same question form.
+ const style = CATEGORY_STYLE[key] || { verb: key, icon: "help_center", color: "#94a3b8", tint: "rgba(148,163,184,.08)" };
+ const question = questions[key] || `WHAT'S ${key.toUpperCase().replace(/[?!.]+$/, "")}?`;
+ return { ...style, question };
 }
 
 // The leading verb of a bullet says what the change IS. Matching on the verb
 // rather than the whole line keeps the rest of the sentence untouched.
 const CHANGE_VERB = [
- { re: /^(add(ed|s)?|introduc(e|ed|es|ing)|support(ed|s)?|implement(ed|s)?|new)\b/i, kind: "Added", icon: "add", color: "#22c55e" },
- { re: /^(fix(es|ed)?|correct(s|ed)?|repair(s|ed)?|resolv(e|es|ed))\b/i, kind: "Fixed", icon: "check_circle", color: "#f59e0b" },
- { re: /^(remove[sd]?|delet(e|es|ed)|drop(s|ped)?|retire[sd]?)\b/i, kind: "Removed", icon: "delete", color: "#f43f5e" },
- { re: /^(deprecat(e|ed|es)|renam(e|ed|es)|chang(e|ed|es))\b/i, kind: "Changed", icon: "edit", color: "#a855f7" },
- { re: /^(upgrad(e|ed|es)|bump(s|ed)?|rais(e|ed|es)|increas(e|ed|es))\b/i, kind: "Changed", icon: "arrow_upward", color: "#a855f7" },
- { re: /^(secur(e|ity)|harden(s|ed)?|sign(s|ed)?|authent(icat(e|ion)))\b/i, kind: "Security", icon: "shield", color: "#ef4444" },
+ { re: /^(add(ed|s)?|introduc(e|ed|es|ing)|support(ed|s)?|implement(ed|s)?|new)\b/i, kind: "Added", icon: "playlist_add", color: "#22c55e" },
+ { re: /^(fix(es|ed)?|correct(s|ed)?|repair(s|ed)?|resolv(e|es|ed))\b/i, kind: "Fixed", icon: "task_alt", color: "#f59e0b" },
+ { re: /^(remove[sd]?|delet(e|es|ed)|drop(s|ped)?|retire[sd]?)\b/i, kind: "Removed", icon: "delete_sweep", color: "#f43f5e" },
+ { re: /^(deprecat(e|ed|es)|renam(e|ed|es)|chang(e|ed|es))\b/i, kind: "Changed", icon: "draw", color: "#a855f7" },
+ { re: /^(upgrad(e|ed|es)|bump(s|ed)?|rais(e|ed|es)|increas(e|ed|es))\b/i, kind: "Changed", icon: "trending_up", color: "#a855f7" },
+ { re: /^(secur(e|ity)|harden(s|ed)?|sign(s|ed)?|authent(icat(e|ion)))\b/i, kind: "Security", icon: "verified_user", color: "#ef4444" },
 ];
 
 function changeKind(text) {
@@ -314,26 +305,26 @@ function changeKind(text) {
 function renderBody(bodyMd) {
  if (!bodyMd.trim()) return "";
  const demoted = bodyMd.replace(/^#{2,6}\s/gm, (m) => "#".repeat(Math.min(6, m.length + 2)) + " ");
- // Heading level is kept for structure, then restyled below into a pill: the
+ // Heading level is kept for structure, then restyled below into a boxed label: the
  // parser output decides what is a category and what is a bullet.
  const html = marked.parse(demoted);
 
  // The demotion above moves every category to a different heading level, so
  // this matches h1..h6 rather than one level. The level is preserved on the
- // element and the visual treatment comes from the pill, so the document keeps
- // its structure while reading as a labelled category.
+ // element and the visual treatment comes from the boxed label, so the document
+ // keeps its structure while reading as a labelled category.
  let out = html.replace(/<h([1-6])([^>]*)>([\s\S]*?)<\/h\1>/g, (_m, level, attrs, inner) => {
- const raw = inner.replace(/<[^>]+>/g, "").trim();
- const name = canonicalCategory(raw);
- const st = categoryStyle(raw);
- return (
- `<h${level}${attrs} class="cl-cat" data-cat="${escapeHtml(name)}" style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding:7px 11px;border-radius:10px;border-left:3px solid ${st.color};` +
- `background:${st.tint};border:1px solid ${st.color}33;font-size:inherit;font-weight:inherit;">` +
- `<span class="material-symbols-outlined" style="font-size:16px;color:${st.color};line-height:1;">${st.icon}</span>` +
- `<span style="font-size:12.5px;font-weight:800;letter-spacing:.06em;color:${st.color};">${escapeHtml(st.question || (st.verb || name).toUpperCase())}</span>` +
- `</h${level}>`
- );
- });
+  const raw = inner.replace(/<[^>]+>/g, "").trim();
+  const name = canonicalCategory(raw);
+  const st = categoryStyle(raw);
+  return (
+  `<h${level}${attrs} class="cl-cat" data-cat="${escapeHtml(name)}" style="display:flex;align-items:center;gap:8px;margin:18px 0 12px;padding:7px 11px;border:2px solid #191817;border-radius:3px;` +
+  `background:#ffd45c;box-shadow:3px 3px 0 #191817;font-size:inherit;font-weight:inherit;">` +
+  `<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#191817;line-height:1;">${st.icon}</span>` +
+  `<span style="font-size:12px;font-weight:850;letter-spacing:.035em;color:#191817;">${escapeHtml(st.question || (st.verb || name).toUpperCase())}</span>` +
+  `</h${level}>`
+  );
+  });
 
  // Each bullet gets its change-kind icon, so add / fix / remove are separable
  // without reading the sentence.
@@ -352,15 +343,9 @@ function renderBody(bodyMd) {
  return out;
 }
 
-// A merged day card concatenates several patch bodies, each carrying its own
-// ## Features / ## Fixes headings. Split every body on its h2 sub-headings and
-// rejoin items under one heading each, keeping the order the headings first
-// appear in - so Fixes shows once with all fixes, not four times.
-// Fold a category's bullets under their shared `**Scope**:` prefix and drop
-// duplicates. Folding is what the reader asked for: three separate
-// "- **Antigravity**: ..." lines collapse into one Antigravity heading with the
-// lines beneath it. A scope is folded only when it holds two or more items, so
-// a single-entry category keeps its compact one-line form.
+// Fold each version's category bullets under their shared `**Scope**:` prefix
+// and drop duplicate lines. Three separate "- **Antigravity**: ..." lines
+// collapse into one Antigravity heading with the changes beneath it.
 const SCOPE_BULLET = /^[-*]\s+\*\*(.+?)\*\*\s*:\s*(.*)$/;
 
 function foldCategoryByScope(rawLines) {
@@ -375,7 +360,7 @@ function foldCategoryByScope(rawLines) {
  ? key.replace(/^[-*]\s*/, "").toLowerCase()
  : null;
  if (bulletKey) {
- if (seen.has(bulletKey)) continue; // same-day merge repeated it
+ if (seen.has(bulletKey)) continue; // skip duplicate changelog bullets
  seen.add(bulletKey);
  }
  kept.push(line);
@@ -419,34 +404,8 @@ function foldCategoryByScope(rawLines) {
  return out.join("\n");
 }
 
-function mergeBodiesByCategory(bodies) {
- const order = [];
- const byCat = new Map();
- for (const body of bodies) {
- let current = null;
- for (const line of String(body || "").split("\n")) {
- const m = line.match(/^#{2,6}\s+(.+?)\s*$/);
- if (m) {
- current = canonicalCategory(m[1]);
- if (!byCat.has(current)) {
- byCat.set(current, []);
- order.push(current);
- }
- } else if (current) {
- byCat.get(current).push(line);
- }
- }
- }
- // Joining raw bodies left a blank line between them; the fold pass also
- // normalises indentation, so emit only what it produced.
- return order
- .map((cat) => `## ${cat}\n${foldCategoryByScope(byCat.get(cat))}`)
- .join("\n\n");
-}
-
-// Same treatment for a body rendered on its own: split on h2 headings, fold
-// each category, rejoin. Keeps the single-release card identical in style to a
-// merged one.
+// Fold one release body by its h2 headings, keeping categories readable while
+// each version remains its own card.
 function foldBody(bodyMd) {
  const order = [];
  const byCat = new Map();
@@ -469,59 +428,41 @@ function foldBody(bodyMd) {
  return parts.join("\n\n");
 }
 
-function renderVersionCards(md, accent) {
+function renderVersionCards(md, accent, sourceId) {
  const sections = splitVersions(md);
- const cardStyle = `margin:0 0 14px;padding:14px 16px;border:1px solid ${accent.border};border-radius:12px;background:${accent.bg};box-sizing:border-box;`;
- const titleStyle = `margin:0 0 10px;font-size:15px;font-weight:700;color:${accent.color};display:flex;align-items:center;gap:8px;`;
- const subStyle = `margin:16px 0 8px;font-size:13.5px;font-weight:700;color:${accent.color};opacity:.9;`;
- // Release card: give the version header a divider under it so each release
- // reads as its own block instead of blending into the next one.
- const headRule = `margin:0 0 2px;padding-bottom:8px;border-bottom:1px solid ${accent.border};`;
+ const titles = sections.map((section) => section.title);
+ const cardStyle = `margin:0 0 16px;padding:0;border:2px solid ${accent.border};border-radius:3px;background:#fffdf8;box-shadow:5px 5px 0 #191817;box-sizing:border-box;overflow:hidden;`;
+ const titleStyle = `margin:0;padding:12px 14px;border-bottom:2px solid #191817;background:${accent.bg};font-size:15px;font-weight:800;color:${accent.color};display:flex;align-items:flex-start;gap:10px;`;
+ const bodyStyle = "padding:12px 14px 14px;";
  if (!sections.length) {
- const html = md ? marked.parse(md) : "";
- return html ? `<div style="${cardStyle}"><div class="changelog-body">${html}</div></div>` : "";
+  const html = md ? marked.parse(md) : "";
+  return html ? `<div style="${cardStyle}"><div class="changelog-body" style="${bodyStyle}">${html}</div></div>` : "";
  }
- return groupByReleaseDate(sections)
- .map((group) => {
- // The newest release of the day titles the merged card, so it reads like any
- // other release ("v0.5.151 (2026-09-30)") instead of a bare date rollup.
- const versionOf = (s) => ((s.title.match(/v?(\d+(?:\.\d+)+)/) || [])[1] || "");
- const sortKey = (a, b) =>
- versionOf(a).localeCompare(versionOf(b), undefined, { numeric: true });
- const newest = [...group.items].sort(sortKey).pop();
- // Every card states how many commits it carries -- a single-commit release
- // included -- so entries from before the hook wrote counts ("v0.5.140
- // (2026-09-28)") are no longer indistinguishable from bigger ones.
- let head = group.items.length === 1
- ? group.items[0].title
- : newest.title.includes("(")
- ? newest.title
- : `${newest.title} (${group.date})`;
- const commits = group.items.reduce((sum, s) => sum + countSectionCommits(s), 0);
- head = stripCommitCount(head);
- if (commits > 0) {
- head += ` · ${commits} ${commits === 1 ? "commit" : "commits"}`;
- }
- const inner = group.items.length === 1
- ? renderBody(foldBody(group.items[0].body))
- : renderBody(mergeBodiesByCategory(group.items.map((section) => section.body)));
- return `<div style="${cardStyle}">
- <h3 style="${titleStyle}${headRule}">
- <span class="material-symbols-outlined" style="font-size:18px;">${accent.icon}</span>
- ${escapeHtml(head)}
- </h3>
- <div class="changelog-body">${inner}</div>
+ return sections
+ .map((section) => {
+  const commitMetadata = sourceId === SERENHOPE_SOURCE.id ? commitMetadataForTitle(section.title) : null;
+  const releaseDate = formatVersionDate(section.title, commitMetadata?.committedAt || "");
+  const head = releaseDate || "Date unavailable";
+  const inner = renderBody(foldBody(hideProductReleaseNumbers(section.body, titles)));
+  return `<div style="${cardStyle}">
+ <h3 style="${titleStyle}">
+  <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;line-height:1.2;flex-shrink:0;">${accent.icon}</span>
+  <span style="min-width:0;flex:1;display:flex;flex-direction:column;gap:5px;">
+  <span style="font-size:16px;font-weight:850;line-height:1.2;overflow-wrap:anywhere;">${escapeHtml(head)}</span>
+  </span>
+  </h3>
+ <div class="changelog-body" style="${bodyStyle}">${inner}</div>
  </div>`;
  })
  .join("");
 }
 
 function buildSection(md, source) {
-  const cards = renderVersionCards(md, source.accent);
+  const cards = renderVersionCards(md, source.accent, source.id);
   if (!cards) return "";
-  const headStyle = `display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:17px;font-weight:600;color:${source.accent.color};`;
+  const headStyle = `display:inline-flex;align-items:center;gap:8px;margin:0 0 14px;padding:8px 11px;border:2px solid #191817;border-radius:3px;background:${source.accent.bg};box-shadow:3px 3px 0 #191817;font-size:14px;font-weight:800;color:${source.accent.color};`;
   return `<div style="${headStyle}">
-  <span class="material-symbols-outlined" style="font-size:20px;">${source.accent.icon}</span>
+  <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">${source.accent.icon}</span>
   ${escapeHtml(source.heading)}
 </div>
 ${cards}`;
@@ -575,6 +516,15 @@ export default function ChangelogModal({ isOpen, onClose }) {
     }
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   // Reset content when modal closes
   useEffect(() => {
     if (isOpen) return;
@@ -593,29 +543,32 @@ export default function ChangelogModal({ isOpen, onClose }) {
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 backdrop-blur-md"
+        className="absolute inset-0 "
         style={{ backgroundColor: "var(--color-scrim)" }}
         onClick={onClose}
       />
       <div
         ref={modalRef}
-        className="relative w-full bg-surface border border-border-subtle rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="changelog-modal-title"
+        className="changelog-dialog relative w-full bg-surface border-2 border-text-main rounded-[3px] shadow-[8px_8px_0_var(--neo-ink)] max-w-3xl flex flex-col max-h-[85vh] overflow-hidden"
       >
-        <div className="flex items-center justify-between gap-3 p-3 border-b border-border-subtle">
-          <h2 className="text-lg font-semibold text-text-main">Change Log</h2>
+        <div className="changelog-header flex flex-wrap items-center justify-between gap-3 p-3 sm:p-4 border-b-2 border-text-main bg-[var(--neo-paper)]">
+          <h2 id="changelog-modal-title" className="text-lg sm:text-xl font-extrabold text-text-main">Change Log</h2>
           <div className="flex items-center gap-2">
             {available.length > 1 && (
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-surface-2">
+              <div className="changelog-source-switcher flex flex-wrap items-center gap-2" role="group" aria-label="Changelog source">
                 {available.map((source) => (
                   <button
                     key={source.id}
                     type="button"
                     onClick={() => setActiveSource(source.id)}
                     aria-pressed={shown === source.id}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                    className={`changelog-source-button min-h-11 px-3 py-2 border-2 border-text-main rounded-[3px] text-xs font-bold transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700 ${
                       shown === source.id
-                        ? "bg-surface text-text-main shadow-sm"
-                        : "text-text-muted hover:text-text-main"
+                        ? "bg-[#c8ee68] text-[#191817] shadow-[3px_3px_0_var(--neo-ink)]"
+                        : "bg-surface text-text-main shadow-[2px_2px_0_var(--neo-ink)] hover:bg-[#ffd45c]"
                     }`}
                   >
                     {source.label}
@@ -624,18 +577,20 @@ export default function ChangelogModal({ isOpen, onClose }) {
               </div>
             )}
             <button
+              type="button"
               onClick={onClose}
-              className="p-1 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-2 transition-all"
+              aria-label="Close changelog"
+              className="changelog-close size-11 inline-flex shrink-0 items-center justify-center border-2 border-text-main rounded-[3px] bg-[#ff7657] text-[#191817] shadow-[3px_3px_0_var(--neo-ink)] cursor-pointer hover:bg-[#ffd45c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700"
             >
-              <span className="material-symbols-outlined text-[20px]">close</span>
+              <span className="material-symbols-outlined text-[20px]" aria-hidden="true">cancel</span>
             </button>
           </div>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1 prose dark:prose-invert max-w-none text-sm">
+        <div className="changelog-content p-3 sm:p-5 overflow-y-auto flex-1 prose dark:prose-invert max-w-none text-sm bg-[var(--neo-paper)]">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <span className="material-symbols-outlined text-3xl animate-spin text-primary">progress_activity</span>
+              <span className="material-symbols-outlined text-3xl animate-spin text-primary">autorenew</span>
             </div>
           ) : error ? (
             <p className="text-red-500">{error}</p>

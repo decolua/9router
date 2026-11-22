@@ -109,7 +109,7 @@ export default function AvailableModelsCard({ visible }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="material-symbols-outlined text-[18px] text-primary">
-            model_training
+            dataset
           </span>
           <span className="truncate text-sm font-semibold text-text-main">
             Available Models
@@ -120,7 +120,7 @@ export default function AvailableModelsCard({ visible }) {
 
       {!models ? (
         <div className="flex items-center justify-center py-6 text-text-muted">
-          <span className="material-symbols-outlined text-[24px] animate-spin">progress_activity</span>
+          <span className="material-symbols-outlined text-[24px] animate-spin">autorenew</span>
         </div>
       ) : models.length === 0 ? (
         <div className="text-sm text-text-muted">No models are available to this key yet.</div>

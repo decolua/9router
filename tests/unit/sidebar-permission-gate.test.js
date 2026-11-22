@@ -58,10 +58,16 @@ describe("sidebar: menu is deny-by-default until the session resolves", () => {
     }
   });
 
-  it("gates the media accordion, settings link and key badge too", () => {
+  it("shows Media Services as a direct category while preserving its permission gate", () => {
     expect(sidebar).toMatch(
       /const canOpenMedia = sessionReady && \(!isApiKeyUser \|\| permissions\.manageMediaProviders\);/
     );
+    expect(sidebar).toContain('title="Media Services"');
+    expect(sidebar).toContain("items={mediaNavItems}");
+    expect(sidebar).toContain("href: `/dashboard/media-providers/${kind.id}`");
+    expect(sidebar).toContain("COMBINED_WEB_ITEM.href");
+    expect(sidebar).not.toContain("mediaOpen");
+    expect(sidebar).not.toContain("keyboard_arrow_down");
     expect(sidebar).toContain("{sessionReady && !isApiKeyUser && (");
     expect(sidebar).toContain("{sessionReady && isApiKeyUser && (");
   });

@@ -303,14 +303,14 @@ default_subagent_model = "${effectiveSubagentModel}"
             <p className="text-xs text-text-muted truncate">{tool.description}</p>
           </div>
         </div>
-        <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
+        <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>keyboard_arrow_down</span>
       </div>
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
           {checkingCodex && (
             <div className="flex items-center gap-2 text-text-muted">
-              <span className="material-symbols-outlined animate-spin">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin">autorenew</span>
               <span>Checking Codex CLI...</span>
             </div>
           )}
@@ -319,7 +319,7 @@ default_subagent_model = "${effectiveSubagentModel}"
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <div className="flex items-start gap-3">
-                  <span className="material-symbols-outlined text-yellow-500">warning</span>
+                  <span className="material-symbols-outlined text-yellow-500">priority_high</span>
                   <div className="flex-1">
                     <p className="font-medium text-warning">Codex CLI not detected locally</p>
                     <p className="text-sm text-text-muted">Manual configuration is still available if 9router is deployed on a remote server.</p>
@@ -327,7 +327,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                 </div>
                 <div className="flex items-center gap-2 pl-9">
                   <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="!bg-yellow-500/20 !border-yellow-500/40 !text-warning hover:!bg-yellow-500/30">
-                    <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
+                    <span className="material-symbols-outlined text-[18px] mr-1">file_copy</span>
                     Manual Config
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setShowInstallGuide(!showInstallGuide)}>
@@ -363,7 +363,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                 {/* Endpoint (selector) */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                   <BaseUrlSelect
                     value={customBaseUrl || getDisplayUrl()}
                     onChange={setCustomBaseUrl}
@@ -381,7 +381,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                   return currentBaseUrl ? (
                     <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                       <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
-                      <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                      <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                       <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
                         {currentBaseUrl}
                       </span>
@@ -392,17 +392,17 @@ default_subagent_model = "${effectiveSubagentModel}"
                 {/* API Key */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                   <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Model */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Model</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                   <div className="relative w-full min-w-0">
                     <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
-                    {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">cancel</span></button>}
                   </div>
                   <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
                 </div>
@@ -410,7 +410,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                 {/* Subagent Model */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Subagent Model</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                   <div className="relative w-full min-w-0">
                     <input
                       type="text"
@@ -425,7 +425,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                         className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
                         title="Clear (will use main model)"
                       >
-                        <span className="material-symbols-outlined text-[14px]">close</span>
+                        <span className="material-symbols-outlined text-[14px]">cancel</span>
                       </button>
                     )}
                   </div>
@@ -441,20 +441,20 @@ default_subagent_model = "${effectiveSubagentModel}"
 
               {message && (
                 <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
-                  <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
+                  <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "task_alt" : "report_problem"}</span>
                   <span>{message.text}</span>
                 </div>
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
                 <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={(!selectedApiKey && (cloudEnabled && apiKeys.length > 0)) || !selectedModel} loading={applying}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
+                  <span className="material-symbols-outlined text-[14px] mr-1">archive</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={restoring} loading={restoring}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
+                  <span className="material-symbols-outlined text-[14px] mr-1">settings_backup_restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
+                  <span className="material-symbols-outlined text-[14px] mr-1">file_copy</span>Manual Config
                 </Button>
               </div>
 
@@ -463,7 +463,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-text-main flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-primary">layers</span>
+                      <span className="material-symbols-outlined text-[16px] text-primary">view_module</span>
                       Additional Models
                     </span>
                     {profiles.length > 0 && (
@@ -505,7 +505,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                           className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
                           title="Clear"
                         >
-                          <span className="material-symbols-outlined text-[14px]">close</span>
+                          <span className="material-symbols-outlined text-[14px]">cancel</span>
                         </button>
                       )}
                     </div>
@@ -528,7 +528,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                       loading={creatingProfile}
                       className="!h-7.5 whitespace-nowrap"
                     >
-                      <span className="material-symbols-outlined text-[15px] mr-1">add</span>
+                      <span className="material-symbols-outlined text-[15px] mr-1">add_circle</span>
                       Add
                     </Button>
                   </div>
@@ -537,7 +537,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                 {profiles.length === 0 ? (
                   <div className="flex flex-col items-center justify-center p-4 border border-dashed border-border rounded-lg text-center bg-surface/30">
                     <span className="material-symbols-outlined text-[20px] text-text-muted mb-1 opacity-60">
-                      terminal
+                      integration_instructions
                     </span>
                     <p className="text-xs text-text-muted">
                       Only the main model is active. Add an alias above to configure more models for Codex CLI.
@@ -578,7 +578,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                               title="Click to copy command"
                             >
                               <span className="material-symbols-outlined text-[13px]">
-                                {isCopied ? "check" : "terminal"}
+                                {isCopied ? "check" : "integration_instructions"}
                               </span>
                               <span className="hidden md:inline">{p.command}</span>
                               <span className="md:hidden">copy</span>
@@ -590,7 +590,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                               className="p-1 text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded"
                               title="Delete model"
                             >
-                              <span className="material-symbols-outlined text-[15px]">close</span>
+                              <span className="material-symbols-outlined text-[15px]">cancel</span>
                             </button>
                           </div>
                         </div>

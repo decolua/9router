@@ -346,6 +346,6 @@
 
 ## 需要更多帮助?
 
-- **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **GitHub Issues:** [github.com/serenhope/9router/issues](https://github.com/serenhope/9router/issues)
 - **文档:** [9router.com/docs](https://9router.com/docs)
 - **常见问题:** [faq.md](faq.md)

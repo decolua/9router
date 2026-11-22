@@ -24,17 +24,17 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: "#0a0a0a",
+  themeColor: "#f7f1e4",
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Lock theme strictly to glass before first paint */}
+        {/* Lock the neobrutalist theme before first paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `document.documentElement.classList.add('dark','glass');`,
+            __html: `var r=document.documentElement;r.classList.remove('dark','glass','brutalist');r.classList.add('neobrutalism');`,
           }}
         />
         <script

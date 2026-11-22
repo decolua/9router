@@ -43,7 +43,7 @@ export default function Drawer({
     <div className="fixed inset-0 z-50">
       {/* Overlay */}
       <div
-        className="absolute inset-0 backdrop-blur-[2px] chrome-enter-overlay cursor-pointer"
+        className="absolute inset-0  chrome-enter-overlay cursor-pointer"
         style={{ backgroundColor: "var(--color-scrim)" }}
         onClick={onClose}
         aria-hidden="true"
@@ -79,7 +79,7 @@ export default function Drawer({
             aria-label="Close"
             className="chrome-focus p-1.5 rounded-[var(--r-control)] text-text-muted chrome-row hover:text-text-main"
           >
-            <span className="material-symbols-outlined text-[20px]">close</span>
+            <span className="material-symbols-outlined text-[20px]">cancel</span>
           </button>
         </div>
 

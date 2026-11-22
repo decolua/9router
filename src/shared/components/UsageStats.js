@@ -76,7 +76,7 @@ function RecentRequests({ requests = [] }) {
       {/* Header */}
       <div className="px-3 sm:px-4 py-2.5 border-b border-border-subtle shrink-0 flex items-center justify-between bg-surface-2/40">
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-base text-text-muted">stream</span>
+          <span className="material-symbols-outlined text-base text-text-muted">data_array</span>
           <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Live Requests Stream</span>
         </div>
         <div className="flex items-center gap-2">
@@ -95,10 +95,10 @@ function RecentRequests({ requests = [] }) {
       ) : (
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           <table className="w-full border-collapse text-xs">
-            <thead className="sticky top-0 bg-surface/95 backdrop-blur-xs border-b border-border-subtle z-10">
+            <thead className="sticky top-0 bg-surface/95  border-b border-border-subtle z-10">
               <tr>
                 <th className="py-2.5 pl-3 pr-1 text-center font-semibold text-text-muted w-8" title="Status">
-                  <span className="material-symbols-outlined text-xs leading-none select-none text-text-muted/60">radio_button_checked</span>
+                  <span className="material-symbols-outlined text-xs leading-none select-none text-text-muted/60">fiber_manual_record</span>
                 </th>
                 <th className="py-2.5 px-2 text-left font-semibold text-text-muted">Model</th>
                 <th className="py-2.5 px-2 text-right font-semibold text-text-muted whitespace-nowrap">Tokens (In / Out)</th>
@@ -125,7 +125,7 @@ function RecentRequests({ requests = [] }) {
                         <span className="text-success font-medium">{fmt(r.completionTokens)}↓</span>
                         {r.cachedTokens > 0 && (
                           <span className="inline-flex items-center gap-1 text-[10px] text-info bg-info/10 px-1.5 py-0.5 rounded leading-none border border-info/20" title={`${fmt(r.cachedTokens)} cached tokens`}>
-                            <span className="material-symbols-outlined text-[11px] leading-none">bolt</span>
+                            <span className="material-symbols-outlined text-[11px] leading-none">electric_bolt</span>
                             {fmt(r.cachedTokens)}
                           </span>
                         )}
@@ -618,7 +618,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
   const spinner = (
     <div className="flex items-center justify-center py-12 text-text-muted">
-      <span className="material-symbols-outlined text-[32px] animate-spin">progress_activity</span>
+      <span className="material-symbols-outlined text-[32px] animate-spin">autorenew</span>
     </div>
   );
 
@@ -640,7 +640,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
             ))}
           </div>
           {fetching && (
-            <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
+            <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">autorenew</span>
           )}
         </div>
       )}

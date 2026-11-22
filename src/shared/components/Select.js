@@ -33,7 +33,7 @@ export default function Select({
           className={cn(
             // .chrome-field owns padding, radius and the 16px mobile size so
             // this and Input cannot drift apart.
-            "chrome-field chrome-focus w-full pr-10 text-text-main",
+            "neo-field chrome-field chrome-focus w-full pr-10 text-text-main",
             "bg-surface-2 border border-border/50 appearance-none",
             "focus:bg-surface focus:border-brand-500/50",
             disabled && "chrome-disabled",
@@ -52,12 +52,12 @@ export default function Select({
           ))}
         </select>
         <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-text-muted">
-          <span className="material-symbols-outlined text-[20px]">expand_more</span>
+          <span className="material-symbols-outlined text-[20px]">keyboard_arrow_down</span>
         </div>
       </div>
       {error && (
         <p className="text-xs text-danger flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">error</span>
+          <span className="material-symbols-outlined text-[14px]">report_problem</span>
           {error}
         </p>
       )}

@@ -240,22 +240,22 @@ export default function ComboDetailPage() {
   const backHref = getListingHref(combo.kind);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between xl:col-span-2">
         <div className="flex items-center gap-3 min-w-0">
           <Link href={backHref} className="text-text-muted hover:text-primary">
-            <span className="material-symbols-outlined">arrow_back</span>
+            <span className="material-symbols-outlined">west</span>
           </Link>
           <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <span className="material-symbols-outlined text-primary">layers</span>
+            <span className="material-symbols-outlined text-primary">view_module</span>
           </div>
           <div className="min-w-0">
             <p className="text-xs text-text-muted">{kindLabel} Combo</p>
             <code className="text-lg font-semibold font-mono">{combo.name}</code>
           </div>
         </div>
-        <Button variant="outline" icon="delete" onClick={handleDelete} className="text-danger border-danger/30 hover:bg-danger/10">
+        <Button variant="outline" icon="delete_forever" onClick={handleDelete} className="text-danger border-danger/30 hover:bg-danger/10">
           Delete
         </Button>
       </div>
@@ -285,7 +285,7 @@ export default function ComboDetailPage() {
             <h2 className="text-lg font-semibold">Providers</h2>
             <p className="text-xs text-text-muted">Tried in order (top-down) or rotated when round-robin is on.</p>
           </div>
-          <Button size="sm" icon="add" onClick={() => setShowPicker(true)}>Add Provider</Button>
+          <Button size="sm" icon="add_circle" onClick={() => setShowPicker(true)}>Add Provider</Button>
         </div>
         {providers.length === 0 ? (
           <div className="text-center py-6 border border-dashed border-border rounded-lg text-text-muted text-sm">
@@ -313,13 +313,13 @@ export default function ComboDetailPage() {
                   </div>
                   <div className="flex items-center gap-0.5">
                     <button onClick={() => handleMove(idx, -1)} disabled={idx === 0} className={`p-1 rounded ${idx === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-surface-3"}`} title="Move up">
-                      <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
+                      <span className="material-symbols-outlined text-[16px]">north</span>
                     </button>
                     <button onClick={() => handleMove(idx, 1)} disabled={idx === providers.length - 1} className={`p-1 rounded ${idx === providers.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-surface-3"}`} title="Move down">
-                      <span className="material-symbols-outlined text-[16px]">arrow_downward</span>
+                      <span className="material-symbols-outlined text-[16px]">south</span>
                     </button>
                     <button onClick={() => handleRemoveProvider(idx)} className="p-1 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10" title="Remove">
-                      <span className="material-symbols-outlined text-[16px]">close</span>
+                      <span className="material-symbols-outlined text-[16px]">cancel</span>
                     </button>
                   </div>
                 </div>
@@ -331,10 +331,10 @@ export default function ComboDetailPage() {
 
       {/* Test Example Card */}
       {combo.kind && examplePath && (
-        <Card>
+        <Card className="xl:col-span-2">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
             <h2 className="text-lg font-semibold">Test Example</h2>
-            <Button size="sm" icon="play_arrow" onClick={handleTest} disabled={testing || providers.length === 0}>
+            <Button size="sm" icon="play_circle" onClick={handleTest} disabled={testing || providers.length === 0}>
               {testing ? "Running..." : "Run"}
             </Button>
           </div>
@@ -348,7 +348,7 @@ export default function ComboDetailPage() {
             <div className="mt-3 flex flex-col gap-3">
               {testResult.latencyMs != null && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-text-muted">
-                  <span className="material-symbols-outlined text-[12px] leading-none">bolt</span>
+                  <span className="material-symbols-outlined text-[12px] leading-none">speed</span>
                   {testResult.latencyMs}ms
                 </span>
               )}
@@ -356,7 +356,7 @@ export default function ComboDetailPage() {
                 <div>
                   <div className="flex items-center justify-end mb-1.5">
                     <a href={testResult.imageUrl} download="image.png" className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
-                      <span className="material-symbols-outlined text-[14px]">download</span>
+                      <span className="material-symbols-outlined text-[14px]">file_download</span>
                       Download
                     </a>
                   </div>
@@ -367,7 +367,7 @@ export default function ComboDetailPage() {
                 <div>
                   <div className="flex items-center justify-end mb-1.5">
                     <a href={testResult.audioUrl} download="speech.mp3" className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
-                      <span className="material-symbols-outlined text-[14px]">download</span>
+                      <span className="material-symbols-outlined text-[14px]">file_download</span>
                       Download
                     </a>
                   </div>
@@ -385,7 +385,7 @@ export default function ComboDetailPage() {
       )}
 
       {/* Usage Logs Card */}
-      <Card>
+      <Card className="xl:col-span-2">
         <h2 className="text-lg font-semibold mb-3">Usage Logs</h2>
         {logs.length === 0 ? (
           <p className="text-xs text-text-muted italic">No usage yet.</p>

@@ -19,10 +19,10 @@ function fmtTime(iso) {
 }
 
 function SortIcon({ field, currentSort, currentOrder }) {
-  if (currentSort !== field) return <span className="material-symbols-outlined ml-1 text-[12px] leading-none opacity-20">sync_alt</span>;
+  if (currentSort !== field) return <span className="material-symbols-outlined ml-1 text-[12px] leading-none opacity-20">swap_vert</span>;
   return (
     <span className="material-symbols-outlined ml-1 text-[12px] leading-none">
-      {currentOrder === "asc" ? "arrow_upward" : "arrow_downward"}
+      {currentOrder === "asc" ? "north" : "south"}
     </span>
   );
 }
@@ -201,7 +201,7 @@ export default function UsageTable({
                   <td className="px-6 py-3">
                     <div className="flex items-center gap-2">
                       <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expanded.has(group.groupKey) ? "rotate-90" : ""}`}>
-                        chevron_right
+                        arrow_forward_ios
                       </span>
                       <span className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}>
                         {group.summary.resolvedModel && group.summary.resolvedModel !== group.groupKey ? (

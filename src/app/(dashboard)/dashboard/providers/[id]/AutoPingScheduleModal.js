@@ -13,9 +13,9 @@ import {
 } from "@/shared/services/quotaPingSchedule";
 
 const MODE_OPTIONS = [
-  { value: "off", label: "Off", icon: "block" },
-  { value: "reset", label: "On reset", icon: "bolt" },
-  { value: "schedule", label: "Schedule", icon: "schedule" },
+  { value: "off", label: "Off", icon: "do_not_disturb_on" },
+  { value: "reset", label: "On reset", icon: "electric_bolt" },
+  { value: "schedule", label: "Schedule", icon: "event_upcoming" },
 ];
 
 function toFormState(schedule, reactive) {

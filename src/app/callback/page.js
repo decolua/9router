@@ -90,7 +90,7 @@ function CallbackContent() {
         {status === "processing" && (
           <>
             <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
+              <span className="material-symbols-outlined text-3xl text-primary animate-spin">hourglass_top</span>
             </div>
             <h1 className="text-xl font-semibold mb-2">Processing...</h1>
             <p className="text-text-muted">Please wait while we complete the authorization.</p>
@@ -100,7 +100,7 @@ function CallbackContent() {
         {(status === "success" || status === "done") && (
           <>
             <div className="size-16 mx-auto mb-4 rounded-full bg-success/15 border border-success/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-success">check_circle</span>
+              <span className="material-symbols-outlined text-3xl text-success">task_alt</span>
             </div>
             <h1 className="text-xl font-semibold mb-2">Authorization Successful!</h1>
             <p className="text-text-muted">
@@ -112,7 +112,7 @@ function CallbackContent() {
         {status === "manual" && (
           <>
             <div className="size-16 mx-auto mb-4 rounded-full bg-warning/15 border border-warning/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-warning">info</span>
+              <span className="material-symbols-outlined text-3xl text-warning">help</span>
             </div>
             <h1 className="text-xl font-semibold mb-2">Copy This URL</h1>
             <p className="text-text-muted mb-4">
@@ -138,7 +138,7 @@ export default function CallbackPage() {
       <div className="min-h-screen flex items-center justify-center bg-bg">
         <div className="text-center p-8">
           <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-            <span className="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
+            <span className="material-symbols-outlined text-3xl text-primary animate-spin">hourglass_top</span>
           </div>
           <p className="text-text-muted">Loading...</p>
         </div>

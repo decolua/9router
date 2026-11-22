@@ -59,41 +59,41 @@ export default function ExperimentsClient() {
 
   return (
     <PageShell width="full" className="min-w-0">
-      <div className="flex flex-col gap-4 max-w-4xl">
-        <div>
-          <h1 className="text-xl font-bold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-[24px] text-amber-500">science</span>
+      <div className="flex flex-col gap-5 max-w-5xl min-w-0">
+        <header className="space-y-1">
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-text-main flex items-center gap-2">
+            <span className="material-symbols-outlined text-[22px] text-amber-500">experiment</span>
             Experiment Features
           </h1>
           <p className="text-xs text-text-muted mt-1">
             Experimental capabilities and advanced protection for 9Router.
           </p>
-        </div>
+        </header>
 
         <Card padding="md" className="flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/40 pb-4">
-            <div className="flex items-start gap-3">
+          <div className="grid grid-cols-1 gap-3 border-b border-border/40 pb-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
+            <div className="flex items-start gap-3 sm:col-start-2">
               <div className="p-2 rounded-xl bg-warning/10 text-warning shrink-0 mt-0.5">
-                <span className="material-symbols-outlined text-[22px]">visibility_off</span>
+                <span className="material-symbols-outlined text-[22px]">shield_lock</span>
               </div>
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-text-main flex items-center gap-2">
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-semibold text-text-main flex items-center gap-2 flex-wrap">
                   Hide Raw Errors
                   <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-warning/10 text-warning border border-warning/30">
                     Experimental
                   </span>
                 </span>
-                <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                <p className="text-sm text-text-muted mt-1.5 leading-relaxed">
                   Masks upstream provider errors and stack traces before sending responses to API clients.
                   When enabled, external clients receive:{" "}
-                  <code className="text-text-main font-mono text-[11px] bg-surface-2 px-1.5 py-0.5 rounded border border-border">
+                  <code className="text-text-main font-mono text-xs bg-surface-2 px-1.5 py-0.5 rounded border border-border break-words">
                     &quot;There is an error but this error is hidden, try checking your error log.&quot;
                   </code>
                   . Original diagnostics and stack traces remain safely stored in the <strong>Error &amp; Console Logs</strong> menu.
                 </p>
               </div>
             </div>
-            <div className="shrink-0 flex items-center self-end sm:self-center">
+            <div className="flex shrink-0 items-center self-start sm:col-start-1 sm:row-start-1 sm:self-center sm:pl-4">
               <Toggle
                 checked={hideError}
                 disabled={loading || saving}

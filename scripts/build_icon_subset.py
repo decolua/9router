@@ -105,7 +105,7 @@ def subset_outlines(codes, tmp):
         [
             sys.executable, "-m", "fontTools.subset", FULL_FONT,
             "--unicodes=" + unicodes, "--layout-features=", "--flavor=woff2",
-            "--output-file", out, "--no-hinting", "--desubroutinize", "--glyph-names",
+            "--output-file=" + out, "--no-hinting", "--desubroutinize", "--glyph-names",
         ],
         check=True, timeout=300,
     )

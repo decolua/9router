@@ -64,7 +64,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
               className="rounded p-1 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center justify-center"
               title="Remove custom model"
             >
-              <span className="material-symbols-outlined text-sm leading-none">close</span>
+              <span className="material-symbols-outlined text-sm leading-none">close_small</span>
             </button>
           ) : onDisable ? (
             <button
@@ -72,7 +72,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
               className="rounded p-1 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center justify-center"
               title="Disable this model"
             >
-              <span className="material-symbols-outlined text-sm leading-none">close</span>
+              <span className="material-symbols-outlined text-sm leading-none">close_small</span>
             </button>
           ) : null}
         </div>

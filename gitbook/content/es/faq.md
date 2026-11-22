@@ -172,7 +172,7 @@ Cursor Settings → Models → Advanced:
 **Alternativa:** Auto-hospéda en VPS con dominio público:
 ```bash
 # Despliega en VPS
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/serenhope/9router.git
 cd 9router/app
 npm install && npm run build
 npm start
@@ -206,7 +206,7 @@ npm install -g 9router
 
 ### VPS/Cloud
 ```bash
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/serenhope/9router.git
 cd 9router/app
 npm install && npm run build
 
@@ -316,7 +316,7 @@ docker run -d \
 ```
 
 **Cambios disruptivos:**
-- Revisa [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)
+- Revisa [CHANGELOG.md](https://github.com/serenhope/9router/blob/main/CHANGELOG.md)
 - Respalda `~/.9router` antes de actualizaciones mayores
 - Revisa las guías de migración para versiones mayores
 
@@ -329,11 +329,11 @@ docker run -d \
 ### Formas de contribuir:
 
 1. **Reportar bugs:**
-   - [GitHub Issues](https://github.com/decolua/9router/issues)
+   - [GitHub Issues](https://github.com/serenhope/9router/issues)
    - Incluye logs de error, pasos para reproducir
 
 2. **Solicitar características:**
-   - [GitHub Discussions](https://github.com/decolua/9router/discussions)
+   - [GitHub Discussions](https://github.com/serenhope/9router/discussions)
    - Describe el caso de uso y los beneficios
 
 3. **Enviar código:**
@@ -375,13 +375,13 @@ docker run -d \
 - Actualiza la documentación
 - Mantén los commits atómicos y descriptivos
 
-Consulta [CONTRIBUTING.md](https://github.com/decolua/9router/blob/main/CONTRIBUTING.md) para detalles.
+Consulta [CONTRIBUTING.md](https://github.com/serenhope/9router/blob/main/CONTRIBUTING.md) para detalles.
 
 ---
 
 ## ¿Necesitas más ayuda?
 
 - **Documentación:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **GitHub:** [github.com/serenhope/9router](https://github.com/serenhope/9router)
+- **Issues:** [github.com/serenhope/9router/issues](https://github.com/serenhope/9router/issues)
 - **Troubleshooting:** [troubleshooting.md](troubleshooting.md)

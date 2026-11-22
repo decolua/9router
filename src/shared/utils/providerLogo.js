@@ -50,8 +50,9 @@ function loadImage(src) {
 }
 
 /**
- * Turns a picked file into a square data URL no wider than `size` px: the
- * centre square is cropped, then scaled down, so any source lands at a few KB.
+ * Turns a picked file into a square data URL no wider than `size` px. The full
+ * image is scaled to fit, leaving transparent padding instead of cropping a
+ * wide or tall provider wordmark.
  * Throws a readable message instead of storing anything oversized.
  */
 export async function readLogoFile(file, size = 96) {
@@ -60,19 +61,24 @@ export async function readLogoFile(file, size = 96) {
   if (file.size > MAX_LOGO_BYTES) throw new Error("Image is larger than 5 MB, pick a smaller one");
 
   const img = await loadImage(await readAsDataUrl(file));
-  const source = Math.min(img.naturalWidth || 0, img.naturalHeight || 0);
-  if (!source) throw new Error("That image has no size, it cannot be used");
+  const sourceWidth = img.naturalWidth || 0;
+  const sourceHeight = img.naturalHeight || 0;
+  const longestSide = Math.max(sourceWidth, sourceHeight);
+  if (!longestSide) throw new Error("That image has no size, it cannot be used");
 
-  const target = Math.min(size, source);
-  const sx = Math.floor((img.naturalWidth - source) / 2);
-  const sy = Math.floor((img.naturalHeight - source) / 2);
+  const target = Math.min(size, longestSide);
+  const scale = target / longestSide;
+  const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
 
   const canvas = document.createElement("canvas");
   canvas.width = target;
   canvas.height = target;
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(img, sx, sy, source, source, 0, 0, target, target);
+  const x = Math.floor((target - drawWidth) / 2);
+  const y = Math.floor((target - drawHeight) / 2);
+  ctx.drawImage(img, 0, 0, sourceWidth, sourceHeight, x, y, drawWidth, drawHeight);
 
   let dataUrl = canvas.toDataURL("image/png");
   if (dataUrl.length > MAX_LOGO_CHARS) {

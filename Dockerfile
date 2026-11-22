@@ -47,7 +47,7 @@ COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN APP_REVISION="${APP_REVISION:-$RAILWAY_GIT_COMMIT_SHA}" npm run build
 
-# https://github.com/decolua/9router/issues/5245
+# https://github.com/serenhope/9router/issues/5245
 # wreq-js and playwright-core are lazy runtime dependencies (loaded by
 # lazyRuntime.js via createRequire). Next standalone tracing does not include
 # them, so OpenCode Free fails with HTTP 502 ("resolve is undefined").
@@ -117,7 +117,7 @@ COPY --from=builder /app/node_modules/node-machine-id ./node_modules/node-machin
 # Copy opencode binary from builder stage
 COPY --from=builder /usr/local/bin/opencode /usr/local/bin/opencode
 # wreq-js + playwright-core (and deps) are lazy-loaded at runtime and omitted by
-# tracing. See https://github.com/decolua/9router/issues/5245
+# tracing. See https://github.com/serenhope/9router/issues/5245
 COPY --from=builder /opt/lazy-runtime/node_modules/. ./node_modules/
 
 RUN mkdir -p /app/data && chown -R node:node /app && \

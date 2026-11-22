@@ -1,21 +1,21 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { updateSettings } from "@/lib/localDb";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 
-// The site-wide mode. Reading is public on purpose: ThemeProvider applies it to
-// every visitor before they sign in, and it is one non-sensitive value.
+// The site-wide visual system is locked to neobrutalism. Reading is public on
+// purpose: it is a non-sensitive preference shared across the application.
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   return NextResponse.json(
-    { theme: "glass" },
+    { theme: "neobrutalism" },
     { headers: { "Cache-Control": "no-store" } }
   );
 }
 
 // Writing is the administrator's: a key-signed session is refused here even if
-// it somehow reached this route, because the mode is a site-wide setting rather
+// it somehow reached this route, because the visual system is site-wide rather
 // than a per-browser preference.
 export async function POST(request) {
   try {
@@ -31,9 +31,9 @@ export async function POST(request) {
       );
     }
 
-    // Theme is locked strictly to glass site-wide
-    await updateSettings({ theme: "glass" });
-    return NextResponse.json({ theme: "glass", ok: true });
+    // Neobrutalism is the single locked site-wide design system.
+    await updateSettings({ theme: "neobrutalism" });
+    return NextResponse.json({ theme: "neobrutalism", ok: true });
   } catch (error) {
     console.log("Error setting theme:", error);
     return NextResponse.json({ error: "Failed to set theme" }, { status: 500 });

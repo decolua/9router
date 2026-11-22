@@ -12,10 +12,10 @@ import { Button } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 
 const STATUS_CONFIG = {
-  available: { icon: "check_circle", color: "#22c55e", label: "Available" },
-  cooldown: { icon: "schedule", color: "#f59e0b", label: "Cooldown" },
-  unavailable: { icon: "error", color: "#ef4444", label: "Unavailable" },
-  unknown: { icon: "help", color: "#6b7280", label: "Unknown" },
+  available: { icon: "task_alt", color: "#22c55e", label: "Available" },
+  cooldown: { icon: "event_upcoming", color: "#f59e0b", label: "Cooldown" },
+  unavailable: { icon: "error_outline", color: "#ef4444", label: "Unavailable" },
+  unknown: { icon: "help_outline", color: "#6b7280", label: "Unknown" },
 };
 
 export default function ModelAvailabilityBadge() {
@@ -126,7 +126,7 @@ export default function ModelAvailabilityBadge() {
               className="p-1 rounded-lg hover:bg-surface text-text-muted hover:text-text-main transition-colors"
               title="Refresh"
             >
-              <span className="material-symbols-outlined text-[14px]">refresh</span>
+              <span className="material-symbols-outlined text-[14px]">autorenew</span>
             </button>
           </div>
 

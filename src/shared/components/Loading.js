@@ -25,7 +25,7 @@ export function Spinner({ size = "md", className }) {
         className
       )}
     >
-      progress_activity
+      autorenew
     </span>
   );
 }

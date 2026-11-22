@@ -51,10 +51,10 @@ export default function PricingSettingsPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-3xl font-bold">Pricing Settings</h1>
           <p className="text-text-muted mt-1">
             Configure pricing rates for cost tracking and calculations
@@ -62,14 +62,14 @@ export default function PricingSettingsPage() {
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90 transition-colors"
+          className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90 transition-colors self-start sm:self-auto shrink-0"
         >
           Edit Pricing
         </button>
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="p-4">
           <div className="text-text-muted text-sm uppercase font-semibold">
             Total Models
@@ -97,9 +97,9 @@ export default function PricingSettingsPage() {
       </div>
 
       {/* Info Section */}
-      <Card className="p-6">
+      <Card className="p-5 sm:p-6">
         <h2 className="text-xl font-semibold mb-4">How Pricing Works</h2>
-        <div className="space-y-3 text-sm text-text-muted">
+        <div className="space-y-3 text-sm text-text-muted leading-relaxed">
           <p>
             <strong>Cost Calculation:</strong> Each request&apos;s cost comes from token usage and rates: (input_tokens × input_rate) + (output_tokens × output_rate) + (cached_tokens × cached_rate)
           </p>
@@ -123,12 +123,12 @@ export default function PricingSettingsPage() {
       </Card>
 
       {/* Current Pricing Preview */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
+      <Card className="p-5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <h2 className="text-xl font-semibold">Current Pricing Overview</h2>
           <button
             onClick={() => setShowModal(true)}
-            className="text-primary hover:underline text-sm"
+            className="text-primary hover:underline text-sm self-start sm:self-auto shrink-0"
           >
             View Full Details
           </button>
@@ -168,4 +168,3 @@ export default function PricingSettingsPage() {
     </div>
   );
 }
-

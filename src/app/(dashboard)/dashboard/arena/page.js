@@ -313,48 +313,57 @@ function ArenaContent() {
   const ranked = useMemo(() => buildRanking(slots, results), [slots, results]);
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      <div className="flex flex-col gap-2">
+      <div className="grid min-w-0 grid-cols-1 items-start gap-6 px-1 sm:px-0 lg:grid-cols-[minmax(260px,0.75fr)_minmax(0,1.6fr)]">
+      <div className="flex flex-col gap-2 lg:col-span-2">
         <h1 className="text-xl font-bold leading-none flex items-center gap-2">
-          <span className="material-symbols-outlined size-[22px] text-[22px] leading-none shrink-0 text-primary">swords</span>
+          <span className="material-symbols-outlined size-[22px] text-[22px] leading-none shrink-0 text-primary">compare_arrows</span>
           Compare Models
         </h1>
         <p className="text-sm text-text-muted">
-          Send the same prompt to up to {MAX_MODELS} models and compare speed, cost and output.
+          Send the same prompt to up to {MAX_MODELS} models and compare response time, token use, estimated cost, and output.
         </p>
         <p className="text-[11px] text-text-muted">
-          Each answer streams live, so the time to first token shows a slow model still working.
+          Responses stream as they arrive; first-token time is measured separately from total response time.
         </p>
       </div>
 
-      <Card padding="md" className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3">
+      <Card padding="md" className={`flex flex-col gap-4 lg:row-start-2 ${done.length > 0 || busy ? "lg:col-start-1" : "lg:col-span-2"}`}>
+        <div className={`grid grid-cols-1 gap-3 ${done.length > 0 || busy ? "sm:grid-cols-2 lg:grid-cols-1" : "sm:grid-cols-2"}`}>
           {slots.map((model, index) => (
-            <div key={index} className="flex items-end gap-2">
-              <div className="min-w-0 flex-1">
-                <label className="block text-xs font-medium text-text-muted mb-1">
-                  Contender {index + 1}
+            <div key={index} className="min-w-0 rounded-xl border border-border-subtle bg-surface-2/35 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <label htmlFor={`model-slot-${index}`} className="text-xs font-semibold text-text-muted">
+                  Model {index + 1}
                 </label>
-                <div className="flex gap-2">
-                  <Input
-                    value={model}
-                    onChange={(e) => setSlot(index, e.target.value)}
-                    placeholder="e.g. cc/claude-sonnet-4.5 - or pick one"
-                    className="flex-1 font-mono text-sm"
+                {slots.length > MIN_MODELS && !busy && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="remove"
+                    onClick={() => removeSlot(index)}
+                    className="shrink-0"
+                    aria-label={`Remove model ${index + 1}`}
+                    title={`Remove model ${index + 1}`}
                   />
-                  <Button variant="secondary" icon="search" onClick={() => setShowPicker(index)} />
-                </div>
+                )}
               </div>
-              {slots.length > MIN_MODELS && !busy && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon="close"
-                  onClick={() => removeSlot(index)}
-                  className="mb-1 shrink-0"
-                  title={`Remove contender ${index + 1}`}
+              <div className="flex min-w-0 gap-2">
+                <Input
+                  id={`model-slot-${index}`}
+                  value={model}
+                  onChange={(e) => setSlot(index, e.target.value)}
+                  placeholder="e.g. cc/claude-sonnet-4.5 or choose a connected model"
+                  className="min-w-0 flex-1 font-mono text-sm"
                 />
-              )}
+                <Button
+                  variant="secondary"
+                  icon="search"
+                  onClick={() => setShowPicker(index)}
+                  className="shrink-0"
+                  aria-label={`Choose model ${index + 1}`}
+                  title={`Choose model ${index + 1}`}
+                />
+              </div>
             </div>
           ))}
         </div>
@@ -364,16 +373,16 @@ function ArenaContent() {
             onClick={addSlot}
             className="self-start flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-primary hover:bg-primary/5 transition-colors"
           >
-            <span className="material-symbols-outlined text-[16px]">add</span>
-            Add contender
+            <span className="material-symbols-outlined text-[16px]">add_circle</span>
+            Add model
           </button>
         )}
 
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium">Prompt</label>
+          <label className="text-sm font-medium">Shared prompt</label>
           <textarea
             className="w-full min-h-[120px] p-3 rounded-lg border border-border bg-surface-2 text-sm focus:outline-none focus:border-primary/50 transition-colors"
-            placeholder="Write a python script to parse CSV..."
+            placeholder="Enter the same prompt that each model should answer."
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
@@ -381,22 +390,24 @@ function ArenaContent() {
 
         <div className="flex justify-end">
           <Button
-            icon={busy ? "stop_circle" : "play_arrow"}
+            icon={busy ? "stop" : "play_arrow"}
             onClick={busy ? stopBattle : runBattle}
             disabled={busy ? false : !prompt.trim() || !slots.some((s) => s.trim())}
             variant={busy ? "secondary" : "primary"}
           >
-            {busy ? "Stop" : "Run Battle"}
+            {busy ? "Stop" : "Run comparison"}
           </Button>
         </div>
       </Card>
 
       {ranked.length > 1 && (
-        <FinalResult ranked={ranked} pick={pick} setPick={setPick} runId={runId} />
+        <div className="min-w-0 lg:col-start-2 lg:row-start-2">
+          <FinalResult ranked={ranked} pick={pick} setPick={setPick} runId={runId} />
+        </div>
       )}
 
       {(done.length > 0 || busy) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:col-start-2">
           {slots.map((model, index) => {
             const result = results[index]?.data;
             const loading = results[index]?.loading;
@@ -438,7 +449,7 @@ function ArenaContent() {
                     </pre>
                   ) : loading ? (
                     <div className="flex flex-col items-center justify-center h-40 gap-3 text-text-muted">
-                      <span className="material-symbols-outlined text-3xl animate-spin">progress_activity</span>
+                      <span className="material-symbols-outlined text-3xl animate-spin">autorenew</span>
                       <span className="text-sm">Waiting for the first token...</span>
                     </div>
                   ) : result ? (
@@ -481,13 +492,13 @@ function ArenaContent() {
                         <div className="flex flex-col gap-1.5 min-w-0">
                           <p className="text-sm text-amber-500 break-words min-w-0">{result.hint}</p>
                           {!result.stopped && (
-                            <p className="text-[11px] text-text-muted">The provider answered with HTTP 200 and nothing inside.</p>
+                            <p className="text-[11px] text-text-muted">The provider returned HTTP 200 with no response content.</p>
                           )}
                         </div>
                       ) : result.kind === "thinking" ? (
                         <div className="flex flex-col gap-1.5 min-w-0 h-full">
                           {!result.stopped && (
-                            <p className="text-[11px] text-text-muted">Only reasoning came back, with no final answer.</p>
+                            <p className="text-[11px] text-text-muted">The model returned reasoning but no final answer.</p>
                           )}
                           <pre className="text-sm font-mono whitespace-pre-wrap flex-1 break-words min-w-0">
                             {result.thinking}
@@ -512,16 +523,16 @@ function ArenaContent() {
                       )}
                       {result.ok && (
                         <div className="mt-4 pt-3 border-t border-border/50 text-xs text-text-muted flex flex-wrap gap-x-4 gap-y-1">
-                          {result.ttftMs != null && <span>first token in {result.ttftMs}ms</span>}
-                          {result.ms != null && <span>total {result.ms}ms</span>}
+                          {result.ttftMs != null && <span>First token: {result.ttftMs} ms</span>}
+                          {result.ms != null && <span>Total time: {result.ms} ms</span>}
                           {result.usage && (
                             <>
-                              <span>in {result.usage?.prompt_tokens ?? 0}</span>
-                              <span>out {result.usage?.completion_tokens ?? 0}</span>
-                              <span>total {result.usage?.total_tokens ?? 0}</span>
+                              <span>Input tokens: {result.usage?.prompt_tokens ?? 0}</span>
+                              <span>Output tokens: {result.usage?.completion_tokens ?? 0}</span>
+                              <span>Total tokens: {result.usage?.total_tokens ?? 0}</span>
                             </>
                           )}
-                          {result.cost != null && <span>~{showCost(result.cost)}</span>}
+                          {result.cost != null && <span>Estimated cost: ~{showCost(result.cost)}</span>}
                         </div>
                       )}
                       {result.stopped && result.kind !== "empty" && (
@@ -530,7 +541,7 @@ function ArenaContent() {
                     </div>
                   ) : (
                     <div className="flex items-center justify-center h-40 text-text-muted text-sm">
-                      No result
+                      No response yet.
                     </div>
                   )}
                 </div>
@@ -550,7 +561,7 @@ function ArenaContent() {
           }}
           activeProviders={activeProviders}
           modelAliases={modelAliases}
-          title={`Pick contender ${showPicker + 1}`}
+          title={`Choose model ${showPicker + 1}`}
         />
       )}
     </div>
@@ -598,7 +609,7 @@ const METRIC_DEFS = [
  {
   key: "ms",
   label: "Fastest",
-  icon: "speed",
+  icon: "electric_bolt",
   color: "#f59e0b",
   lowerIsBetter: true,
   value: (r) => (r.ms == null ? null : r.ms),
@@ -608,7 +619,7 @@ const METRIC_DEFS = [
  {
   key: "ttft",
   label: "First token",
-  icon: "bolt",
+  icon: "timer",
   color: "#38bdf8",
   lowerIsBetter: true,
   value: (r) => (r.ttftMs == null ? null : r.ttftMs),
@@ -618,27 +629,27 @@ const METRIC_DEFS = [
  {
   key: "cost",
   label: "Cheapest",
-  icon: "payments",
+  icon: "attach_money",
   color: "#22c55e",
   lowerIsBetter: true,
   value: (r) => (r.cost == null ? null : r.cost),
   format: (v) => showCost(v),
   hint: "price of this answer",
  },
- {
+  {
   key: "tokens",
-  label: "Leanest",
-  icon: "data_usage",
+  label: "Fewest tokens",
+  icon: "token",
   color: "#a855f7",
   lowerIsBetter: true,
   value: (r) => (r.totalTokens ? r.totalTokens : null),
   format: (v) => String(v),
   hint: "tokens billed",
  },
- {
+  {
   key: "chars",
-  label: "Longest",
-  icon: "article",
+  label: "Longest answer",
+  icon: "description",
   color: "#f43f5e",
   lowerIsBetter: false,
   value: (r) => (r.chars ? r.chars : null),
@@ -701,23 +712,23 @@ function FinalResult({ ranked, pick, setPick, runId }) {
     <Card padding="md" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="material-symbols-outlined text-amber-500 text-[20px]">trophy</span>
+          <span className="material-symbols-outlined text-amber-500 text-[20px]">emoji_events</span>
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-text-main">Final Result</h3>
+            <h3 className="text-sm font-semibold text-text-main">Comparison results</h3>
             <p className="text-[11px] text-text-muted">
               {manual ? (
-                <>Your pick: <code className="font-mono">{manual.model}</code></>
+                <>Your choice: <code className="font-mono">{manual.model}</code></>
               ) : leader?.stopped ? (
                 "Every run was stopped before it finished."
               ) : leader?.answered ? (
-                <><code className="font-mono">{leader.model}</code> answered fastest - tap “My pick” below for quality.</>
+                <>Fastest response: <code className="font-mono">{leader.model}</code>. Choose your preferred answer below.</>
               ) : (
-                "No contender answered successfully."
+                "No model returned a successful response."
               )}
             </p>
           </div>
         </div>
-        <span className="text-[10px] text-text-muted">run #{runId}</span>
+        <span className="text-[10px] text-text-muted">Run #{runId}</span>
       </div>
 
       {answered.length > 1 && (
@@ -729,7 +740,7 @@ function FinalResult({ ranked, pick, setPick, runId }) {
                 key={def.key}
                 type="button"
                 onClick={() => setPick(winner.index)}
-                title={`${def.hint} - tap to make it your pick`}
+                title={`${def.hint} — select this model as your preferred answer`}
                 className={`flex flex-col gap-1.5 p-3 rounded-xl border text-left transition-colors ${
                   pick === winner.index
                     ? "border-primary/50 bg-primary/5"
@@ -760,11 +771,9 @@ function FinalResult({ ranked, pick, setPick, runId }) {
       )}
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-muted">
-        <span className="material-symbols-outlined text-[12px] leading-none">info</span>
+        <span className="material-symbols-outlined text-[12px] leading-none">help</span>
         <span>
-          Ranked automatically on speed and spend only - bars compare the same
-          metric across contenders. Answer quality is yours to judge, so use
-          “My pick”.
+          Automatic ranking uses response time and estimated cost. Bars compare each metric across models; choose the answer you prefer.
         </span>
       </div>
 
@@ -773,11 +782,11 @@ function FinalResult({ ranked, pick, setPick, runId }) {
           <thead>
             <tr className="text-text-muted border-b border-border">
               <th className="text-left py-2 pr-3 font-medium">Model</th>
-              <th className="text-right py-2 px-3 font-medium">Time</th>
-              <th className="text-right py-2 px-3 font-medium">First token</th>
+              <th className="text-right py-2 px-3 font-medium">Total time</th>
+              <th className="text-right py-2 px-3 font-medium">First-token time</th>
               <th className="text-right py-2 px-3 font-medium">Tokens</th>
               <th className="text-right py-2 px-3 font-medium">Cost</th>
-              <th className="text-right py-2 pl-3 font-medium">My pick</th>
+              <th className="text-right py-2 pl-3 font-medium">Your choice</th>
             </tr>
           </thead>
           <tbody>
@@ -793,14 +802,14 @@ function FinalResult({ ranked, pick, setPick, runId }) {
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-text-muted tabular-nums w-4 shrink-0">{position + 1}</span>
                       <code className="font-mono text-text-main truncate max-w-[220px]">{entry.model}</code>
-                      {isWinner && <Badge icon="trophy" text="fastest" />}
-                      {winners.firstToken?.index === entry.index && <Badge icon="bolt" text="first token" />}
-                      {winners.cheapest?.index === entry.index && <Badge icon="payments" text="cheapest" />}
+                      {isWinner && <Badge icon="emoji_events" text="fastest" />}
+                      {winners.firstToken?.index === entry.index && <Badge icon="timer" text="first token" />}
+                      {winners.cheapest?.index === entry.index && <Badge icon="attach_money" text="cheapest" />}
                       {winners.richest?.index === entry.index && winners.richest?.index !== winners.leanest?.index && (
-                        <Badge icon="article" text="longest" />
+                        <Badge icon="description" text="longest answer" />
                       )}
-                      {entry.stopped && <Badge icon="stop_circle" text="stopped" />}
-                      {isPicked && <Badge icon="check" text="your pick" accent />}
+                      {entry.stopped && <Badge icon="stop" text="stopped" />}
+                      {isPicked && <Badge icon="task_alt" text="your choice" accent />}
                     </div>
                     {!entry.answered && !entry.stopped && (
                   <span className={`text-[11px] ${entry.ok ? "text-amber-500" : "text-red-500"}`}>
@@ -833,7 +842,7 @@ function FinalResult({ ranked, pick, setPick, runId }) {
                           : "border-border text-text-muted hover:text-primary hover:border-primary/50"
                       }`}
                     >
-                      {isPicked ? "picked" : "pick"}
+                      {isPicked ? "Selected" : "Choose"}
                     </button>
                   </td>
                 </tr>
@@ -864,7 +873,7 @@ function MetricCell({ entry, metric, format }) {
         {format(v)}
         {isWinner ? (
           <span className="material-symbols-outlined align-middle ml-0.5 text-[11px] leading-none">
-            star
+            grade
           </span>
         ) : null}
       </span>

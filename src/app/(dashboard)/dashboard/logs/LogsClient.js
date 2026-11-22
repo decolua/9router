@@ -273,12 +273,12 @@ export default function LogsClient({ initialTab = "errors" }) {
 
   return (
     <PageShell width="full" className="min-w-0">
-      <div className="flex flex-col gap-4 max-w-5xl">
+      <div className="flex flex-col gap-5 max-w-6xl">
         {/* Main Header & Dual Tab Switcher */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-subtle pb-4">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 rounded-2xl border border-border-subtle px-4 py-4 sm:px-5">
           <div>
             <h1 className="text-xl font-bold text-text-main flex items-center gap-2">
-              <span className="material-symbols-outlined text-[22px] text-primary">receipt_long</span>
+              <span className="material-symbols-outlined text-[22px] text-primary">summarize</span>
               Error &amp; Console Logs
             </h1>
             <p className="text-xs text-text-muted mt-0.5">
@@ -288,8 +288,8 @@ export default function LogsClient({ initialTab = "errors" }) {
 
           <SegmentedControl
             options={[
-              { value: "errors", label: `Error Records (${errorLogs.length})`, icon: "bug_report" },
-              { value: "console", label: `Live Console (${consoleLogs.length})`, icon: "terminal" },
+              { value: "errors", label: `Error Records (${errorLogs.length})`, icon: "medical_information" },
+              { value: "console", label: `Live Console (${consoleLogs.length})`, icon: "developer_board" },
             ]}
             value={activeTab}
             onChange={setActiveTab}
@@ -299,9 +299,9 @@ export default function LogsClient({ initialTab = "errors" }) {
 
         {/* TAB 1: ERROR RECORDS */}
         {activeTab === "errors" && (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] lg:items-start">
             {/* Quick Metrics */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:col-start-1 lg:row-span-2 lg:grid-cols-1">
               <Card padding="xs" className="flex flex-col">
                 <span className="text-[11px] text-text-muted uppercase font-medium tracking-wide">Total Errors</span>
                 <span className="text-xl font-bold text-text-main font-mono mt-0.5">{errorMetrics.total}</span>
@@ -321,10 +321,10 @@ export default function LogsClient({ initialTab = "errors" }) {
             </div>
 
             {/* Standard 9Router Search & Filter Row */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 lg:col-start-2 lg:row-start-1">
               <div className="relative flex-1 sm:max-w-sm">
                 <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-text-muted">
-                  search
+                  find_in_page
                 </span>
                 <input
                   type="text"
@@ -339,7 +339,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                     onClick={() => setErrorSearch("")}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5"
                   >
-                    <span className="material-symbols-outlined text-[15px]">close</span>
+                    <span className="material-symbols-outlined text-[15px]">cancel</span>
                   </button>
                 )}
               </div>
@@ -362,7 +362,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      icon={errorCopiedId === "all-errors" ? "check" : "content_copy"}
+                      icon={errorCopiedId === "all-errors" ? "task_alt" : "file_copy"}
                       onClick={handleCopyAllErrors}
                     >
                       {errorCopiedId === "all-errors" ? "Copied" : "Copy"}
@@ -370,19 +370,19 @@ export default function LogsClient({ initialTab = "errors" }) {
                     <Button
                       size="sm"
                       variant="danger"
-                      icon="delete"
+                      icon="delete_sweep"
                       onClick={handleClearErrors}
                     >
                       Clear
                     </Button>
                   </>
                 )}
-                <Button size="sm" variant="ghost" icon="refresh" onClick={fetchErrorLogs} title="Refresh" />
+                <Button size="sm" variant="ghost" icon="sync" onClick={fetchErrorLogs} title="Refresh" />
               </div>
             </div>
 
             {/* Error List */}
-            <Card padding="none" className="divide-y divide-border-subtle max-h-[calc(100dvh-320px)] overflow-y-auto">
+            <Card padding="none" className="divide-y divide-border-subtle max-h-[calc(100dvh-320px)] overflow-y-auto lg:col-start-2 lg:row-start-2">
               {errorsLoading ? (
                 <div className="py-16 text-center text-xs text-text-muted">Loading recorded errors...</div>
               ) : filteredErrorLogs.length === 0 ? (
@@ -431,7 +431,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                             title="Copy error"
                           >
                             <span className="material-symbols-outlined text-[16px]">
-                              {errorCopiedId === log.id ? "check" : "content_copy"}
+                              {errorCopiedId === log.id ? "task_alt" : "file_copy"}
                             </span>
                           </button>
 
@@ -443,7 +443,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                               title={isExpanded ? "Hide stack" : "View stack"}
                             >
                               <span className="material-symbols-outlined text-[16px]">
-                                {isExpanded ? "expand_less" : "expand_more"}
+                                {isExpanded ? "keyboard_arrow_up" : "keyboard_arrow_down"}
                               </span>
                             </button>
                           )}
@@ -468,9 +468,9 @@ export default function LogsClient({ initialTab = "errors" }) {
 
         {/* TAB 2: LIVE CONSOLE STREAM (DESIGN IDENTICAL TO ERROR RECORDS) */}
         {activeTab === "console" && (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] lg:items-start">
             {/* Quick Metrics Bar (Identical layout to Error Records) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:col-start-1 lg:row-span-2 lg:grid-cols-1">
               <Card padding="xs" className="flex flex-col">
                 <span className="text-[11px] text-text-muted uppercase font-medium tracking-wide">Total Lines</span>
                 <span className="text-xl font-bold text-text-main font-mono mt-0.5">{consoleMetrics.total}</span>
@@ -495,10 +495,10 @@ export default function LogsClient({ initialTab = "errors" }) {
             </div>
 
             {/* Standard Search & Filter Row (Identical layout to Error Records) */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 lg:col-start-2 lg:row-start-1">
               <div className="relative flex-1 sm:max-w-sm">
                 <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-text-muted">
-                  search
+                  find_in_page
                 </span>
                 <input
                   type="text"
@@ -513,7 +513,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                     onClick={() => setConsoleFilter("")}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5"
                   >
-                    <span className="material-symbols-outlined text-[15px]">close</span>
+                    <span className="material-symbols-outlined text-[15px]">cancel</span>
                   </button>
                 )}
               </div>
@@ -523,7 +523,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                   size="sm"
                   options={[
                     { value: "all", label: `All (${consoleLogs.length})` },
-                    { value: "error", label: `Err (${consoleMetrics.errors})` },
+                    { value: "report_problem", label: `Err (${consoleMetrics.errors})` },
                     { value: "warn", label: `Warn (${consoleMetrics.warns})` },
                     { value: "info", label: `Info (${consoleMetrics.info})` },
                   ]}
@@ -535,7 +535,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                   size="sm"
                   variant={autoScroll ? "primary" : "outline"}
                   onClick={() => setAutoScroll(!autoScroll)}
-                  icon={autoScroll ? "vertical_align_bottom" : "pause"}
+                  icon={autoScroll ? "south" : "pause_circle"}
                 >
                   {autoScroll ? "Auto-scroll" : "Paused"}
                 </Button>
@@ -545,7 +545,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      icon={consoleCopiedId === "all-console" ? "check" : "content_copy"}
+                      icon={consoleCopiedId === "all-console" ? "task_alt" : "file_copy"}
                       onClick={handleCopyAllConsole}
                     >
                       {consoleCopiedId === "all-console" ? "Copied" : "Copy"}
@@ -553,7 +553,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                     <Button
                       size="sm"
                       variant="danger"
-                      icon="delete"
+                      icon="delete_sweep"
                       onClick={handleClearConsole}
                     >
                       Clear
@@ -564,7 +564,7 @@ export default function LogsClient({ initialTab = "errors" }) {
             </div>
 
             {/* Console Log List (Identical Card style to Error Records) */}
-            <Card padding="none" className="divide-y divide-border-subtle max-h-[calc(100dvh-320px)] overflow-y-auto">
+            <Card padding="none" className="divide-y divide-border-subtle max-h-[calc(100dvh-320px)] overflow-y-auto lg:col-start-2 lg:row-start-2">
               <div ref={consoleRef}>
                 {filteredConsoleItems.length === 0 ? (
                   <div className="py-16 text-center text-xs text-text-muted">
@@ -598,7 +598,7 @@ export default function LogsClient({ initialTab = "errors" }) {
                             title="Copy line"
                           >
                             <span className="material-symbols-outlined text-[16px]">
-                              {consoleCopiedId === `line-${item.index}` ? "check" : "content_copy"}
+                              {consoleCopiedId === `line-${item.index}` ? "task_alt" : "file_copy"}
                             </span>
                           </button>
                         </div>

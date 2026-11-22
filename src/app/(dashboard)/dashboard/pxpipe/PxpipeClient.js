@@ -102,10 +102,10 @@ export default function PxpipeClient() {
           : "Stopped";
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 px-3 py-4 sm:px-5 sm:py-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">image</span>
+          <span className="material-symbols-outlined text-primary">polyline</span>
           PXPIPE Dashboard
         </h2>
         <div className="flex items-center gap-2">

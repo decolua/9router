@@ -751,7 +751,7 @@ export default function BasicChatPageClient() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-text-main">{modelLabel}</span>
-                  <span className="material-symbols-outlined text-[18px] text-text-muted">expand_more</span>
+                  <span className="material-symbols-outlined text-[18px] text-text-muted">keyboard_arrow_down</span>
                 </div>
                 <p className="truncate text-xs text-text-muted">{modelSubLabel}</p>
               </div>
@@ -785,7 +785,7 @@ export default function BasicChatPageClient() {
                                   <p className="truncate text-sm font-medium text-text-main">{model.name}</p>
                                   <p className="truncate text-[11px] text-text-muted">{model.requestModel}</p>
                                 </div>
-                                {isActive ? <span className="material-symbols-outlined text-[18px] text-blue-300">check_circle</span> : null}
+                                {isActive ? <span className="material-symbols-outlined text-[18px] text-blue-300">task_alt</span> : null}
                               </div>
                             </button>
                           );
@@ -806,7 +806,7 @@ export default function BasicChatPageClient() {
             >
               History
             </button>
-            <Button variant="ghost" size="sm" icon="delete" onClick={handleDeleteCurrentChat} disabled={!activeSessionId || sessions.length === 0}>
+            <Button variant="ghost" size="sm" icon="delete_sweep" onClick={handleDeleteCurrentChat} disabled={!activeSessionId || sessions.length === 0}>
               Clear
             </Button>
           </div>
@@ -849,7 +849,7 @@ export default function BasicChatPageClient() {
         {loadError ? (
           <div className="mt-4 rounded-[18px] border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-rose-100">
             <div className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-[20px]">error</span>
+              <span className="material-symbols-outlined text-[20px]">report_problem</span>
               <p className="text-sm leading-6">{loadError}</p>
             </div>
           </div>
@@ -861,7 +861,7 @@ export default function BasicChatPageClient() {
               <div className="flex min-h-[50vh] items-center justify-center px-4 text-center">
                 <div className="max-w-xl space-y-4">
                   <div className="mx-auto flex size-16 items-center justify-center rounded-[20px] border border-border bg-surface-2 text-primary">
-                    <span className="material-symbols-outlined text-[30px]">chat</span>
+                    <span className="material-symbols-outlined text-[30px]">forum</span>
                   </div>
                   <div className="space-y-2">
                     <h2 className="text-2xl font-semibold text-text-main">Start a conversation</h2>
@@ -915,7 +915,7 @@ export default function BasicChatPageClient() {
                   <div key={attachment.id} className="flex items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-2">
                     <span className="text-xs text-white/80 max-w-[12rem] truncate">{attachment.name}</span>
                     <button type="button" onClick={() => removeAttachment(attachment.id)} className="text-white/55 hover:text-white" aria-label="Remove attachment">
-                      <span className="material-symbols-outlined text-[18px]">close</span>
+                      <span className="material-symbols-outlined text-[18px]">cancel</span>
                     </button>
                   </div>
                 ))}
@@ -936,7 +936,7 @@ export default function BasicChatPageClient() {
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => fileInputRef.current?.click()} disabled={!activeModel || loadingData} className="p-2 text-white/50 hover:text-white transition rounded-full hover:bg-surface-2">
-                      <span className="material-symbols-outlined text-[20px]">attach_file</span>
+                      <span className="material-symbols-outlined text-[20px]">add_link</span>
                     </button>
                     <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleAttachFiles} />
                     <span className="text-xs font-medium text-text-muted truncate max-w-[120px]">{activeModel ? activeModel.name : "No model"}</span>
@@ -945,11 +945,11 @@ export default function BasicChatPageClient() {
                   <div className="flex items-center gap-2">
                     {isSending ? (
                       <button type="button" onClick={handleStop} className="p-2 text-white bg-surface-2 hover:bg-surface-3 transition rounded-full h-8 w-8 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-[16px]">stop</span>
+                        <span className="material-symbols-outlined text-[16px]">pause</span>
                       </button>
                     ) : null}
                     <button onClick={sendMessage} disabled={!canSend} className={`h-8 w-8 rounded-full flex items-center justify-center transition ${canSend ? 'bg-primary text-white hover:opacity-90' : 'bg-surface-2 text-white/30 cursor-not-allowed'}`}>
-                      <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
+                      <span className="material-symbols-outlined text-[16px]">north</span>
                     </button>
                   </div>
                 </div>

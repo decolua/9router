@@ -62,12 +62,28 @@ describe("changelog: every category is recognised and drawn", () => {
       .filter((h) => {
         const name = canonicalCategory(h);
         return !CATEGORY_STYLE[name];
-      });
+    });
     expect(missing).toEqual([]);
   });
 
+  it("all rendered categories and the unknown fallback use WHAT'S wording", () => {
+    for (const key of Object.keys(CATEGORY_STYLE)) {
+      expect(styleFor(key).question).toMatch(/^WHAT'S /);
+    }
+    expect(styleFor("Unmapped heading").question).toMatch(/^WHAT'S /);
+  });
+
+  it("does not retain raw category headings that begin with WHAT but omit the apostrophe", () => {
+    const oldWhatStyle = h2.filter((heading) => /^What(?:\s|$)/i.test(heading));
+    expect(oldWhatStyle).toEqual([]);
+  });
+
+  it("uses WHAT'S ADDED for the UI category", () => {
+    expect(styleFor("UI").question).toBe("WHAT'S ADDED?");
+  });
+
   it("the reader-facing headings the fork writes map to a coloured category", () => {
-    for (const h of ["What's New", "What Changed", "What Was Fixed", "What Was Removed", "What Was Undone"]) {
+    for (const h of ["What's New", "What's Changed", "What's Fixed", "What's Removed", "What's Undone"]) {
       const st = styleFor(h);
       expect(st.icon).not.toBe(FALLBACK_ICON);
       expect(st.color).not.toBe("#94a3b8");

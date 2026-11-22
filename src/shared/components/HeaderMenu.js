@@ -77,30 +77,30 @@ export default function HeaderMenu({ onLogout }) {
           className="flex items-center justify-center p-2 rounded-[10px] text-text-muted hover:text-text-main hover:bg-surface-2 transition-all"
           title="Menu"
         >
-          <span className="material-symbols-outlined">grid_view</span>
+          <span className="material-symbols-outlined">apps</span>
         </button>
 
         {isOpen && (
           <div className="absolute right-0 top-full mt-2 w-60 bg-surface border border-border-subtle rounded-xl shadow-[var(--shadow-elev)] z-50 slide-in-top overflow-hidden py-1">
             <MenuItem
-              icon="history"
+              icon="history_toggle_off"
               label="Change Log"
               onClick={() => { close(); setChangelogOpen(true); }}
             />
+            <MenuItem
+              icon="move_item"
+              label="Logout"
+              danger
+              onClick={() => { close(); onLogout(); }}
+            />
             {canShutdown && (
               <MenuItem
-                icon="power_settings_new"
+                icon="power_off"
                 label="Shutdown"
                 danger
                 onClick={() => { close(); setShutdownOpen(true); }}
               />
             )}
-            <MenuItem
-              icon="logout"
-              label="Logout"
-              danger
-              onClick={() => { close(); onLogout(); }}
-            />
           </div>
         )}
       </div>

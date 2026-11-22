@@ -192,14 +192,14 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             disabled={isFirst}
             className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
+            <span className="material-symbols-outlined text-sm">keyboard_double_arrow_up</span>
           </button>
           <button
             onClick={onMoveDown}
             disabled={isLast}
             className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+            <span className="material-symbols-outlined text-sm">keyboard_double_arrow_down</span>
           </button>
         </div>
         <span className="material-symbols-outlined shrink-0 text-base text-text-muted">
@@ -305,17 +305,17 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 onClick={autoPing.onConfigure}
                 className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-surface-2 ${autoPing.isActive ? "text-primary" : "text-text-muted hover:text-primary"}`}
               >
-                <span className="material-symbols-outlined text-[18px]">bolt</span>
+                <span className="material-symbols-outlined text-[18px]">electric_bolt</span>
                 <span className="text-[10px] leading-tight">Auto-ping</span>
               </button>
             </Tooltip>
           )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-primary">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
+            <span className="material-symbols-outlined text-[18px]">edit_square</span>
             <span className="text-[10px] leading-tight">Edit</span>
           </button>
           <button onClick={onDelete} className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
+            <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
             <span className="text-[10px] leading-tight">Delete</span>
           </button>
         </div>

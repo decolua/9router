@@ -10,9 +10,9 @@ import { useTaskStore } from "@/store/taskStore";
 const POLL_MS = 60000;
 
 const SEVERITY_STYLE = {
-  error: { dot: "bg-red-500", text: "text-red-500", icon: "error" },
-  warning: { dot: "bg-amber-500", text: "text-amber-500", icon: "warning" },
-  info: { dot: "bg-primary", text: "text-primary", icon: "info" },
+  error: { dot: "bg-red-500", text: "text-red-500", icon: "report" },
+  warning: { dot: "bg-amber-500", text: "text-amber-500", icon: "warning_amber" },
+  info: { dot: "bg-primary", text: "text-primary", icon: "announcement" },
 };
 
 /**
@@ -219,14 +219,14 @@ export default function NotificationBell() {
             return !v;
           })
         }
-        className="relative flex items-center justify-center size-8 rounded-[10px] text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors"
+        className="relative flex size-10 shrink-0 items-center justify-center rounded-[10px] text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors"
         title="Notifications"
         aria-label={`Notifications${unread ? `, ${unread} unread` : ""}${
           running ? `, ${running} running` : ""
         }`}
         aria-expanded={open}
       >
-        <span className="material-symbols-outlined text-[20px]">notifications</span>
+        <span className="material-symbols-outlined text-[20px]">notifications_active</span>
         {running > 0 && (
           // Sits clear of the badge's circle (outside it by ~1.5px) rather than
           // under it, so the count is never half-covered.
@@ -330,7 +330,7 @@ export default function NotificationBell() {
                       aria-label={`Mark ${n.title} as read`}
                       className="flex size-6 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-2 hover:text-text-main"
                     >
-                      <span className="material-symbols-outlined text-[15px]">check</span>
+                      <span className="material-symbols-outlined text-[15px]">done_all</span>
                     </button>
                   )}
                   <button
@@ -340,7 +340,7 @@ export default function NotificationBell() {
                     aria-label={`Remove ${n.title}`}
                     className="flex size-6 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-2 hover:text-text-main"
                   >
-                    <span className="material-symbols-outlined text-[15px]">delete</span>
+                    <span className="material-symbols-outlined text-[15px]">delete_forever</span>
                   </button>
                 </div>
               </div>

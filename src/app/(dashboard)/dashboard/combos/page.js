@@ -18,9 +18,9 @@ const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 // A request needing a capability the target model/combo lacks switches straight
 // to the first enabled model here instead of erroring or dropping the data.
 const CAPACITY_ADAPTER_CAPS = [
-  { key: "vision", label: "Vision", icon: "visibility", desc: "images (png, jpg, webp, …)" },
+  { key: "vision", label: "Vision", icon: "image", desc: "images (png, jpg, webp, …)" },
   // pdf, videoInput temporarily hidden - no translator support yet for those blocks.
-  { key: "audioInput", label: "Audio", icon: "graphic_eq", desc: "audio input" },
+  { key: "audioInput", label: "Audio", icon: "equalizer", desc: "audio input" },
 ];
 const DEFAULT_FALLBACK_MODEL = "oc/mimo-v2.6-flash-free";
 const EMPTY_CAP_ENTRY = { enabled: true, roundRobin: false, models: [] };
@@ -372,11 +372,13 @@ export default function CombosPage() {
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-5 px-1 sm:px-0 lg:grid lg:grid-cols-[minmax(17rem,0.85fr)_minmax(0,2fr)] lg:items-start">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm text-text-muted mt-1">
+      <div className="contents">
+        <div className="min-w-0 border-2 border-black bg-surface p-4 shadow-[5px_5px_0_0_rgba(0,0,0,0.9)] sm:p-5 lg:col-start-1 lg:row-start-1">
+          <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">COMBO ROUTING / 01</p>
+          <h1 className="text-2xl font-black tracking-tight text-text-main">Model Combos</h1>
+          <p className="mt-2 text-sm leading-relaxed text-text-muted">
             Group models under one name, then pick a strategy per combo:
           </p>
           <ul className="text-sm text-text-muted mt-2 flex flex-col gap-1">
@@ -389,10 +391,10 @@ export default function CombosPage() {
             {" "}Note: Cursor IDE itself often blocks built-in Composer / Grok from Override OpenAI Base URL (&quot;model does not support custom API&quot;); add them via Cursor&apos;s <span className="font-medium text-text-main">Add Custom Model</span> using the combo name, or pick a model Cursor allows through the custom endpoint.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-stretch">
+        <div className="flex w-full flex-col gap-2 border-2 border-black bg-surface p-3 shadow-[5px_5px_0_0_rgba(0,0,0,0.9)] sm:w-auto sm:items-stretch lg:col-start-2 lg:row-start-1">
           <div className="relative w-full sm:w-64">
             <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-text-muted">
-              search
+              manage_search
             </span>
             <input
               type="text"
@@ -409,18 +411,18 @@ export default function CombosPage() {
                 aria-label="Clear search"
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-text-muted transition-colors hover:text-text-main"
               >
-                <span className="material-symbols-outlined text-[16px]">close</span>
+                <span className="material-symbols-outlined text-[16px]">close_small</span>
               </button>
             )}
           </div>
-          <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
+          <Button icon="add_circle" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
             Create Combo
           </Button>
           <div className="hidden">
             <Button
               variant="secondary"
               size="sm"
-              icon="edit_note"
+              icon="edit_document"
               loading={presetLoading === "cursor"}
               disabled={!!presetLoading}
               onClick={() => handleGeneratePresets("cursor")}
@@ -431,7 +433,7 @@ export default function CombosPage() {
             <Button
               variant="secondary"
               size="sm"
-              icon="smart_toy"
+              icon="robot_2"
               loading={presetLoading === "claude"}
               disabled={!!presetLoading}
               onClick={() => handleGeneratePresets("claude")}
@@ -445,20 +447,20 @@ export default function CombosPage() {
 
       {/* Combos List */}
       {combos.length === 0 ? (
-        <Card>
+        <Card className="min-h-[220px] border-2 border-black shadow-[5px_5px_0_0_rgba(0,0,0,0.9)] lg:col-start-2 lg:row-start-2">
           <div className="text-center py-12">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-              <span className="material-symbols-outlined text-[32px]">layers</span>
+              <span className="material-symbols-outlined text-[32px]">stacks</span>
             </div>
             <p className="text-text-main font-medium mb-1">No combos yet</p>
             <p className="text-sm text-text-muted mb-4">Create model combos with fallback support</p>
-            <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
+            <Button icon="add_circle" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
               Create Combo
             </Button>
           </div>
         </Card>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3 lg:col-start-2 lg:row-start-2">
           {/* Search match counter */}
           {normalizedQuery && (
             <span className="text-xs text-text-muted select-none">
@@ -489,7 +491,7 @@ export default function CombosPage() {
                 <Button
                   size="sm"
                   variant="danger"
-                  icon="delete"
+                  icon="delete_sweep"
                   disabled={bulkBusy}
                   loading={bulkBusy}
                   onClick={handleBulkDelete}
@@ -548,12 +550,15 @@ export default function CombosPage() {
       )}
 
       {/* Capacity Adapter */}
+      <div className="flex min-w-0 flex-col gap-3 border-2 border-black bg-surface p-3 shadow-[5px_5px_0_0_rgba(0,0,0,0.9)] lg:col-start-1 lg:row-start-2">
+        <h2 className="font-mono text-sm font-black uppercase tracking-wide">Capacity Adapter</h2>
       <CapacityAdapterSection
         capacityAdapter={capacityAdapter}
         onChange={handleSetCapacityAdapter}
         activeProviders={activeProviders}
         getCaps={getCaps}
       />
+      </div>
 
 
       {/* Create Modal - Use key to force remount and reset state */}
@@ -612,7 +617,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
   const comboCaps = aggregateComboCapabilities(combo.models, comboByName, getCaps);
 
   return (
-    <Card padding="sm" className={`group ${selected ? "ring-1 ring-primary/40 bg-primary/[0.03]" : ""}`}>
+    <Card padding="sm" className={`min-h-[132px] border-2 border-black shadow-[4px_4px_0_0_rgba(0,0,0,0.9)] transition-transform hover:-translate-y-0.5 ${selected ? "bg-primary/[0.06] ring-2 ring-primary" : ""}`}>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
           <label className="flex shrink-0 items-center pt-1 sm:pt-0 cursor-pointer" title="Select combo">
@@ -626,7 +631,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
             />
           </label>
           <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
+            <span className="material-symbols-outlined text-primary text-[18px]">stacks</span>
           </div>
           <div className="min-w-0 flex-1">
             <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
@@ -674,7 +679,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                   className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
                   title="Pick the model that fuses panel answers"
                 >
-                  <span className="material-symbols-outlined text-[13px]">gavel</span>
+                  <span className="material-symbols-outlined text-[13px]">rule</span>
                   <span className="truncate">{judge || `Auto - ${combo.models[0] || "first model"}`}</span>
                 </button>
                 {judge && (
@@ -683,7 +688,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                     className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
                     title="Reset judge to Auto"
                   >
-                    <span className="material-symbols-outlined text-[13px]">close</span>
+                    <span className="material-symbols-outlined text-[13px]">close_small</span>
                   </button>
                 )}
               </div>
@@ -719,7 +724,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-surface-2 hover:text-primary"
               title="Edit"
             >
-              <span className="material-symbols-outlined text-[18px]">edit</span>
+              <span className="material-symbols-outlined text-[18px]">edit_square</span>
               <span className="text-[10px] leading-tight">Edit</span>
             </button>
             <button
@@ -727,7 +732,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
               className="flex flex-col items-center rounded px-2 py-1 text-red-500 transition-colors hover:bg-red-500/10"
               title="Delete"
             >
-              <span className="material-symbols-outlined text-[18px]">delete</span>
+              <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
               <span className="text-[10px] leading-tight">Delete</span>
             </button>
           </div>
@@ -809,7 +814,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   };
 
   return (
-    <Card padding="sm" className={`group ${!enabled ? "opacity-50" : ""}`}>
+    <Card padding="sm" className={`min-h-[132px] border-2 border-black shadow-[4px_4px_0_0_rgba(0,0,0,0.9)] ${!enabled ? "opacity-50" : ""}`}>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         {/* Master toggle + icon + label */}
         <div className="flex min-w-0 flex-1 items-start gap-2.5 sm:items-center">
@@ -841,7 +846,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
             <span>Round</span>
           </label>
           <Button
-            icon="add"
+            icon="add_circle"
             variant="ghost"
             size="sm"
             onClick={() => setShowModelSelect(true)}
@@ -899,7 +904,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                         }`}
                         title="Move up"
                       >
-                        <span className="material-symbols-outlined text-[16px] leading-none">arrow_upward</span>
+                        <span className="material-symbols-outlined text-[16px] leading-none">north</span>
                       </button>
                       <button
                         type="button"
@@ -912,7 +917,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                         }`}
                         title="Move down"
                       >
-                        <span className="material-symbols-outlined text-[16px] leading-none">arrow_downward</span>
+                        <span className="material-symbols-outlined text-[16px] leading-none">south</span>
                       </button>
                     </div>
                   </td>
@@ -928,7 +933,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                       }`}
                       title="Remove model"
                     >
-                      <span className="material-symbols-outlined text-[16px] leading-none">close</span>
+                      <span className="material-symbols-outlined text-[16px] leading-none">close_small</span>
                     </button>
                   </td>
                 </tr>
@@ -1035,7 +1040,7 @@ function ModelItem({ id, index, model, isFirst, isLast, context, onEdit, onMoveU
           className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`}
           title="Move up"
         >
-          <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
+          <span className="material-symbols-outlined text-[12px]">north</span>
         </button>
         <button
           onClick={onMoveDown}
@@ -1043,7 +1048,7 @@ function ModelItem({ id, index, model, isFirst, isLast, context, onEdit, onMoveU
           className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`}
           title="Move down"
         >
-          <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
+          <span className="material-symbols-outlined text-[12px]">south</span>
         </button>
       </div>
 
@@ -1053,7 +1058,7 @@ function ModelItem({ id, index, model, isFirst, isLast, context, onEdit, onMoveU
         className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
         title="Remove"
       >
-        <span className="material-symbols-outlined text-[12px]">close</span>
+        <span className="material-symbols-outlined text-[12px]">close_small</span>
       </button>
     </div>
   );
@@ -1201,7 +1206,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
             {models.length === 0 ? (
               <div className="text-center py-4 border border-dashed border-border-subtle rounded-lg bg-surface-2/40">
-                <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
+                <span className="material-symbols-outlined text-text-muted text-xl mb-1">stacks</span>
                 <p className="text-xs text-text-muted">No models added yet</p>
               </div>
             ) : (
@@ -1237,7 +1242,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               onClick={() => setShowModelSelect(true)}
               className="w-full mt-2 py-2 border border-dashed border-border-subtle rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
             >
-              <span className="material-symbols-outlined text-[16px]">add</span>
+              <span className="material-symbols-outlined text-[16px]">add_circle</span>
               Add Model
             </button>
           </div>

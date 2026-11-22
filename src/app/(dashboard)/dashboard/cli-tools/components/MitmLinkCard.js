@@ -34,7 +34,7 @@ export default function MitmLinkCard({ tool }) {
               <p className="text-xs text-text-muted truncate">{tool.description}</p>
             </div>
           </div>
-          <span className="material-symbols-outlined text-text-muted text-[20px]">chevron_right</span>
+          <span className="material-symbols-outlined text-text-muted text-[20px]">navigate_next</span>
         </div>
       </Card>
     </Link>

@@ -74,7 +74,7 @@ npx 9router
 Clona y compila desde GitHub:
 
 ```bash
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/serenhope/9router.git
 cd 9router/app
 npm install
 npm run build
@@ -474,5 +474,5 @@ nano ~/.bashrc  # o ~/.zshrc
 ## ¿Necesitas ayuda?
 
 - **Sitio web**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **GitHub**: [github.com/serenhope/9router](https://github.com/serenhope/9router)
+- **Issues**: [github.com/serenhope/9router/issues](https://github.com/serenhope/9router/issues)

@@ -90,7 +90,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
               className="p-2 text-text-muted hover:text-red-500 rounded transition-colors"
               title="Clear"
             >
-              <span className="material-symbols-outlined text-lg">close</span>
+              <span className="material-symbols-outlined text-lg">cancel</span>
             </button>
           </>
         )}
@@ -124,7 +124,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
             bgClass = "bg-red-500/10 border-red-500/30";
             textClass = "text-danger";
             iconClass = "text-red-500";
-            icon = "error";
+            icon = "report_problem";
           }
           
           return (
@@ -262,7 +262,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
             <p className="text-xs text-text-muted truncate">{tool.description}</p>
           </div>
         </div>
-        <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
+        <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>keyboard_arrow_down</span>
       </div>
 
       {isExpanded && (

@@ -16,7 +16,7 @@ Deploy 9Router on VPS or Docker for remote access and production use.
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/serenhope/9router.git
 cd 9router/app
 ```
 

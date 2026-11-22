@@ -891,7 +891,7 @@ export default function ModelSelectModal({
     >
       {/* Info bar */}
       <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
-        <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
+        <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>help_outline</span>
         <span>Click a model to add it, click again to remove it, and the change is saved automatically.{showStudioTargets ? " Rows marked combo route into a fallback group; rows marked custom call another named model." : ""}{allowProviderWildcard ? " Click a provider name for wildcard (e.g. provider/*)." : ""} Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/).</span>
       </div>
 
@@ -899,7 +899,7 @@ export default function ModelSelectModal({
       <div className="mb-3 space-y-2">
         <div className="relative">
           <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px]">
-            search
+            manage_search
           </span>
           <input
             type="text"
@@ -930,7 +930,7 @@ export default function ModelSelectModal({
                 className="text-text-muted hover:text-text-main cursor-pointer p-0.5 rounded"
                 title="Clear search"
               >
-                <span className="material-symbols-outlined text-[14px] leading-none">close</span>
+                <span className="material-symbols-outlined text-[14px] leading-none">cancel</span>
               </button>
             )}
           </div>
@@ -976,7 +976,7 @@ export default function ModelSelectModal({
         {filteredCombos.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
-              <span className="material-symbols-outlined text-primary text-[14px]">layers</span>
+              <span className="material-symbols-outlined text-primary text-[14px]">stacks</span>
               <span className="text-xs font-medium text-primary">Combos</span>
               <span className="text-[10px] text-text-muted">({filteredCombos.length})</span>
             </div>
@@ -998,7 +998,7 @@ export default function ModelSelectModal({
                     `}
                   >
                     {addedModelValues.includes(combo.name) && (
-                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
+                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>done_all</span>
                     )}
                     {combo.name}
                     <span className="text-[9px] opacity-60 font-normal">combo</span>
@@ -1015,7 +1015,7 @@ export default function ModelSelectModal({
         {filteredStudioModels.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
-              <span className="material-symbols-outlined size-[14px] text-[14px] leading-none text-primary">auto_awesome</span>
+              <span className="material-symbols-outlined size-[14px] text-[14px] leading-none text-primary">auto_fix_high</span>
               <span className="text-xs font-medium leading-none text-primary">Custom Models</span>
               <span className="text-[10px] text-text-muted">({filteredStudioModels.length})</span>
             </div>
@@ -1038,7 +1038,7 @@ export default function ModelSelectModal({
                     `}
                   >
                     {addedModelValues.includes(studio.callName) && (
-                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
+                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>done_all</span>
                     )}
                     {studio.callName}
                     <span className="text-[9px] opacity-60 font-normal">custom</span>
@@ -1080,7 +1080,7 @@ export default function ModelSelectModal({
                     }`}
                   >
                     {isWildcardAdded && (
-                      <span className="material-symbols-outlined leading-none text-[12px]">check</span>
+                      <span className="material-symbols-outlined leading-none text-[12px]">done_all</span>
                     )}
                     <span>{group.name}</span>
                     <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${isWildcardAdded ? "bg-white/20 text-white" : "text-text-muted bg-sidebar border border-border/50"}`}>
@@ -1131,11 +1131,11 @@ export default function ModelSelectModal({
                   >
                     <span className="flex items-center gap-1">
                       {addedModelValues.includes(model.value) && !isPlaceholder && (
-                        <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
+                        <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>done_all</span>
                       )}
                       {isPlaceholder ? (
                         <>
-                          <span className="material-symbols-outlined text-[11px]">edit</span>
+                          <span className="material-symbols-outlined text-[11px]">edit_note</span>
                           {model.name}
                         </>
                       ) : model.isCustom ? (
@@ -1166,7 +1166,7 @@ export default function ModelSelectModal({
         {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && filteredStudioModels.length === 0 && (
           <div className="text-center py-4 text-text-muted">
             <span className="material-symbols-outlined text-2xl mb-1 block">
-              search_off
+              youtube_searched_for
             </span>
             <p className="text-xs">No models found</p>
           </div>

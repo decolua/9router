@@ -1,15 +1,9 @@
 /**
- * ProgressCard Render Self-Check
+ * Loading Surface Render Self-Check
  *
- * Pins the unified loading style: every long operation (backup export/import,
- * bulk imports, bulk adds) renders the same centered card over a dark blurred
- * backdrop - title, message, optional percent, optional section line, and an
- * optional progress bar. No operation may fall back to a different look.
- *
- * Render smoke-check on purpose: esbuild only proves a file parses. The card
- * is a pile of conditional classNames and conditional blocks, so a renamed
- * prop or a dropped branch parses fine and shows up only when the operation
- * runs - with no other place that would surface it.
+ * Smoke-checks the loading primitives that are actually exported by Loading.js.
+ * The app uses solid theme surfaces and a spinner/skeleton system; there is no
+ * separate blurred progress-card overlay.
  *
  * Run with: node src/shared/components/progressCardRenderSelfCheck.mjs
  */
@@ -22,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const outDir = mkdtempSync(path.join(tmpdir(), "progresscard-render-"));
+const outDir = mkdtempSync(path.join(tmpdir(), "loading-render-"));
 
 const w = (name, body) => {
   const p = path.join(outDir, name);
@@ -72,8 +66,7 @@ function loadLoading() {
   return require(outfile);
 }
 
-const { ProgressCard, CenterLoading, BusyOverlay } = loadLoading();
-
+const { Spinner, PageLoading, Skeleton, CardSkeleton, default: Loading } = loadLoading();
 const results = [];
 function run(name, fn) {
   try {
@@ -88,7 +81,6 @@ const assert = {
   no(v, msg) { if (v) throw new Error(msg || "expected falsy"); },
 };
 
-// Walk the stub JSX tree into a plain string: types, props and text.
 function flatten(node) {
   if (node === null || node === undefined || typeof node === "boolean") return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -108,58 +100,44 @@ function flatten(node) {
   return "";
 }
 
-const render = (props) => flatten(ProgressCard(props));
-
-run("ProgressCard exists alongside CenterLoading", () => {
-  assert.ok(typeof ProgressCard === "function", "ProgressCard exported");
-  assert.ok(typeof CenterLoading === "function", "CenterLoading kept");
-  assert.ok(BusyOverlay === CenterLoading, "BusyOverlay still aliases CenterLoading");
+run("current loading primitives are exported", () => {
+  assert.ok(typeof Spinner === "function", "Spinner export");
+  assert.ok(typeof PageLoading === "function", "PageLoading export");
+  assert.ok(typeof Skeleton === "function", "Skeleton export");
+  assert.ok(typeof CardSkeleton === "function", "CardSkeleton export");
+  assert.ok(typeof Loading === "function", "default loading dispatcher");
 });
 
-run("the card shows title, message, percent and section", () => {
-  const tree = render({ title: "Importing database", message: "Reading backup file", section: "settings", progress: 42 });
-  assert.ok(tree.includes("Importing database"), "title shown");
-  assert.ok(tree.includes("Reading backup file"), "message shown");
-  assert.ok(tree.includes("settings"), "section shown");
-  assert.ok(tree.includes("42%"), "percent shown");
-  assert.ok(tree.includes("width") && tree.includes("42%"), "bar filled to 42%");
+run("page loading uses a solid theme canvas without a blur layer", () => {
+  const tree = flatten(PageLoading({ message: "Loading provider settings" }));
+  assert.ok(tree.includes("fixed") && tree.includes("inset-0"), "fills the viewport");
+  assert.ok(tree.includes("bg-bg"), "uses the theme canvas");
+  assert.ok(tree.includes("Loading provider settings"), "shows its message");
+  assert.no(tree.includes("backdrop-blur"), "does not use a blurred backdrop");
+  assert.no(tree.includes("backdrop-filter"), "does not use a backdrop filter");
+  assert.no(tree.includes("bg-black/55"), "does not use the retired dark veil");
 });
 
-run("the backdrop blocks the page: dark, blurred, fullscreen, high z", () => {
-  const tree = render({ title: "Working" });
-  assert.ok(tree.includes("bg-black/55"), "dark backdrop");
-  assert.ok(tree.includes("backdrop-blur"), "blurred backdrop");
-  assert.ok(tree.includes("fixed") && tree.includes("inset-0"), "fullscreen when fixed");
-  assert.ok(tree.includes("z-[70]"), "above modals");
-  assert.no(tree.includes("pointer-events-none"), "blocking, not click-through");
+run("spinner and skeleton retain their semantic content and theme surfaces", () => {
+  const spinner = flatten(Spinner({ size: "lg" }));
+  const skeleton = flatten(Skeleton({ className: "h-4 w-24" }));
+  assert.ok(spinner.includes("autorenew"), "spinner icon");
+  assert.ok(spinner.includes("size-8"), "large spinner size");
+  assert.ok(skeleton.includes("bg-surface-2"), "skeleton surface");
+  assert.ok(skeleton.includes("h-4 w-24"), "caller dimensions retained");
 });
 
-run("progress accepts both the 0-100 and 0-1 scales", () => {
-  assert.ok(render({ title: "W", progress: 50 }).includes("50%"), "0-100 scale");
-  assert.ok(render({ title: "W", progress: 0.5 }).includes("50%"), "0-1 scale");
+run("card skeleton still composes the expected placeholder blocks", () => {
+  const tree = flatten(CardSkeleton());
+  assert.ok(tree.includes("p-6"), "card padding");
+  assert.ok(tree.includes("bg-surface"), "theme card surface");
+  assert.ok(tree.includes("Skeleton"), "reusable skeleton children");
 });
 
-run("progress clamps instead of overflowing the bar", () => {
-  assert.ok(render({ title: "W", progress: 250 }).includes("100%"), "clamped high");
-  assert.ok(render({ title: "W", progress: -5 }).includes("0%"), "clamped low");
-});
-
-run("without progress there is no bar and no percent", () => {
-  const tree = render({ title: "Preparing backup", message: "Exporting database" });
-  assert.no(tree.includes("rounded-full bg-primary"), "no bar fill");
-  assert.ok(tree.includes("Preparing backup"), "title still shown");
-  assert.ok(tree.includes("Exporting database"), "message still shown");
-});
-
-run("a missing title falls back instead of rendering empty", () => {
-  assert.ok(render({}).includes("Working"), "fallback title");
-});
-
-run("fixed={false} renders an in-modal fill, not a fullscreen takeover", () => {
-  const tree = render({ title: "Importing accounts", progress: 30, fixed: false });
-  assert.ok(tree.includes("absolute") && tree.includes("inset-0"), "absolute fill");
-  assert.no(tree.includes("fixed inset-0"), "not fullscreen");
-  assert.ok(tree.includes("30%"), "progress still shown");
+run("loading dispatcher forwards the requested page variant", () => {
+  const tree = flatten(Loading({ type: "page", message: "Starting server" }));
+  assert.ok(tree.includes("PageLoading"), "dispatches to page loading");
+  assert.ok(tree.includes("Starting server"), "forwards message");
 });
 
 const failed = results.filter((r) => !r.ok);

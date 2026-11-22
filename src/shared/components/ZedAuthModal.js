@@ -297,7 +297,7 @@ export default function ZedAuthModal({ isOpen, providerInfo, onSuccess, onClose 
         {(phase === "booting" || phase === "importing") && (
           <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
             <span className="material-symbols-outlined text-base text-primary animate-spin">
-              progress_activity
+              autorenew
             </span>
             <span className="text-sm">
               {phase === "importing"
@@ -312,7 +312,7 @@ export default function ZedAuthModal({ isOpen, providerInfo, onSuccess, onClose 
             <div className="bg-success/10 p-3 rounded-lg border border-success/30">
               <div className="flex gap-2">
                 <span className="material-symbols-outlined text-success">
-                  check_circle
+                  task_alt
                 </span>
                 <p className="text-sm text-success">
                   Zed IDE session detected (user {ideSession.userId}). Import failed - retry or use browser sign-in below.
@@ -335,7 +335,7 @@ export default function ZedAuthModal({ isOpen, providerInfo, onSuccess, onClose 
           <>
             <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
               <span className="material-symbols-outlined text-base text-primary animate-spin">
-                progress_activity
+                autorenew
               </span>
               <span className="text-sm">Waiting for popup authorization…</span>
             </div>

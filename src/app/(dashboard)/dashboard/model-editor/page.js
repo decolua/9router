@@ -159,17 +159,17 @@ export default function ModelStudioPage() {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-7 px-1 sm:px-0">
       <div className="min-w-0">
-        <h1 className="text-lg font-semibold leading-none text-text-main">Custom Models &amp; Editor</h1>
-        <p className="text-xs text-text-muted mt-0.5">
+        <h1 className="text-2xl font-semibold tracking-tight text-text-main">Custom Models &amp; Editor</h1>
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-text-muted">
           Give any model your own name, context size and behaviour, and it becomes a callable model ID for clients, combos, and API keys.
         </p>
-        <div className="mt-2 flex items-start justify-between gap-3 rounded-xl border border-border-subtle bg-surface-2 px-3 py-2">
+        <div className="mt-4 flex items-start justify-between gap-4 rounded-2xl border border-border-subtle bg-surface-2 px-4 py-3">
           <div className="min-w-0">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-text-main">
               <span className="material-symbols-outlined text-[16px] leading-none text-primary">
-                shield_person
+                policy
               </span>
               Anti-probe metadata
             </span>
@@ -313,23 +313,27 @@ function ModelStudioContent({ antiProbe = true }) {
   };
 
   return (
-    <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.38fr)] lg:items-start">
+      <div className="order-1 flex min-w-0 flex-col gap-3 rounded-2xl border-2 border-border bg-surface p-4 shadow-[4px_4px_0_var(--color-border)] sm:flex-row sm:items-center sm:justify-between lg:col-start-2 lg:row-start-1 lg:flex-col lg:items-stretch">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-medium text-text-main">
-            {models.length} {models.length === 1 ? "model" : "models"}
+          <span className="material-symbols-outlined flex size-9 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-primary/10 text-[19px] text-primary">
+            schema
           </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-text-main">Model library</p>
+            <p className="text-xs text-text-muted">{models.length} {models.length === 1 ? "model" : "models"} available to clients</p>
+          </div>
           {error && <span className="text-xs text-red-500 truncate">{error}</span>}
         </div>
-        <Button size="sm" icon="add" onClick={openCreate}>
-          Add Model
+        <Button size="sm" icon="add_circle" onClick={openCreate} className="w-full sm:w-auto lg:w-full">
+          Create model
         </Button>
       </div>
 
       {selectedNames.size > 1 && (
         // Same shape as the API-key page: a toolbar that only offers itself for
         // more than one row, because one model already has its own editor.
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-full border border-border-subtle bg-surface-2/70 py-1 pl-3 pr-1 backdrop-blur-sm">
+        <div className="order-2 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-full border border-border-subtle bg-surface-2/70 py-1 pl-3 pr-1  lg:col-start-2 lg:row-start-2">
           <span className="flex items-center gap-2 text-xs text-text-muted">
             <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
               {selectedNames.size}
@@ -360,27 +364,35 @@ function ModelStudioContent({ antiProbe = true }) {
         </div>
       )}
 
+      <div className="order-3 min-w-0 rounded-2xl border-2 border-border bg-surface-2/40 p-3 sm:p-4 lg:col-start-1 lg:row-start-1 lg:row-span-3">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-2 border-b-2 border-border pb-3">
+        <div>
+          <h2 className="text-base font-bold text-text-main">Your custom routes</h2>
+          <p className="mt-0.5 text-xs text-text-muted">Names and routing rules exposed through your model API.</p>
+        </div>
+        {models.length > 0 && <span className="rounded-md border-2 border-border bg-surface px-2 py-1 font-mono text-[11px] font-semibold text-text-muted">{models.length.toString().padStart(2, "0")} TOTAL</span>}
+      </div>
       {loading ? (
         <Card padding="md">
           <div className="text-xs text-text-muted py-4">Loading models...</div>
         </Card>
       ) : models.length === 0 ? (
         <Card padding="lg" className="flex flex-col items-center gap-3 text-center py-10">
-          <span className="material-symbols-outlined text-[34px] text-text-muted/50">auto_awesome</span>
+          <span className="material-symbols-outlined text-[34px] text-text-muted/50">model_training</span>
           <div>
             <p className="text-sm font-medium text-text-main">No models yet</p>
             <p className="text-xs text-text-muted mt-1 max-w-md">
               Pick any connected model, name it however you like, and call it by that name.
             </p>
           </div>
-          <Button size="sm" icon="add" onClick={openCreate}>
+          <Button size="sm" icon="add_circle" onClick={openCreate}>
             Add your first model
           </Button>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:auto-rows-fr">
           {models.map((model) => (
-            <Card key={model.callName} padding="md" className="flex min-w-0 flex-col gap-3">
+            <Card key={model.callName} padding="md" className="flex h-full min-w-0 flex-col gap-3 border-2 border-border shadow-[3px_3px_0_var(--color-border)]">
               <div className="flex min-w-0 items-start justify-between gap-2">
                 <input
                   type="checkbox"
@@ -418,14 +430,14 @@ function ModelStudioContent({ antiProbe = true }) {
                     title="Duplicate"
                     className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
                   >
-                    <span className="material-symbols-outlined text-[14px]">library_add</span>
+                    <span className="material-symbols-outlined text-[14px]">library_add_check</span>
                   </button>
                   <button
                     onClick={() => openEdit(model)}
                     title="Edit"
                     className="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
                   >
-                    <span className="material-symbols-outlined text-[16px]">edit</span>
+                    <span className="material-symbols-outlined text-[16px]">edit_note</span>
                   </button>
                   <button
                     onClick={() => handleDelete(model)}
@@ -478,7 +490,10 @@ function ModelStudioContent({ antiProbe = true }) {
         </div>
       )}
 
+      </div>
+      <div className="order-4 min-w-0 lg:col-start-2 lg:row-start-3">
       <PrefixCard nodes={providerNodes} onSaved={fetchData} />
+      </div>
 
       {showForm && (
         <StudioFormModal
@@ -508,7 +523,7 @@ function ModelStudioContent({ antiProbe = true }) {
           modelAliases={modelAliases}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -975,7 +990,7 @@ function StudioFormModal({
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 text-xs font-semibold text-text-main">
                 <span className="material-symbols-outlined text-[16px] leading-none text-primary">
-                  shield_person
+                  policy
                 </span>
                 Anti-mask check
               </span>
@@ -986,14 +1001,14 @@ function StudioFormModal({
                 className="flex items-center gap-1 text-[11px] text-primary hover:underline whitespace-nowrap"
               >
                 Run BazaarLink Probe
-                <span className="material-symbols-outlined text-[12px] leading-none">open_in_new</span>
+                <span className="material-symbols-outlined text-[12px] leading-none">launch</span>
               </a>
             </div>
 
             {maskWarns.length === 0 ? (
               <p className="text-[11px] text-text-muted flex items-start gap-1.5">
                 <span className="material-symbols-outlined text-[13px] leading-none mt-px text-emerald-500">
-                  check_circle
+                  task_alt
                 </span>
                 No contradiction between this model&apos;s name and its target&apos;s vendor.
               </p>
@@ -1212,7 +1227,7 @@ function PrefixCard({ nodes, onSaved }) {
                 title="Edit prefix"
                 className="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
               >
-                <span className="material-symbols-outlined text-[16px]">edit</span>
+                <span className="material-symbols-outlined text-[16px]">edit_note</span>
               </button>
             </div>
           ))}
@@ -1251,4 +1266,3 @@ function PrefixCard({ nodes, onSaved }) {
     </>
   );
 }
-

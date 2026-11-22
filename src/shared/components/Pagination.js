@@ -89,7 +89,7 @@ export default function Pagination({
               className="w-9 px-0"
               aria-label="Previous page"
             >
-              <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+              <span className="material-symbols-outlined text-[18px]">arrow_back_ios</span>
             </Button>
 
             {pageNumbers[0] > 1 && (
@@ -151,7 +151,7 @@ export default function Pagination({
               className="w-9 px-0"
               aria-label="Next page"
             >
-              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              <span className="material-symbols-outlined text-[18px]">arrow_forward_ios</span>
             </Button>
           </nav>
         )}

@@ -96,7 +96,7 @@ export default function DownloadBackupModal({ isOpen, onClose, onDownload, loadi
               onClick={handleConfirm}
               loading={loading}
               disabled={selectedCount === 0}
-              icon="download"
+              icon="file_download"
             >
               Download Backup
             </Button>

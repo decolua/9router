@@ -73,14 +73,14 @@ export default function NewProviderPage() {
   const selectedProvider = AI_PROVIDERS[formData.provider];
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="mx-auto w-full max-w-5xl">
       {/* Header */}
       <div className="mb-8">
         <Link
           href="/dashboard/providers"
           className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
         >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
+          <span className="material-symbols-outlined text-lg">arrow_back_ios_new</span>
           Back to Providers
         </Link>
         <h1 className="text-3xl font-semibold tracking-tight">Add New Provider</h1>
@@ -91,8 +91,9 @@ export default function NewProviderPage() {
 
       {/* Form */}
       <Card>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {/* Provider Selection */}
+          <div className="md:col-span-1">
           <Select
             label="Provider"
             options={providerOptions}
@@ -102,10 +103,11 @@ export default function NewProviderPage() {
             error={errors.provider}
             required
           />
+          </div>
 
           {/* Provider Info */}
           {selectedProvider && (
-            <Card.Section className="flex items-center gap-3">
+            <Card.Section className="md:col-span-2 flex items-center gap-3">
               <div
                 className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border"
               >
@@ -126,7 +128,7 @@ export default function NewProviderPage() {
           )}
 
           {/* Auth Method */}
-          <div className="flex flex-col gap-3">
+          <div className="md:col-span-1 flex flex-col gap-3">
             <label className="text-sm font-medium">
               Authentication Method <span className="text-red-500">*</span>
             </label>
@@ -153,6 +155,7 @@ export default function NewProviderPage() {
 
           {/* API Key Input */}
           {formData.authMethod === "api_key" && (
+            <div className="md:col-span-1">
             <Input
               label="API Key"
               type="password"
@@ -163,21 +166,23 @@ export default function NewProviderPage() {
               hint="Your API key will be encrypted and stored securely."
               required
             />
+            </div>
           )}
 
           {/* OAuth2 Button */}
           {formData.authMethod === "oauth2" && (
-            <Card.Section>
+            <Card.Section className="md:col-span-2">
               <p className="text-sm text-text-muted mb-4">
                 Connect your account using OAuth2 authentication.
               </p>
-              <Button type="button" variant="secondary" icon="link">
+              <Button type="button" variant="secondary" icon="link_2">
                 Connect with OAuth2
               </Button>
             </Card.Section>
           )}
 
           {/* Display Name */}
+          <div className="md:col-span-1">
           <Input
             label="Display Name"
             placeholder="e.g., Production API, Dev Environment"
@@ -185,24 +190,27 @@ export default function NewProviderPage() {
             onChange={(e) => handleChange("displayName", e.target.value)}
             hint="A friendly name for this configuration (optional)"
           />
+          </div>
 
           {/* Active Toggle */}
+          <div className="md:col-span-1">
           <Toggle
             checked={formData.isActive}
             onChange={(checked) => handleChange("isActive", checked)}
             label="Active"
             description="Enable this provider for use in your applications"
           />
+          </div>
 
           {/* Error Message */}
           {errors.submit && (
-            <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
+            <div className="md:col-span-2 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
               {errors.submit}
             </div>
           )}
 
           {/* Actions */}
-          <div className="flex gap-3 pt-4 border-t border-border">
+          <div className="md:col-span-2 flex gap-3 pt-4 border-t border-border">
             <Link href="/dashboard/providers" className="flex-1">
               <Button type="button" variant="ghost" fullWidth>
                 Cancel
@@ -217,4 +225,3 @@ export default function NewProviderPage() {
     </div>
   );
 }
-

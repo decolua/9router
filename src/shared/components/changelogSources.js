@@ -15,10 +15,10 @@ export const SERENHOPE_SOURCE = {
   label: "Serenhope",
   heading: "Contributed by Serenhope",
   accent: {
-    color: "#60a5fa",
-    border: "rgba(96,165,250,0.35)",
-    bg: "rgba(96,165,250,0.06)",
-    icon: "star",
+    color: "#191817",
+    border: "#191817",
+    bg: "#c8ee68",
+    icon: "workspace_premium",
   },
 };
 
@@ -27,10 +27,10 @@ export const DECOLUA_SOURCE = {
   label: "Decolua",
   heading: "Official Releases (Decolua)",
   accent: {
-    color: "rgba(148,163,184,0.95)",
-    border: "rgba(148,163,184,0.25)",
-    bg: "rgba(148,163,184,0.05)",
-    icon: "history_edu",
+    color: "#191817",
+    border: "#191817",
+    bg: "#83d8e8",
+    icon: "article",
   },
 };
 

@@ -34,17 +34,17 @@ export default function ProviderLogoField({ logo, onChange, hint = DEFAULT_HINT 
     <div className="flex flex-col gap-1.5">
       <label className="text-sm font-medium text-text-main">Logo</label>
       <div className="flex items-center gap-3">
-        <span className="size-10 shrink-0 rounded-[10px] border border-border/50 bg-surface-2 flex items-center justify-center overflow-hidden">
+        <span className="provider-logo-frame flex size-10 shrink-0 items-center justify-center p-1">
           {preview ? (
             <img src={preview} alt="" className="size-full object-contain" loading="lazy" decoding="async" />
           ) : (
-            <span className="material-symbols-outlined text-[18px] text-text-muted">image</span>
+            <span className="material-symbols-outlined text-[18px] text-text-muted">photo_library</span>
           )}
         </span>
         <Button
           type="button"
           variant="outline"
-          icon="upload"
+          icon="drive_folder_upload"
           loading={reading}
           onClick={() => fileRef.current?.click()}
           className="w-full sm:w-auto"

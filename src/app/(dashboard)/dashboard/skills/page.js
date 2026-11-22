@@ -9,16 +9,27 @@ import {
   getSkillBlobUrl,
 } from "@/shared/constants/skills";
 
+const SKILL_GLYPHS = {
+  hub: "account_tree",
+  chat: "forum",
+  image: "photo_library",
+  record_voice_over: "graphic_eq",
+  mic: "hearing",
+  scatter_plot: "schema",
+  search: "manage_search",
+  language: "travel_explore",
+};
+
 function CopyButton({ value, label = "Copy link" }) {
   const { copied, copy } = useCopyToClipboard(2000);
   return (
     <button
       onClick={() => copy(value)}
-      className="px-2 py-1 rounded-md bg-primary text-white text-[11px] font-medium hover:bg-primary/90 transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1"
+      className="min-h-9 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1.5"
       title={value}
     >
       <span className="material-symbols-outlined text-[12px]">
-        {copied ? "check" : "content_copy"}
+        {copied ? "task_alt" : "file_copy"}
       </span>
       {copied ? "Copied!" : label}
     </button>
@@ -40,7 +51,7 @@ function SkillRow({ skill }) {
           skill.isEntry ? "bg-primary text-white" : "bg-primary/10 text-primary"
         }`}
       >
-        <span className="material-symbols-outlined text-[18px]">{skill.icon}</span>
+        <span className="material-symbols-outlined text-[18px]">{SKILL_GLYPHS[skill.icon] || "auto_awesome_motion"}</span>
       </div>
 
       <div className="min-w-0 flex-1">
@@ -63,7 +74,7 @@ function SkillRow({ skill }) {
           className="text-[11px] text-text-muted hover:text-primary mt-1 inline-flex items-center gap-1 break-all"
         >
           {url}
-          <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+          <span className="material-symbols-outlined text-[12px]">arrow_outward</span>
         </a>
       </div>
 
@@ -74,15 +85,15 @@ function SkillRow({ skill }) {
 
 export default function SkillsPage() {
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <Card padding="md">
-        <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
-        <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main">
+    <div className="max-w-5xl mx-auto space-y-6">
+      <Card padding="md" className="rounded-2xl border-primary/20">
+        <div className="text-xs font-semibold tracking-wide text-text-muted mb-3">START HERE · Paste this to your AI</div>
+        <div className="px-3 py-3 rounded-xl bg-surface-2 font-mono text-xs sm:text-sm text-text-main break-all">
           Read this skill and use it: {getSkillRawUrl("9router")}
         </div>
       </Card>
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {SKILLS.map((skill) => (
           <SkillRow key={skill.id} skill={skill} />
         ))}
@@ -102,7 +113,7 @@ export default function SkillsPage() {
             rel="noreferrer"
             className="text-sm text-primary hover:underline inline-flex items-center gap-1"
           >
-            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+            <span className="material-symbols-outlined text-[16px]">arrow_outward</span>
             View on GitHub
           </a>
         </div>

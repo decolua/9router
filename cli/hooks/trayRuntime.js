@@ -32,7 +32,7 @@ const LEGACY_SYSTRAY_PKG = "systray";
 // cgo compiles AppKit against the runner's SDK, so this value tracks that image:
 // when GitHub updates it the sha changes, the workflow refuses to publish, and
 // this constant must be bumped in the same change as the re-upload.
-const ARM64_TRAY_URL = "https://github.com/decolua/9router/releases/download/tray-binaries/tray_darwin_arm64";
+const ARM64_TRAY_URL = "https://github.com/serenhope/9router/releases/download/tray-binaries/tray_darwin_arm64";
 const ARM64_TRAY_SHA256 = "487e3c365aaa1eb6ad295bf3989711e975b52cee07505bf641c8559954881c81";
 const ARM64_RETRY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 

@@ -34,7 +34,7 @@ export default function OpenCodeLaneModal({ isOpen, cliMode, busy, onCancel, onC
         <div className="flex items-center gap-2">
           <span className="text-xs text-text-muted">Active lane</span>
           <span className="inline-flex items-center gap-1.5 rounded-[var(--r-chip)] border border-border/60 px-2 py-0.5 text-xs font-semibold text-text-main">
-            <span className="material-symbols-outlined text-[14px]">handyman</span>
+            <span className="material-symbols-outlined text-[14px]">build_circle</span>
             {cliMode ? "CLI" : "Direct"}
           </span>
         </div>
@@ -46,7 +46,7 @@ export default function OpenCodeLaneModal({ isOpen, cliMode, busy, onCancel, onC
             }`}
           >
             <div className="flex items-center gap-2 text-sm font-semibold text-text-main">
-              <span className="material-symbols-outlined text-[16px]">bolt</span>
+              <span className="material-symbols-outlined text-[16px]">electric_bolt</span>
               Direct
               {!cliMode && <span className="text-[10px] font-medium text-brand-600 dark:text-brand-300">active</span>}
             </div>
@@ -62,7 +62,7 @@ export default function OpenCodeLaneModal({ isOpen, cliMode, busy, onCancel, onC
             }`}
           >
             <div className="flex items-center gap-2 text-sm font-semibold text-text-main">
-              <span className="material-symbols-outlined text-[16px]">terminal</span>
+              <span className="material-symbols-outlined text-[16px]">code</span>
               CLI
               {cliMode && <span className="text-[10px] font-medium text-brand-600 dark:text-brand-300">active</span>}
             </div>

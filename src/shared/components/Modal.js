@@ -52,7 +52,7 @@ export default function Modal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Overlay */}
       <div
-        className="absolute inset-0 backdrop-blur-md chrome-enter-overlay"
+        className="absolute inset-0  chrome-enter-overlay"
         style={{ backgroundColor: "var(--color-scrim)" }}
         onClick={closeOnOverlay ? onClose : undefined}
       />
@@ -87,7 +87,7 @@ export default function Modal({
                       title="Close"
                       className="chrome-focus w-4 h-4 rounded-full bg-[#FF5F56] hover:brightness-90 transition-[filter] duration-[var(--motion-fast)] flex items-center justify-center group/dot"
                     >
-                      <span className="material-symbols-outlined text-[11px] font-bold text-white opacity-0 group-hover/dot:opacity-100 transition-opacity leading-none">close</span>
+                      <span className="material-symbols-outlined text-[11px] font-bold text-white opacity-0 group-hover/dot:opacity-100 transition-opacity leading-none">cancel</span>
                     </button>
                   </Tooltip>
                   {/* Inert traffic-light decorations; colour comes from .chrome-inert. */}
@@ -105,7 +105,7 @@ export default function Modal({
               aria-label="Close"
               className="chrome-focus md:hidden shrink-0 p-1 rounded-[var(--r-control)] text-text-muted chrome-row hover:text-text-main"
             >
-              <span className="material-symbols-outlined text-[20px] leading-none">close</span>
+              <span className="material-symbols-outlined text-[20px] leading-none">cancel</span>
             </button>
           </div>
         )}

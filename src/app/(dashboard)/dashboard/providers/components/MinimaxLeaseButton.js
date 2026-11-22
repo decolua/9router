@@ -40,7 +40,7 @@ export default function MinimaxLeaseButton({ providerId, onConnected, size = "sm
     <>
       <Button
         size={size}
-        icon="desktop_windows"
+        icon="desktop_access_disabled"
         variant="secondary"
         disabled={busy}
         onClick={handleConnect}

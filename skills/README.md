@@ -8,22 +8,22 @@ Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **co
 
 | Capability | Copy link below and paste to your AI |
 |---|---|
-| **Entry / Setup** (start here) | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md |
-| Chat / code-gen | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-chat/SKILL.md |
-| Image generation | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-image/SKILL.md |
-| Video generation (xAI Grok Imagine) | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-video/SKILL.md |
-| Text-to-speech | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-tts/SKILL.md |
-| Speech-to-text | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-stt/SKILL.md |
-| Embeddings | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-embeddings/SKILL.md |
-| Web search | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-search/SKILL.md |
-| Web fetch (URL → markdown) | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-fetch/SKILL.md |
+| **Entry / Setup** (start here) | https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router/SKILL.md |
+| Chat / code-gen | https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router-chat/SKILL.md |
+| Image generation | https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router-image/SKILL.md |
+| Video generation (xAI Grok Imagine) | https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router-video/SKILL.md |
+| Text-to-speech | https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router-tts/SKILL.md |
+| Speech-to-text | https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router-stt/SKILL.md |
+| Embeddings | https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router-embeddings/SKILL.md |
+| Web search | https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router-web-search/SKILL.md |
+| Web fetch (URL → markdown) | https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router-web-fetch/SKILL.md |
 
 ## How to use
 
 Paste to your AI (Claude, Cursor, ChatGPT, …):
 
 ```
-Read this skill and use it: https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md
+Read this skill and use it: https://raw.githubusercontent.com/serenhope/9router/refs/heads/master/skills/9router/SKILL.md
 ```
 
 Then ask normally - *"generate an image of a cat"*, *"transcribe this URL"*, etc.
@@ -39,5 +39,5 @@ Verify: `curl $NINEROUTER_URL/api/health` → `{"ok":true}`.
 
 ## Links
 
-- Source: https://github.com/decolua/9router
+- Source: https://github.com/serenhope/9router
 - Dashboard: https://9router.com

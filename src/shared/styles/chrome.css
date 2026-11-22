@@ -267,8 +267,7 @@
   }
 }
 
-/* Glass theme: the ring sits outside the panel it is drawn on, and a 2px
-   offset on a frosted surface reads as a detached halo, so it is tightened. */
-.dark.glass .chrome-focus:focus-visible {
-  outline-offset: 1px;
+/* Neobrutalist focus treatment: separate the high-contrast ring from the hard edge. */
+html.neobrutalism .chrome-focus:focus-visible {
+  outline-offset: 3px;
 }

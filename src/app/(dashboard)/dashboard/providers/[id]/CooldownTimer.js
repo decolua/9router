@@ -32,7 +32,7 @@ export default function CooldownTimer({ until }) {
 
   return (
     <span className="inline-flex items-center gap-1 text-xs text-orange-500 font-mono">
-      <span className="material-symbols-outlined text-[13px] leading-none">schedule</span>
+      <span className="material-symbols-outlined text-[13px] leading-none">event_upcoming</span>
       {remaining}
     </span>
   );

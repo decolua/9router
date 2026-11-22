@@ -163,7 +163,7 @@ export function SttExampleCard({ providerId }) {
                   useTunnel ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"
                 }`}
               >
-                <span className="material-symbols-outlined text-[14px]">wifi_tethering</span>
+                <span className="material-symbols-outlined text-[14px]">sensors</span>
                 Tunnel
               </button>
             )}
@@ -329,7 +329,7 @@ export function SttExampleCard({ providerId }) {
                 className="flex w-full sm:w-auto items-center justify-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[14px]" style={running ? { animation: "spin 1s linear infinite" } : undefined}>
-                  play_arrow
+                  play_circle
                 </span>
                 {running ? "Transcribing..." : "Run"}
               </button>
@@ -344,7 +344,7 @@ export function SttExampleCard({ providerId }) {
         <div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1.5">
             <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-              Response {result && latency && <span className="inline-flex items-center gap-1 font-normal normal-case"><span className="material-symbols-outlined text-[11px] leading-none">bolt</span>{latency}ms</span>}
+              Response {result && latency && <span className="inline-flex items-center gap-1 font-normal normal-case"><span className="material-symbols-outlined text-[11px] leading-none">speed</span>{latency}ms</span>}
             </span>
             {result && (
               <button

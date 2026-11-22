@@ -17,6 +17,7 @@ import { existsSync, readFileSync } from "node:fs";
 import https from "node:https";
 import path from "node:path";
 import { GITHUB_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
+import { compareDateReleases, releaseFromHeading } from "./changelogRelease.mjs";
 
 const API = "https://api.github.com";
 const CHECK_TTL_MS = 3600000; // one successful lookup per hour
@@ -146,12 +147,12 @@ async function fetchRemoteRelease() {
 }
 
 function parseChangelogRelease(text) {
-  const heading = text.match(/^#\s+(v[0-9][^\s(]*)/m);
+  const heading = text.match(/^#\s+((?:v\d[^\s(]*|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})[^\n]*)/m);
   if (!heading) return null;
-  const version = heading[1].trim();
+  const version = releaseFromHeading(heading[1]);
   const start = text.indexOf(heading[0]) + heading[0].length;
   const rest = text.slice(start);
-  const nextRelease = rest.search(/^#\s+v[0-9]/m);
+  const nextRelease = rest.search(/^#\s+(?:v\d|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})/m);
   const section = nextRelease === -1 ? rest : rest.slice(0, nextRelease);
   const notes = section
     .split("\n")
@@ -168,14 +169,14 @@ function readLocalRelease() {
   if (cache.localRelease !== undefined) return cache.localRelease;
   const stamped = String(process.env.APP_RELEASE || "").trim();
   if (stamped) {
-    cache.localRelease = stamped.startsWith("v") ? stamped : `v${stamped}`;
+    cache.localRelease = /^\d{4}-\d{2}-\d{2}$/.test(stamped) || stamped.startsWith("v") ? stamped : `v${stamped}`;
     return cache.localRelease;
   }
   let found = null;
   try {
     const text = readFileSync(path.join(process.cwd(), "CHANGELOG.md"), "utf8");
-    const heading = text.match(/^#\s+(v[0-9][^\s(]*)/m);
-    if (heading) found = heading[1].trim();
+    const heading = text.match(/^#\s+((?:v\d[^\s(]*|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})[^\n]*)/m);
+    if (heading) found = releaseFromHeading(heading[1]);
   } catch {
     // No changelog next to the running app: the release signal stays unknown.
   }
@@ -188,6 +189,8 @@ function readLocalRelease() {
 // a different suffix means the repository moved to another build of that release.
 function compareReleases(remote, local) {
   if (!remote || !local) return null;
+  const dateOrder = compareDateReleases(remote, local);
+  if (dateOrder !== undefined) return dateOrder;
   const split = (value) => {
     const cleaned = String(value).trim().replace(/^v/i, "");
     const dash = cleaned.indexOf("-");

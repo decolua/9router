@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { releaseFromHeading } from "./src/lib/changelogRelease.mjs";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 // Stamp the build with the revision and the release it was made from. A deploy
@@ -17,8 +18,9 @@ function stampBuild() {
   }
   try {
     const changelog = readFileSync(join(projectRoot, "CHANGELOG.md"), "utf8");
-    const heading = changelog.match(/^#\s+(v[0-9][^\s(]*)/m);
-    if (heading) stamp.APP_RELEASE = process.env.APP_RELEASE || heading[1].trim();
+    const heading = changelog.match(/^#\s+((?:v\d[^\s(]*|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})[^\n]*)/m);
+    const release = releaseFromHeading(heading?.[1]);
+    if (release || process.env.APP_RELEASE) stamp.APP_RELEASE = process.env.APP_RELEASE || release;
   } catch {
     // No changelog in the build context: the release signal stays unknown.
   }

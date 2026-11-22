@@ -64,7 +64,7 @@ export default function KeyQuotaCard({ quota }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="material-symbols-outlined text-[18px] text-primary">
-            key
+            vpn_key
           </span>
           <span className="truncate text-sm font-semibold text-text-main">
             {quota?.name || "This key"}
@@ -119,7 +119,7 @@ export default function KeyQuotaCard({ quota }) {
                 : "bg-amber-500/10 text-warning border border-amber-500/20"
             }`}>
               <span className="material-symbols-outlined text-[13px] leading-none">
-                {isExpired ? "event_busy" : "timer"}
+                {isExpired ? "event_available" : "hourglass_bottom"}
               </span>
               {isExpired ? "Key Expired: " : "Key Expires: "}
               {expDate.toLocaleDateString()} {expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}

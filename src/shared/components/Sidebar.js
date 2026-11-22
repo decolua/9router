@@ -12,38 +12,39 @@ import useSettingsStore from "@/store/settingsStore";
 import { useSessionStore } from "@/store/sessionStore";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
-const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt", "systemone"];
+const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music", "systemone"];
 // Combined entry: webSearch + webFetch share one page at /dashboard/media-providers/web
-const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
-
+const COMBINED_WEB_ITEM = { id: "web", label: "Web Search & Fetch", icon: "explore", href: "/dashboard/media-providers/web" };
 const navItems = [
-  { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api" },
-  { href: "/dashboard/providers", label: "Providers", icon: "dns" },
+  { href: "/dashboard/endpoint", label: "Endpoint & Keys", icon: "network_node" },
+  { href: "/dashboard/providers", label: "Provider Connections", icon: "hub" },
+  { href: "/dashboard/combos", label: "Model Routes", icon: "merge_type" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
-  { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
-  { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
-  { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
-  { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
+  { href: "/dashboard/usage", label: "Usage & Analytics", icon: "query_stats" },
+  { href: "/dashboard/quota", label: "Quota Tracker", icon: "speed" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
-  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "code_blocks" },
+  { href: "/dashboard/token-saver", label: "Token Saver", icon: "compress" },
 ];
 
 // Custom features added by this fork - open-ended, new tools land here too.
 const workshopItems = [
-  { href: "/dashboard/arena", label: "Compare Models", icon: "swords" },
-  { href: "/dashboard/model-editor", label: "Custom Models", icon: "auto_awesome" },
-  { href: "/dashboard/auto-harvester", label: "Auto Harvester", icon: "radar" },
+  { href: "/dashboard/model-editor", label: "Model Studio", icon: "edit_square" },
+  { href: "/dashboard/arena", label: "Model Lab", icon: "compare" },
+  { href: "/dashboard/auto-harvester", label: "Provider Discovery", icon: "network_check" },
+  { href: "/dashboard/cli-tools", label: "CLI Integrations", icon: "code_blocks" },
+  { href: "/dashboard/token-saver", label: "Request Optimizer", icon: "compress" },
 ];
 
 // Security Log and Inbox Error live in the bell, not the menu - they are
 // conditions to review, not places you visit to work.
 const debugItems = [
-  { href: "/dashboard/logs", label: "Error & Console Logs", icon: "receipt_long" },
-  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
+  { href: "/dashboard/logs", label: "Activity Logs", icon: "receipt" },
+  { href: "/dashboard/translator", label: "Translator", icon: "swap_horiz" },
 ];
 
 const systemItems = [
-  { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
+  { href: "/dashboard/proxy-pools", label: "Network Pools", icon: "router" },
 ];
 
 // Nothing is granted until /api/auth/status says so. The menu used to fall back
@@ -67,9 +68,10 @@ function NavLink({ href, icon, label, active, onClick, sub = false }) {
     <Link
       href={href}
       onClick={onClick}
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "relative flex min-w-0 items-center gap-3 rounded-[10px] transition-all group",
-        sub ? "pl-7 pr-3 py-[6px]" : "px-3 py-[7px]",
+        "group relative flex min-h-11 min-w-0 items-center gap-3 rounded-[9px] px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+        sub && "ml-2 min-h-10 pl-3",
         active
           ? "bg-primary/10 text-primary font-semibold"
           : "text-text-muted hover:bg-surface-2 hover:text-text-main"
@@ -80,10 +82,10 @@ function NavLink({ href, icon, label, active, onClick, sub = false }) {
       )}
       <span
         className={cn(
-          "material-symbols-outlined shrink-0 leading-none",
-          sub ? "size-4 text-[16px]" : "size-[18px] text-[18px]",
+          "material-symbols-outlined size-[18px] shrink-0 text-[18px] leading-none",
           active ? "fill-1 text-primary" : "group-hover:text-primary transition-colors"
         )}
+        aria-hidden="true"
       >
         {icon}
       </span>
@@ -92,9 +94,37 @@ function NavLink({ href, icon, label, active, onClick, sub = false }) {
   );
 }
 
-export default function Sidebar({ onClose }) {
+function NavSection({ title, items, isActive, onClose, badge }) {
+  if (!items.length) return null;
+
+  return (
+    <section aria-label={title} className="border-t border-border-subtle pt-3 first:border-0 first:pt-0">
+      <h2 className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
+        {title}
+        {badge && (
+          <span className="ml-2 rounded-[3px] bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-green-400">
+            {badge}
+          </span>
+        )}
+      </h2>
+      <div className="space-y-0.5">
+        {items.map((item) => (
+          <NavLink
+            key={item.href}
+            href={item.href}
+            icon={item.icon}
+            label={item.label}
+            active={isActive(item.href)}
+            onClick={onClose}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export default function Sidebar({ onClose, side = "right" }) {
   const pathname = usePathname();
-  const [mediaOpen, setMediaOpen] = useState(false);
   const [enableTranslator, setEnableTranslator] = useState(false);
   // One cached session for the whole shell; the theme store and HeaderMenu read
   // the same role instead of each fetching /api/auth/status again.
@@ -143,6 +173,7 @@ export default function Sidebar({ onClose }) {
   const filteredWorkshopItems = workshopItems.filter((item) => {
     if (!sessionReady) return false;
     if (!isApiKeyUser) return true;
+    if (item.href === "/dashboard/cli-tools" || item.href === "/dashboard/token-saver") return permissions.manageTools;
     if (item.href === "/dashboard/model-editor" || item.href === "/dashboard/arena") {
       return permissions.manageModels;
     }
@@ -164,7 +195,30 @@ export default function Sidebar({ onClose }) {
     return permissions.manageAdvanced;
   });
 
+  const filteredRoutingItems = filteredNavItems.filter((item) =>
+    ["/dashboard/endpoint", "/dashboard/providers", "/dashboard/combos"].includes(item.href)
+  );
+  const filteredMonitorItems = [
+    ...filteredDebugItems.filter((item) => item.href === "/dashboard/logs"),
+    ...filteredNavItems.filter((item) => item.href === "/dashboard/usage"),
+    ...filteredNavItems.filter((item) => item.href === "/dashboard/quota"),
+  ];
+  const filteredWorkbenchItems = filteredWorkshopItems;
+  const filteredSystemDebugItems = filteredDebugItems.filter((item) => item.href !== "/dashboard/logs");
+
   const canOpenMedia = sessionReady && (!isApiKeyUser || permissions.manageMediaProviders);
+  const mediaNavItems = [
+    ...MEDIA_PROVIDER_KINDS.filter((kind) => VISIBLE_MEDIA_KINDS.includes(kind.id)).map((kind) => ({
+      href: `/dashboard/media-providers/${kind.id}`,
+      icon: kind.icon,
+      label: kind.label,
+    })),
+    {
+      href: COMBINED_WEB_ITEM.href,
+      icon: COMBINED_WEB_ITEM.icon,
+      label: COMBINED_WEB_ITEM.label,
+    },
+  ];
 
   // Settings are an administrator surface, so a key-signed session skips them
   // instead of firing requests it may not read.
@@ -184,10 +238,16 @@ export default function Sidebar({ onClose }) {
 
   return (
     <>
-      <aside className="flex w-72 flex-col border-r border-border-subtle bg-vibrancy backdrop-blur-xl transition-colors duration-300 min-h-full">
+      <aside
+        data-dock={side}
+        className={cn(
+          "neo-sidebar flex h-full w-[min(18rem,86vw)] min-h-0 flex-col border-border-subtle bg-sidebar shadow-[var(--shadow-elev)] transition-colors duration-300 lg:shadow-none",
+          side === "right" ? "border-l" : "border-r"
+        )}
+      >
 
         {/* Logo */}
-        <div className="px-6 py-4 flex flex-col gap-2">
+        <div className="flex flex-col gap-2 border-b border-border-subtle px-5 py-5 sm:px-6">
           <Link href="/dashboard" className="flex items-center gap-3">
             <div className="flex items-center justify-center size-9 shrink-0 overflow-hidden rounded-[10px]">
               <Image src="/providers/9router-logo.png" alt={APP_CONFIG.name} width={36} height={36} className="size-full object-contain" sizes="36px" priority unoptimized />
@@ -201,112 +261,25 @@ export default function Sidebar({ onClose }) {
           </Link>
           {sessionReady && isApiKeyUser && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 border border-primary/20 text-xs text-primary font-medium">
-              <span className="material-symbols-outlined text-[15px]">key</span>
+              <span className="material-symbols-outlined text-[15px]" aria-hidden="true">passkey</span>
               <span className="truncate">{authStatus?.displayName || "API Key User"}</span>
             </div>
           )}
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {filteredNavItems.map((item) => (
-            <NavLink
-              key={item.href}
-              href={item.href}
-              icon={item.icon}
-              label={item.label}
-              active={isActive(item.href)}
-              onClick={onClose}
-            />
-          ))}
+        <nav aria-label="Dashboard navigation" className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-4 custom-scrollbar">
+          <NavSection title="Traffic" items={filteredRoutingItems} isActive={isActive} onClose={onClose} />
+          <NavSection title="Build" items={filteredWorkbenchItems} isActive={isActive} onClose={onClose} />
+          <NavSection title="Observe" items={filteredMonitorItems} isActive={isActive} onClose={onClose} />
 
-          {/* Custom tools added by this fork */}
-          {filteredWorkshopItems.length > 0 && (
-            <div className="pt-3 mt-2 space-y-0.5">
-              {filteredWorkshopItems.map((item) => (
-                <NavLink
-                  key={item.href}
-                  href={item.href}
-                  icon={item.icon}
-                  label={item.label}
-                  active={isActive(item.href)}
-                  onClick={onClose}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* System section - an API key session sees only the parts it may use */}
-          {(!isApiKeyUser || canOpenMedia || filteredSystemItems.length > 0 || filteredDebugItems.length > 0) && (
-            <div className="pt-3 mt-2 space-y-0.5">
-              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-                System
-              </p>
-
-              {/* Media Providers accordion */}
-              {canOpenMedia && (
-              <button
-                onClick={() => setMediaOpen((v) => !v)}
-                className={cn(
-                  "relative w-full flex items-center gap-3 px-3 py-[7px] rounded-[10px] transition-all group",
-                  pathname.startsWith("/dashboard/media-providers")
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                )}
-              >
-                {pathname.startsWith("/dashboard/media-providers") && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-primary" />
-                )}
-                <span className="material-symbols-outlined size-[18px] text-[18px] leading-none shrink-0">perm_media</span>
-                <span className="text-[13px] font-medium leading-none flex-1 text-left min-w-0 truncate" title="Media Providers">Media Providers</span>
-                {MEDIA_PROVIDER_KINDS.some((k) => VISIBLE_MEDIA_KINDS.includes(k.id) && k.isNew) && (
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-[3px] bg-green-500/15 text-green-400">NEW</span>
-                )}
-                <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-                  expand_more
-                </span>
-              </button>
-              )}
-              {canOpenMedia && mediaOpen && (
-                <div className="pl-4">
-                  {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
-                    <NavLink
-                      key={kind.id}
-                      href={`/dashboard/media-providers/${kind.id}`}
-                      icon={kind.icon}
-                      label={kind.label}
-                      active={pathname.startsWith(`/dashboard/media-providers/${kind.id}`)}
-                      onClick={onClose}
-                      sub
-                    />
-                  ))}
-                  <NavLink
-                    key={COMBINED_WEB_ITEM.id}
-                    href={COMBINED_WEB_ITEM.href}
-                    icon={COMBINED_WEB_ITEM.icon}
-                    label={COMBINED_WEB_ITEM.label}
-                    active={pathname.startsWith(COMBINED_WEB_ITEM.href)}
-                    onClick={onClose}
-                    sub
-                  />
-                </div>
-              )}
-
-              {filteredSystemItems.map((item) => (
-                <NavLink
-                  key={item.href}
-                  href={item.href}
-                  icon={item.icon}
-                  label={item.label}
-                  active={isActive(item.href)}
-                  onClick={onClose}
-                />
-              ))}
-
-              {/* Debug items (inside System section, before Settings) */}
-              {filteredDebugItems.map((item) => {
-                const show = item.href !== '/dashboard/translator' || enableTranslator;
-                return show ? (
+          {sessionReady && (!isApiKeyUser || filteredSystemItems.length > 0 || filteredSystemDebugItems.length > 0) && (
+            <section aria-label="Instance" className="border-t border-border-subtle pt-3">
+              <h2 className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
+                Instance
+              </h2>
+              <div className="space-y-0.5">
+                {filteredSystemItems.map((item) => (
                   <NavLink
                     key={item.href}
                     href={item.href}
@@ -315,30 +288,54 @@ export default function Sidebar({ onClose }) {
                     active={isActive(item.href)}
                     onClick={onClose}
                   />
-                ) : null;
-              })}
+                ))}
 
+                {filteredSystemDebugItems.map((item) => (
+                  item.href !== "/dashboard/translator" || enableTranslator ? (
+                    <NavLink
+                      key={item.href}
+                      href={item.href}
+                      icon={item.icon}
+                      label={item.label}
+                      active={isActive(item.href)}
+                      onClick={onClose}
+                    />
+                  ) : null
+                ))}
 
-              {/* Settings */}
-              {sessionReady && !isApiKeyUser && (
-              <>
-              <NavLink
-                href='/dashboard/profile'
-                icon='settings'
-                label='9Router Settings'
-                active={isActive('/dashboard/profile')}
-                onClick={onClose}
-              />
-              <NavLink
-                href='/dashboard/experiments'
-                icon='science'
-                label='Experiment Features'
-                active={isActive('/dashboard/experiments')}
-                onClick={onClose}
-              />
-              </>
-              )}
-            </div>
+                {sessionReady && !isApiKeyUser && (
+                  <>
+                    <NavLink
+                      href="/dashboard/profile"
+                      icon="manage_accounts"
+                      label="Instance Settings"
+                      active={isActive("/dashboard/profile")}
+                      onClick={onClose}
+                    />
+                    <NavLink
+                      href="/dashboard/experiments"
+                      icon="biotech"
+                      label="Labs & Experiments"
+                      active={isActive("/dashboard/experiments")}
+                      onClick={onClose}
+                    />
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+          {canOpenMedia && (
+            <NavSection
+              title="Media Services"
+              items={mediaNavItems}
+              isActive={isActive}
+              onClose={onClose}
+              badge={
+                MEDIA_PROVIDER_KINDS.some((kind) => VISIBLE_MEDIA_KINDS.includes(kind.id) && kind.isNew)
+                  ? "NEW"
+                  : undefined
+              }
+            />
           )}
         </nav>
 
@@ -349,5 +346,5 @@ export default function Sidebar({ onClose }) {
 
 Sidebar.propTypes = {
   onClose: PropTypes.func,
+  side: PropTypes.oneOf(["left", "right"]),
 };
-

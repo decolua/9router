@@ -39,14 +39,14 @@ export default function DonateModal({ isOpen, onClose }) {
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 backdrop-blur-md" style={{ backgroundColor: "var(--color-scrim)" }} onClick={onClose} />
+      <div className="absolute inset-0 " style={{ backgroundColor: "var(--color-scrim)" }} onClick={onClose} />
       <div
         ref={modalRef}
         className="relative w-full bg-surface border border-border-subtle rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
       >
         <div className="flex items-center justify-between p-3 border-b border-border-subtle">
           <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-pink-500">volunteer_activism</span>
+            <span className="material-symbols-outlined text-pink-500">heart_plus</span>
             {data?.title || "Support 9Router"}
           </h2>
           <button
@@ -54,14 +54,14 @@ export default function DonateModal({ isOpen, onClose }) {
             className="p-1.5 rounded-lg text-text-muted hover:bg-surface-2 transition-colors"
             aria-label="Close"
           >
-            <span className="material-symbols-outlined text-[20px]">close</span>
+            <span className="material-symbols-outlined text-[20px]">cancel</span>
           </button>
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">
           {loading && (
             <div className="flex items-center justify-center py-10 text-text-muted">
-              <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin mr-2">autorenew</span>
               Loading...
             </div>
           )}
@@ -125,7 +125,7 @@ function DonateChannelCard({ channel }) {
           style={{ backgroundColor: color }}
         >
           Open
-          <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+          <span className="material-symbols-outlined text-[16px]">launch</span>
         </a>
       )}
     </div>

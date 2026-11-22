@@ -40,7 +40,7 @@ export default function ConsoleLogClient() {
   const [logs, setLogs] = useState([]);
   const [connected, setConnected] = useState(false);
   const [filter, setFilter] = useState("");
-  const [levelFilter, setLevelFilter] = useState("all"); // "all", "error", "warn", "info"
+  const [levelFilter, setLevelFilter] = useState("all"); // "all", "report_problem", "warn", "info"
   const [autoScroll, setAutoScroll] = useState(true);
   const [copied, setCopied] = useState(false);
   const logRef = useRef(null);
@@ -103,7 +103,7 @@ export default function ConsoleLogClient() {
 
   const filteredLogs = useMemo(() => {
     return logs.filter((line) => {
-      if (levelFilter === "error" && !(line.includes("[ERROR]") || line.includes("✗") || line.includes("Error:") || line.includes("FAILED"))) {
+      if (levelFilter === "report_problem" && !(line.includes("[ERROR]") || line.includes("✗") || line.includes("Error:") || line.includes("FAILED"))) {
         return false;
       }
       if (levelFilter === "warn" && !(line.includes("[WARN]") || line.includes("⚠️"))) {
@@ -121,9 +121,9 @@ export default function ConsoleLogClient() {
 
   return (
     <PageShell width="full" className="min-w-0">
-      <Card className="flex flex-col overflow-hidden border-border bg-surface shadow-sm">
+      <Card className="flex flex-col overflow-hidden rounded-2xl border-border bg-surface shadow-sm">
         {/* Sleek Terminal Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-border bg-surface-2/40">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-4 py-4 border-b border-border bg-surface-2/40 sm:px-5">
           <div className="flex items-center gap-3">
             {/* Terminal Window Dots */}
             <div className="flex items-center gap-1.5 shrink-0">
@@ -135,7 +135,7 @@ export default function ConsoleLogClient() {
             <div className="h-4 w-px bg-border" />
 
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[18px] text-primary">terminal</span>
+              <span className="material-symbols-outlined text-[18px] text-primary">code</span>
               <span className="text-sm font-semibold text-text-main">Live Terminal Console</span>
               <span className="text-xs text-text-muted font-mono">({filteredLogs.length} / {logs.length} lines)</span>
             </div>
@@ -157,7 +157,7 @@ export default function ConsoleLogClient() {
             <Button
               size="sm"
               variant={autoScroll ? "primary" : "outline"}
-              icon={autoScroll ? "vertical_align_bottom" : "pause"}
+              icon={autoScroll ? "south" : "pause_circle"}
               onClick={() => setAutoScroll(!autoScroll)}
               title={autoScroll ? "Auto-scroll is ON" : "Auto-scroll is PAUSED"}
             >
@@ -166,10 +166,10 @@ export default function ConsoleLogClient() {
 
             {logs.length > 0 && (
               <>
-                <Button size="sm" variant="outline" icon={copied ? "check" : "content_copy"} onClick={handleCopy}>
+                <Button size="sm" variant="outline" icon={copied ? "task_alt" : "file_copy"} onClick={handleCopy}>
                   {copied ? "Copied" : "Copy"}
                 </Button>
-                <Button size="sm" variant="danger" icon="delete" onClick={handleClear}>
+                <Button size="sm" variant="danger" icon="delete_sweep" onClick={handleClear}>
                   Clear
                 </Button>
               </>
@@ -178,9 +178,9 @@ export default function ConsoleLogClient() {
         </div>
 
         {/* Filter bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 border-b border-border/60 bg-surface text-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-b border-border/60 bg-surface text-xs">
           <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-            <span className="material-symbols-outlined text-[16px] text-text-muted">search</span>
+            <span className="material-symbols-outlined text-[16px] text-text-muted">manage_search</span>
             <input
               type="text"
               placeholder="Search console logs..."
@@ -190,7 +190,7 @@ export default function ConsoleLogClient() {
             />
             {filter && (
               <button onClick={() => setFilter("")} className="text-text-muted hover:text-text-main">
-                <span className="material-symbols-outlined text-[14px]">close</span>
+                <span className="material-symbols-outlined text-[14px]">cancel</span>
               </button>
             )}
           </div>
@@ -199,7 +199,7 @@ export default function ConsoleLogClient() {
           <div className="flex items-center gap-1 shrink-0 font-mono text-[11px]">
             {[
               { id: "all", label: "ALL" },
-              { id: "error", label: "ERRORS" },
+              { id: "report_problem", label: "ERRORS" },
               { id: "warn", label: "WARNS" },
               { id: "info", label: "INFO" },
             ].map((lvl) => (
@@ -221,11 +221,11 @@ export default function ConsoleLogClient() {
         {/* Terminal Body */}
         <div
           ref={logRef}
-          className="p-3 font-mono text-xs h-[calc(100dvh-270px)] md:h-[calc(100dvh-230px)] overflow-y-auto bg-surface-2 text-text-main select-text custom-scrollbar border border-border-subtle rounded-[var(--r-control)]"
+          className="p-3 sm:p-4 font-mono text-xs h-[calc(100dvh-290px)] md:h-[calc(100dvh-250px)] overflow-y-auto bg-surface-2 text-text-main select-text custom-scrollbar border border-border-subtle rounded-b-2xl"
         >
           {filteredLogs.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-text-muted/60 gap-2">
-              <span className="material-symbols-outlined text-3xl">terminal</span>
+              <span className="material-symbols-outlined text-3xl">code</span>
               <span>{logs.length === 0 ? "Waiting for console output..." : "No log lines match current filter."}</span>
             </div>
           ) : (

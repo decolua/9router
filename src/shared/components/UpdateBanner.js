@@ -197,7 +197,7 @@ export default function UpdateBanner({ pollMs = POLL_MS }) {
                 glyph where the product mark sits. */}
             <div className="flex items-start gap-3">
               <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border-subtle text-primary">
-                <span className="material-symbols-outlined text-[22px]">system_update_alt</span>
+                <span className="material-symbols-outlined text-[22px]">upgrade</span>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-lg font-bold tracking-tight leading-tight text-primary">
@@ -213,7 +213,7 @@ export default function UpdateBanner({ pollMs = POLL_MS }) {
                 title="Close"
                 aria-label="Dismiss update notice"
               >
-                <span className="material-symbols-outlined text-[16px]">close</span>
+                <span className="material-symbols-outlined text-[16px]">cancel</span>
               </button>
             </div>
 
@@ -252,7 +252,7 @@ export default function UpdateBanner({ pollMs = POLL_MS }) {
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-text-main transition-colors hover:border-primary hover:text-primary"
               >
-                <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                <span className="material-symbols-outlined text-[16px]">launch</span>
                 GitHub
               </a>
             </div>
@@ -275,7 +275,7 @@ export default function UpdateBanner({ pollMs = POLL_MS }) {
       />
 
       {(isDisconnected || isUpdating) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim backdrop-blur-sm p-6 fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim  p-6 fade-in">
           {isUpdating ? (
             <ManualUpdatePanel
               latestVersion={info.latestVersion}
@@ -289,7 +289,7 @@ export default function UpdateBanner({ pollMs = POLL_MS }) {
           ) : (
             <div className="text-center p-8">
               <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
-                <span className="material-symbols-outlined text-[32px]">power_off</span>
+                <span className="material-symbols-outlined text-[32px]">power_settings_new</span>
               </div>
               <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
               <p className="text-text-muted mb-6">The proxy server has been stopped.</p>

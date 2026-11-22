@@ -94,7 +94,7 @@ export default function CustomConfigCard({ providerId }) {
         className="flex w-full items-center justify-between text-left"
       >
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary text-[20px]">tune</span>
+          <span className="material-symbols-outlined text-primary text-[20px]">settings_suggest</span>
           <span className="text-sm font-semibold">Custom Headers</span>
           {hasOverride && (
             <Badge variant="success" size="sm">Active</Badge>
@@ -135,7 +135,7 @@ export default function CustomConfigCard({ providerId }) {
                     onClick={() => setRows((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : [{ name: "", value: "" }]))}
                     className="shrink-0 text-text-muted hover:text-red-500"
                   >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                    <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
                   </button>
                 </div>
               );
@@ -148,7 +148,7 @@ export default function CustomConfigCard({ providerId }) {
               onClick={() => setRows((prev) => [...prev, { name: "", value: "" }])}
               className="flex items-center gap-1 text-xs text-primary hover:underline"
             >
-              <span className="material-symbols-outlined text-[16px]">add</span>
+              <span className="material-symbols-outlined text-[16px]">add_circle</span>
               Add header
             </button>
             <div className="flex gap-2">

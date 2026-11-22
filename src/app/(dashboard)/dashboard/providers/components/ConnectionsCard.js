@@ -26,7 +26,7 @@ function CooldownTimer({ until }) {
   if (!remaining) return null;
   return (
     <span className="inline-flex items-center gap-1 text-xs text-orange-500 font-mono">
-      <span className="material-symbols-outlined text-[13px] leading-none">schedule</span>
+      <span className="material-symbols-outlined text-[13px] leading-none">event_upcoming</span>
       {remaining}
     </span>
   );
@@ -109,10 +109,10 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
       <div className="flex w-full min-w-0 flex-1 items-start gap-3 sm:items-center">
         <div className="flex flex-col">
           <button onClick={onMoveUp} disabled={isFirst} className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}>
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
+            <span className="material-symbols-outlined text-sm">keyboard_double_arrow_up</span>
           </button>
           <button onClick={onMoveDown} disabled={isLast} className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}>
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+            <span className="material-symbols-outlined text-sm">keyboard_double_arrow_down</span>
           </button>
         </div>
         <span className="material-symbols-outlined text-base text-text-muted">{isOAuth ? "lock" : "key"}</span>
@@ -161,11 +161,11 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             </div>
           )}
           <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
+            <span className="material-symbols-outlined text-[18px]">edit_square</span>
             <span className="text-[10px] leading-tight">Edit</span>
           </button>
           <button onClick={onDelete} className="flex flex-col items-center px-2 py-1 rounded hover:bg-red-500/10 text-red-500">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
+            <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
             <span className="text-[10px] leading-tight">Delete</span>
           </button>
         </div>
@@ -435,7 +435,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
         {connections.length === 0 ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-text-muted">No connections yet</p>
-            <Button size="sm" icon="add" onClick={() => setShowAddModal(true)}>Add Connection</Button>
+            <Button size="sm" icon="add_circle" onClick={() => setShowAddModal(true)}>Add Connection</Button>
           </div>
         ) : (
           <>
@@ -458,7 +458,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
               ))}
             </div>
             <div className="mt-4 flex justify-stretch sm:justify-start">
-              <Button size="sm" icon="add" onClick={() => setShowAddModal(true)}>Add</Button>
+              <Button size="sm" icon="add_circle" onClick={() => setShowAddModal(true)}>Add</Button>
             </div>
           </>
         )}

@@ -266,14 +266,14 @@ export default function CoworkToolCard({
             <p className="text-xs text-text-muted truncate">{tool.description}</p>
           </div>
         </div>
-        <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
+        <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>keyboard_arrow_down</span>
       </div>
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
           {checking && (
             <div className="flex items-center gap-2 text-text-muted">
-              <span className="material-symbols-outlined animate-spin">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin">autorenew</span>
               <span>Checking Claude Cowork...</span>
             </div>
           )}
@@ -281,7 +281,7 @@ export default function CoworkToolCard({
           {!checking && status && !status.installed && (
             <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-yellow-500">warning</span>
+                <span className="material-symbols-outlined text-yellow-500">priority_high</span>
                 <div className="flex-1">
                   <p className="font-medium text-warning">Claude Desktop (Cowork mode) not detected</p>
                   <p className="text-sm text-text-muted">Open Claude Desktop → Help → Troubleshooting → Enable Developer mode → Configure third-party inference, then return here.</p>
@@ -289,7 +289,7 @@ export default function CoworkToolCard({
               </div>
               <div className="pl-9">
                 <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="!bg-yellow-500/20 !border-yellow-500/40 !text-warning hover:!bg-yellow-500/30">
-                  <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
+                  <span className="material-symbols-outlined text-[18px] mr-1">file_copy</span>
                   Manual Config
                 </Button>
               </div>
@@ -301,7 +301,7 @@ export default function CoworkToolCard({
               <div className="flex flex-col gap-2">
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                   <BaseUrlSelect
                     value={getEffectiveBaseUrl()}
                     onChange={(url) => setCustomBaseUrl(stripV1(url))}
@@ -318,7 +318,7 @@ export default function CoworkToolCard({
                 {status?.cowork?.baseUrl && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
-                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                     <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
                       {status.cowork.baseUrl}
                     </span>
@@ -327,13 +327,13 @@ export default function CoworkToolCard({
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">east</span>
                   <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Models</span>
-                  <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px]">east</span>
                   <div className="flex-1 flex items-center gap-2">
                     <div className="flex-1 flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
                       {selectedModels.length === 0 ? (
@@ -343,7 +343,7 @@ export default function CoworkToolCard({
                           <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--r-chip)] text-xs bg-surface-2 text-text-muted border border-border-subtle hover:border-border">
                             {m}
                             <button onClick={() => handleRemoveModel(m)} className="ml-0.5 hover:text-red-500">
-                              <span className="material-symbols-outlined text-[12px]">close</span>
+                              <span className="material-symbols-outlined text-[12px]">cancel</span>
                             </button>
                           </span>
                         ))
@@ -355,7 +355,7 @@ export default function CoworkToolCard({
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-2">MCP</span>
-                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-2">arrow_forward</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-2">east</span>
                   <div className="flex-1 flex flex-col gap-1">
                     {/* Preset plugins */}
                     {plugins.filter((p) => p.name !== "exa").map((p) => (
@@ -371,7 +371,7 @@ export default function CoworkToolCard({
                           )}
                         </div>
                         <button onClick={() => removePlugin(p.name)} className="shrink-0 hover:text-red-500 ml-auto">
-                          <span className="material-symbols-outlined text-[12px]">close</span>
+                          <span className="material-symbols-outlined text-[12px]">cancel</span>
                         </button>
                       </div>
                     ))}
@@ -382,7 +382,7 @@ export default function CoworkToolCard({
                         <span className="text-[8px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 shrink-0">custom</span>
                         <span className="flex-1 text-[9px] text-text-muted truncate">{p.url}</span>
                         <button onClick={() => setCustomPlugins(customPlugins.filter((x) => x.name !== p.name))} className="shrink-0 hover:text-red-500 ml-auto">
-                          <span className="material-symbols-outlined text-[12px]">close</span>
+                          <span className="material-symbols-outlined text-[12px]">cancel</span>
                         </button>
                       </div>
                     ))}
@@ -404,7 +404,7 @@ export default function CoworkToolCard({
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Tools</span>
-                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">east</span>
                   <div className="flex-1 flex flex-col gap-1.5">
                     {(() => {
                       const exaEnabled = plugins.some((p) => p.name === "exa");
@@ -455,7 +455,7 @@ export default function CoworkToolCard({
                 {Array.isArray(status?.localStdioPlugins) && status.localStdioPlugins.filter((p) => p.name !== "browsermcp").length > 0 && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
                     <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Local Plugins</span>
-                    <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
+                    <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">east</span>
                     <div className="flex-1 flex flex-col gap-2">
                       <div className="flex flex-col gap-1.5 px-2 py-1.5 bg-surface rounded border border-border">
                         {status.localStdioPlugins.filter((p) => p.name !== "browsermcp").map((p) => {
@@ -483,7 +483,7 @@ export default function CoworkToolCard({
                         })}
                       </div>
                       <p className="flex items-start gap-1 text-[10px] text-text-muted leading-snug">
-                        <span className="material-symbols-outlined mt-0.5 text-[12px] leading-none">warning</span>
+                        <span className="material-symbols-outlined mt-0.5 text-[12px] leading-none">priority_high</span>
                         <span>Local plugins run as subprocess via <code className="px-1.5 py-0.5 rounded-[var(--r-chip)] bg-surface-2 border border-border-subtle text-text-main">npx</code>. Requires Node.js installed.</span>
                       </p>
                     </div>
@@ -493,20 +493,20 @@ export default function CoworkToolCard({
 
               {message && (
                 <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
-                  <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
+                  <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "task_alt" : "report_problem"}</span>
                   <span>{message.text}</span>
                 </div>
               )}
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <Button variant="primary" size="sm" onClick={handleApply} disabled={selectedModels.length === 0} loading={applying} className="w-full sm:w-auto">
-                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
+                  <span className="material-symbols-outlined text-[14px] mr-1">archive</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleReset} disabled={!status.has9Router} loading={restoring} className="w-full sm:w-auto">
-                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
+                  <span className="material-symbols-outlined text-[14px] mr-1">settings_backup_restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto">
-                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
+                  <span className="material-symbols-outlined text-[14px] mr-1">file_copy</span>Manual Config
                 </Button>
               </div>
             </>
@@ -561,7 +561,7 @@ export default function CoworkToolCard({
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm">Add Custom MCP</h3>
               <button onClick={() => setAddMcpOpen(false)} className="text-text-muted hover:text-text-main">
-                <span className="material-symbols-outlined text-[18px]">close</span>
+                <span className="material-symbols-outlined text-[18px]">cancel</span>
               </button>
             </div>
 

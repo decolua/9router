@@ -2,46 +2,42 @@
 
 import { create } from "zustand";
 
-// Theme is locked strictly to 'glass' across the entire application.
-export const THEME_IDS = ["glass"];
+const THEME_ID = "neobrutalism";
+export const THEME_IDS = [THEME_ID];
 
 function normalize() {
-  return "glass";
+  return THEME_ID;
 }
 
-const useThemeStore = create((set, get) => ({
-  theme: "glass",
+const useThemeStore = create((set) => ({
+  theme: THEME_ID,
   canChangeTheme: false,
   hydrated: true,
 
-  /**
-   * Called by ThemeProvider / shell. The persisted site-wide theme is
-   * strictly glass (/api/theme).
-   */
+  /** Called by ThemeProvider / shell; the site-wide theme is locked. */
   setServerTheme: (_theme, _canChange = false) => {
-    set({ theme: "glass", canChangeTheme: false, hydrated: true });
-    applyTheme("glass");
+    set({ theme: THEME_ID, canChangeTheme: false, hydrated: true });
+    applyTheme(THEME_ID);
   },
 
-  /** Theme is locked strictly to glass; no switching is allowed. */
+  /** Neobrutalism is the single locked site-wide visual system. */
   setTheme: async () => {
-    set({ theme: "glass" });
-    applyTheme("glass");
+    set({ theme: THEME_ID });
+    applyTheme(THEME_ID);
     return true;
   },
 
   toggleTheme: () => {
-    applyTheme("glass");
-    return "glass";
+    applyTheme(THEME_ID);
+    return THEME_ID;
   },
 }));
 
-// Apply theme to document. Both "dark" and "glass" classes always stay on.
-export function applyTheme(_theme = "glass") {
+export function applyTheme(_theme = THEME_ID) {
   if (typeof window === "undefined") return;
   const root = document.documentElement;
-  root.classList.add("dark");
-  root.classList.add("glass");
+  root.classList.remove("dark", "glass", "brutalist");
+  root.classList.add(THEME_ID);
 }
 
 export default useThemeStore;

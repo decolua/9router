@@ -12,24 +12,24 @@ function getToastStyle(type) {
   if (type === "success") {
     return {
       wrapper: "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400",
-      icon: "check_circle",
+      icon: "task_alt",
     };
   }
   if (type === "error") {
     return {
       wrapper: "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400",
-      icon: "error",
+      icon: "report",
     };
   }
   if (type === "warning") {
     return {
       wrapper: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-      icon: "warning",
+      icon: "warning_amber",
     };
   }
   return {
     wrapper: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
-    icon: "info",
+    icon: "announcement",
   };
 }
 
@@ -58,14 +58,14 @@ export default function DashboardLayout({ children }) {
   }, []);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-bg">
+    <div className="neo-shell flex h-screen w-full overflow-hidden bg-bg">
       <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
         {notifications.map((n) => {
           const style = getToastStyle(n.type);
           return (
             <div
               key={n.id}
-              className={`slide-in-right rounded-[12px] border px-3.5 py-2.5 shadow-[var(--shadow-elev)] backdrop-blur-md ${style.wrapper}`}
+              className={`slide-in-right rounded-[12px] border px-3.5 py-2.5 shadow-[var(--shadow-elev)]  ${style.wrapper}`}
             >
               <div className="flex items-start gap-2">
                 <span className="material-symbols-outlined text-[18px] leading-5 shrink-0 mt-0.5">{style.icon}</span>
@@ -80,7 +80,7 @@ export default function DashboardLayout({ children }) {
                     className="text-current/70 hover:text-current"
                     aria-label="Dismiss notification"
                   >
-                    <span className="material-symbols-outlined text-[16px]">close</span>
+                    <span className="material-symbols-outlined text-[16px]">cancel</span>
                   </button>
                 ) : null}
               </div>
@@ -99,8 +99,8 @@ export default function DashboardLayout({ children }) {
       )}
 
       {/* Sidebar - Desktop */}
-      <div className="hidden lg:flex">
-        <Sidebar />
+      <div className="order-1 hidden shrink-0 lg:flex">
+        <Sidebar side="left" />
       </div>
 
       {/* Sidebar - Mobile */}
@@ -109,16 +109,16 @@ export default function DashboardLayout({ children }) {
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <Sidebar side="left" onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* Main content */}
-      <main className="flex flex-col flex-1 h-full min-w-0 relative transition-colors duration-300 isolate">
+      <main className="neo-canvas order-2 flex flex-col flex-1 h-full min-w-0 relative transition-colors duration-300 isolate">
         {/* Faint grid background */}
         <div className="landing-grid absolute inset-0 pointer-events-none -z-10" aria-hidden="true" />
         <Header key={pathname} onMenuClick={() => setSidebarOpen(true)} />
-        <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/basic-chat" ? "" : "p-3.5 sm:p-6 lg:p-10"} ${pathname === "/dashboard/basic-chat" ? "flex flex-col overflow-hidden" : ""}`}>
-          <div className={`${pathname === "/dashboard/basic-chat" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>
+        <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/basic-chat" ? "" : "p-3 sm:p-5 lg:p-7 xl:p-8"} ${pathname === "/dashboard/basic-chat" ? "flex flex-col overflow-hidden" : ""}`}>
+          <div className={`${pathname === "/dashboard/basic-chat" ? "flex-1 w-full h-full flex flex-col" : "mx-auto w-full max-w-[88rem]"}`}>
             {/* Banner lives inside the scroll container: it scrolls with the page
                 and inherits this page's padding, instead of floating above it.
                 Hidden in fullscreen chat, where a full-width block breaks flow. */}

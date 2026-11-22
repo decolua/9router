@@ -96,12 +96,12 @@ export default function UsageChart({ period = "7d", updateKey = 0 }) {
 
       {loading ? (
         <div className="h-44 flex items-center justify-center text-text-muted text-sm gap-2">
-          <span className="material-symbols-outlined text-[18px] animate-spin text-primary">progress_activity</span>
+          <span className="material-symbols-outlined text-[18px] animate-spin text-primary">autorenew</span>
           <span>Loading telemetry series...</span>
         </div>
       ) : !hasData ? (
         <div className="h-44 flex flex-col items-center justify-center text-center px-4 gap-2 border border-dashed border-border-subtle rounded-[var(--r-control)] bg-surface-2/30 my-1">
-          <span className="material-symbols-outlined text-[26px] text-text-subtle select-none">show_chart</span>
+          <span className="material-symbols-outlined text-[26px] text-text-subtle select-none">query_stats</span>
           <div className="text-xs font-medium text-text-main">No activity recorded for this timeframe</div>
           <span className="text-[11px] text-text-muted max-w-sm">
             Requests sent to your models will plot throughput, token speeds, and cost metrics dynamically here.

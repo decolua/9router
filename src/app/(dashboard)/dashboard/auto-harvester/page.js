@@ -126,10 +126,10 @@ export default function AutoHarvesterPage() {
   }
 
   return (
-    <PageShell width="reading">
-      <div className="flex flex-col gap-4 sm:gap-6">
+    <PageShell width="wide">
+      <div className="grid grid-cols-1 items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(16rem,0.78fr)_minmax(0,1.7fr)]">
         {/* Header Bar */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:col-span-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-semibold sm:text-2xl">Proxy Harvester</h1>
@@ -141,13 +141,14 @@ export default function AutoHarvesterPage() {
 
           <div className="flex items-center gap-2">
             <Link href="/dashboard/proxy-pools">
-              <Button size="sm" variant="secondary" icon="lan">
+              <Button size="sm" variant="secondary" icon="route">
                 View in Pools ({harvestedPools.length})
               </Button>
             </Link>
           </div>
         </div>
 
+        <div className="flex min-w-0 flex-col gap-4 sm:gap-6 lg:col-start-1 lg:row-start-2">
         {/* Controller Card */}
         <Card className="p-4 sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -159,7 +160,7 @@ export default function AutoHarvesterPage() {
                   : "border-border bg-surface-2 text-text-muted"
               )}>
                 <span className={cn("material-symbols-outlined text-[22px]", running && "animate-spin")}>
-                  {running ? "autorenew" : "radar"}
+                  {running ? "sync" : "travel_explore"}
                 </span>
               </div>
               <div className="min-w-0 flex flex-col">
@@ -221,7 +222,7 @@ export default function AutoHarvesterPage() {
               <Button
                 size="sm"
                 variant="secondary"
-                icon="rss_feed"
+                icon="dynamic_feed"
                 onClick={() => setShowFeedsModal(true)}
                 title="Configure custom proxy feeds"
               >
@@ -232,7 +233,7 @@ export default function AutoHarvesterPage() {
                 <Button
                   size="sm"
                   variant="danger"
-                  icon="stop_circle"
+                  icon="stop"
                   onClick={stop}
                   loading={busy}
                 >
@@ -241,7 +242,7 @@ export default function AutoHarvesterPage() {
               ) : (
                 <Button
                   size="sm"
-                  icon="play_arrow"
+                  icon="play_circle"
                   onClick={start}
                   loading={busy}
                 >
@@ -279,7 +280,9 @@ export default function AutoHarvesterPage() {
             </div>
           </Card>
         </div>
+        </div>
 
+        <div className="flex min-w-0 flex-col gap-4 sm:gap-6 lg:col-start-2 lg:row-start-2">
         {/* Harvested Proxies Table */}
         <Card className="overflow-hidden">
           <div className="border-b border-border p-3 sm:px-4 sm:py-3 flex items-center justify-between">
@@ -353,6 +356,7 @@ export default function AutoHarvesterPage() {
             </div>
           </Card>
         )}
+        </div>
       </div>
 
       {/* Proxy Feeds Modal */}

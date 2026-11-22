@@ -237,7 +237,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
             type="button"
             size="sm"
             variant="secondary"
-            icon="upload_file"
+            icon="drive_folder_upload"
             onClick={() => fileInputRef.current?.click()}
             disabled={submitting}
           >
@@ -267,8 +267,8 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
           />
 
           {isDragging && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-sidebar/90 rounded pointer-events-none backdrop-blur-xs">
-              <span className="material-symbols-outlined text-3xl text-primary mb-1">upload_file</span>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-sidebar/90 rounded pointer-events-none ">
+              <span className="material-symbols-outlined text-3xl text-primary mb-1">drive_folder_upload</span>
               <span className="text-sm font-medium text-primary">
                 {translate("Drop .json files here")}
               </span>
@@ -278,7 +278,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
 
         {fileCountInfo && (
           <div className="flex items-center gap-1.5 text-xs text-green-400 font-medium bg-green-500/10 border border-green-500/20 px-2.5 py-1.5 rounded">
-            <span className="material-symbols-outlined text-sm">check_circle</span>
+            <span className="material-symbols-outlined text-sm">task_alt</span>
             <span>
               {translate("Loaded")} {fileCountInfo.accountsCount} {translate("account(s) from")}{" "}
               {fileCountInfo.filesCount} {translate("file(s)")}

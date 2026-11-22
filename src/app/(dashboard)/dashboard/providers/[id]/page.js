@@ -454,7 +454,7 @@ export default function ProviderDetailPage() {
           type: "error",
           text:
             data.message ||
-            "Verifikasi Aliyun dibutuhkan. Buka aplikasi ZCode untuk verifikasi, salin param verifikasi, lalu Claim lagi.",
+            "Aliyun verification is required. Open the ZCode app, complete verification, copy the verification parameter, then try claiming again.",
         });
       } else {
         setZcodeClaimMessage({ type: "error", text: data.error || "Failed to claim bonus." });
@@ -1333,7 +1333,7 @@ export default function ProviderDetailPage() {
             disabled={bulkUpdatingProxy || activePools.length === 0}
             className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">sync_alt</span>
+            <span className="material-symbols-outlined text-text-muted text-[18px]">sync_saved_locally</span>
             <span className="text-sm text-text-main">One-to-one (rotate)</span>
           </button>
           <button
@@ -1341,7 +1341,7 @@ export default function ProviderDetailPage() {
             disabled={bulkUpdatingProxy}
             className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
+            <span className="material-symbols-outlined text-text-muted text-[18px]">do_not_disturb_on</span>
             <span className="text-sm text-text-main">None (unbind all)</span>
           </button>
           {proxyPools.map((pool) => (
@@ -1351,7 +1351,7 @@ export default function ProviderDetailPage() {
               disabled={bulkUpdatingProxy || pool.isActive !== true}
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
+              <span className="material-symbols-outlined text-text-muted text-[18px]">hub</span>
               <span className="truncate text-sm text-text-main">{pool.name}</span>
               {pool.isActive !== true && (
                 <span className="text-[10px] text-text-muted">(inactive)</span>
@@ -1493,7 +1493,7 @@ export default function ProviderDetailPage() {
           onClick={() => setShowAddCustomModel(true)}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
         >
-          <span className="material-symbols-outlined text-sm">add</span>
+          <span className="material-symbols-outlined text-sm">add_circle</span>
           Add Model
         </button>
 
@@ -1571,7 +1571,7 @@ export default function ProviderDetailPage() {
                         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-green-500/30 dark:border-green-500/25 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
                         title={m.contextLength != null ? `${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx` : m.name}
                       >
-                        <span className="material-symbols-outlined text-[13px] leading-none">add</span>
+                        <span className="material-symbols-outlined text-[13px] leading-none">add_circle</span>
                         <span>{m.id.split("/").pop()}</span>
                         <ModelTierBadge model={m.id} providerId={providerStorageAlias} isFree={m.isFree} />
                       </button>
@@ -1598,7 +1598,7 @@ export default function ProviderDetailPage() {
                         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
                         title={m.contextLength != null ? `${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx` : m.name}
                       >
-                        <span className="material-symbols-outlined text-[13px] leading-none">add</span>
+                        <span className="material-symbols-outlined text-[13px] leading-none">add_circle</span>
                         <span>{m.id.split("/").pop()}</span>
                         <ModelTierBadge model={m.id} providerId={providerStorageAlias} isFree={m.isFree} />
                       </button>
@@ -1622,7 +1622,7 @@ export default function ProviderDetailPage() {
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
                   title="Restore model"
                 >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
+                  <span className="material-symbols-outlined text-[13px]">add_circle</span>
                   {m.id}
                 </button>
               ))}
@@ -1669,14 +1669,14 @@ export default function ProviderDetailPage() {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:gap-8 sm:px-0">
+    <div className="grid min-w-0 grid-cols-1 items-start gap-6 px-1 sm:gap-8 sm:px-0 xl:grid-cols-2">
       {/* Header */}
-      <div className="min-w-0">
+      <div className="min-w-0 xl:col-span-2">
         <Link
           href="/dashboard/providers"
           className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
         >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
+          <span className="material-symbols-outlined text-lg">arrow_back_ios_new</span>
           Back to Providers
         </Link>
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
@@ -1724,7 +1724,7 @@ export default function ProviderDetailPage() {
                       : "border-border/60 bg-surface text-text-muted hover:text-text-main hover:border-border"
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[16px]">handyman</span>
+                  <span className="material-symbols-outlined text-[16px]">build_circle</span>
                 </button>
               )}
               {(providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website) && (
@@ -1734,7 +1734,7 @@ export default function ProviderDetailPage() {
                   rel="noopener noreferrer"
                   className="text-xs text-primary hover:underline inline-flex items-center gap-1"
                 >
-                  <span className="material-symbols-outlined text-sm">open_in_new</span>
+                  <span className="material-symbols-outlined text-sm">launch</span>
                   {isWebCookie ? "Open Web" : providerInfo.notice?.apiKeyUrl ? "Get API Key" : "Sign up / Learn more"}
                 </a>
               )}
@@ -1747,15 +1747,15 @@ export default function ProviderDetailPage() {
       </div>
 
       {providerInfo.deprecated && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-          <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">warning</span>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 xl:col-span-2">
+          <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">warning_amber</span>
           <p className="text-xs text-red-600 dark:text-yellow-400 leading-relaxed">{providerInfo.deprecationNotice}</p>
         </div>
       )}
 
       {providerInfo.notice?.text && !providerInfo.deprecated && (
-        <div className="flex flex-col gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 sm:flex-row sm:items-center">
-          <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
+        <div className="flex flex-col gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 sm:flex-row sm:items-center xl:col-span-2">
+          <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">help_outline</span>
           <p className="min-w-0 flex-1 text-xs leading-relaxed text-blue-600 dark:text-blue-400">{providerInfo.notice.text}</p>
           {providerInfo.notice.apiKeyUrl && (
             <a
@@ -1772,10 +1772,10 @@ export default function ProviderDetailPage() {
 
       {/* ZCode Claimable Bonus Banner */}
       {(providerId === "glm" || providerId === "zcode" || providerId === "zc") && (zcodeBonuses.length > 0 || zcodeClaimMessage) && (
-        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 xl:col-span-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[20px] text-amber-500">card_giftcard</span>
+              <span className="material-symbols-outlined text-[20px] text-amber-500">redeem</span>
               <h3 className="text-sm font-semibold text-text-main">ZCode Promotional Plan Available</h3>
             </div>
             <Badge variant="warning" size="sm">Bonus</Badge>
@@ -1790,20 +1790,19 @@ export default function ProviderDetailPage() {
           {zcodeVerifyRequired && (
             <div className="flex flex-col gap-2 rounded-lg bg-surface/60 border border-border-subtle p-3">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-amber-500">verified_user</span>
-                <span className="text-xs font-medium text-text-main">Verifikasi Aliyun (X-Aliyun-Captcha-Verify-Param)</span>
+                <span className="material-symbols-outlined text-[18px] text-amber-500">verified</span>
+                <span className="text-xs font-medium text-text-main">Aliyun Verification (X-Aliyun-Captcha-Verify-Param)</span>
               </div>
               <p className="text-xs text-text-muted">
-                Selesaikan verifikasi captcha Aliyun di aplikasi ZCode, salin nilai header{" "}
-                <code className="text-amber-400">X-Aliyun-Captcha-Verify-Param</code> dari request di app/DevTools ke kolom di
-                bawah, lalu klik Claim lagi.
+                Complete the Aliyun CAPTCHA in the ZCode app, copy the header value{" "}
+                <code className="text-amber-400">X-Aliyun-Captcha-Verify-Param</code> from the app request or DevTools into the field below, then select Claim again.
               </p>
               <div className="flex flex-col sm:flex-row gap-2">
                 <a
                   href={zcodeAppDeepLink}
                   className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 px-3 py-2 text-xs font-medium text-amber-400 hover:bg-amber-500/30 transition-colors"
                 >
-                  <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                  <span className="material-symbols-outlined text-[16px]">launch</span>
                   Buka Aplikasi ZCode
                 </a>
                 <a
@@ -1812,7 +1811,7 @@ export default function ProviderDetailPage() {
                   rel="noopener noreferrer"
                   className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-surface border border-border-subtle px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-border transition-colors"
                 >
-                  <span className="material-symbols-outlined text-[16px]">language</span>
+                  <span className="material-symbols-outlined text-[16px]">translate</span>
                   Buka zcode.z.ai
                 </a>
               </div>
@@ -1821,7 +1820,7 @@ export default function ProviderDetailPage() {
                   type="text"
                   value={zcodeCaptchaParam}
                   onChange={(e) => setZcodeCaptchaParam(e.target.value)}
-                  placeholder="Tempel X-Aliyun-Captcha-Verify-Param di sini..."
+                  placeholder="Paste X-Aliyun-Captcha-Verify-Param here..."
                   className="flex-1 min-w-0 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-xs text-text-main placeholder:text-text-subtle outline-none focus:border-amber-500/50"
                 />
                 <Button
@@ -1836,7 +1835,7 @@ export default function ProviderDetailPage() {
                   disabled={zcodeClaiming || !zcodeCaptchaParam.trim()}
                   className="shrink-0"
                 >
-                  {zcodeClaiming ? "Claiming..." : "Claim dengan Verifikasi"}
+                  {zcodeClaiming ? "Claiming..." : "Claim with Verification"}
                 </Button>
               </div>
             </div>
@@ -1876,10 +1875,10 @@ export default function ProviderDetailPage() {
 
       {/* Web Cookie Provider Tool Calling Banner */}
       {isWebCookie && (
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface-2/60 p-4">
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface-2/60 p-4 xl:col-span-2">
           <div className="flex items-start gap-3 min-w-0 flex-1">
             <div className="size-9 rounded-lg bg-brand-500/10 flex items-center justify-center shrink-0 mt-0.5">
-              <span className="material-symbols-outlined text-[20px] text-brand-500">construction</span>
+              <span className="material-symbols-outlined text-[20px] text-brand-500">engineering</span>
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -1904,7 +1903,7 @@ export default function ProviderDetailPage() {
       )}
 
       {isCompatible && providerNode && (
-        <Card>
+        <Card className="xl:col-span-2">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : (providerNode?.brand === "moonshot" || /(moonshot|kimi)/i.test(providerNode?.name || "")) ? "MoonshotAI Compatible Details" : "OpenAI Compatible Details"}</h2>
@@ -1916,7 +1915,7 @@ export default function ProviderDetailPage() {
             <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
               <Button
                 size="sm"
-                icon="add"
+                icon="add_circle"
                 onClick={() => {
                   setAddConnectionError("");
                   setShowAddApiKeyModal(true);
@@ -1928,7 +1927,7 @@ export default function ProviderDetailPage() {
               <Button
                 size="sm"
                 variant="secondary"
-                icon="edit"
+                icon="edit_square"
                 onClick={() => setShowEditNodeModal(true)}
                 className="w-full sm:w-auto"
               >
@@ -1937,7 +1936,7 @@ export default function ProviderDetailPage() {
               <Button
                 size="sm"
                 variant="secondary"
-                icon="delete"
+                icon="delete_sweep"
                 onClick={async () => {
                   setConfirmState({
                     title: "Delete Compatible Node",
@@ -1968,7 +1967,7 @@ export default function ProviderDetailPage() {
       {isFreeNoAuth ? (
         <NoAuthProxyCard providerId={providerId} />
       ) : (
-        <Card>
+        <Card className="xl:col-span-2">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Connections</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -1976,7 +1975,7 @@ export default function ProviderDetailPage() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  icon="lan"
+                  icon="hub"
                   onClick={() => setShowBulkProxyModal(true)}
                 >
                   Apply Proxy
@@ -1988,7 +1987,7 @@ export default function ProviderDetailPage() {
                     <Button
                       size="sm"
                       variant="danger"
-                      icon="delete"
+                      icon="delete_sweep"
                       onClick={handleBulkDelete}
                     >
                       Delete Selected ({selectedConnectionIds.length})
@@ -1997,7 +1996,7 @@ export default function ProviderDetailPage() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    icon="sync"
+                    icon="sync_saved_locally"
                     onClick={handleRunOneByOneTest}
                     disabled={oneByOneRunning}
                   >
@@ -2007,7 +2006,7 @@ export default function ProviderDetailPage() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      icon="stop"
+                      icon="stop_circle"
                       onClick={handleStopOneByOneTest}
                       disabled={oneByOneStopping}
                     >
@@ -2058,10 +2057,10 @@ export default function ProviderDetailPage() {
               <div className="flex gap-2">
                 {hasDualAuthModes ? (
                   <>
-                    <Button size="sm" icon="lock" variant="secondary" onClick={triggerOAuthConnection}>
+                    <Button size="sm" icon="lock_person" variant="secondary" onClick={triggerOAuthConnection}>
                       {oauthConnectionLabel}
                     </Button>
-                    <Button size="sm" icon="key" onClick={triggerApiKeyConnection}>
+                    <Button size="sm" icon="key_vertical" onClick={triggerApiKeyConnection}>
                       {apiKeyConnectionLabel}
                     </Button>
                   </>
@@ -2071,23 +2070,23 @@ export default function ProviderDetailPage() {
                       <MinimaxLeaseButton providerId={providerId} onConnected={fetchConnections} />
                     )}
                     {!isCompatible && providerId === "iflow" && (
-                      <Button size="sm" icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
+                      <Button size="sm" icon="database" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
                         Cookie
                       </Button>
                     )}
                     {providerId === "codex" && (
-                      <Button size="sm" icon="playlist_add" variant="secondary" onClick={() => setShowBulkImportCodex(true)}>
+                      <Button size="sm" icon="playlist_add_check" variant="secondary" onClick={() => setShowBulkImportCodex(true)}>
                         {translate("Bulk Add")}
                       </Button>
                     )}
                     {providerId === "grok-cli" && (
-                      <Button size="sm" icon="playlist_add" variant="secondary" onClick={() => setShowBulkImportGrokCli(true)}>
+                      <Button size="sm" icon="playlist_add_check" variant="secondary" onClick={() => setShowBulkImportGrokCli(true)}>
                         {translate("Bulk Add")}
                       </Button>
                     )}
                     <Button
                       size="sm"
-                      icon="add"
+                      icon="add_circle"
                       onClick={triggerAddConnection}
                     >
                       {isCompatible ? "Add API Key" : (providerId === "iflow" ? "OAuth" : "Add Connection")}
@@ -2136,7 +2135,7 @@ export default function ProviderDetailPage() {
                   {providerId === "iflow" && (
                     <Button
                       size="sm"
-                      icon="cookie"
+                      icon="database"
                       variant="secondary"
                       onClick={() => setShowIFlowCookieModal(true)}
                       title="Add connection using browser cookie"
@@ -2148,7 +2147,7 @@ export default function ProviderDetailPage() {
                   {providerId === "codex" && (
                     <Button
                       size="sm"
-                      icon="playlist_add"
+                      icon="playlist_add_check"
                       variant="secondary"
                       onClick={() => setShowBulkImportCodex(true)}
                       title={translate("Bulk import codex accounts from JSON")}
@@ -2160,7 +2159,7 @@ export default function ProviderDetailPage() {
                   {providerId === "grok-cli" && (
                     <Button
                       size="sm"
-                      icon="playlist_add"
+                      icon="playlist_add_check"
                       variant="secondary"
                       onClick={() => setShowBulkImportGrokCli(true)}
                       title={translate("Bulk import Grok CLI accounts from JSON")}
@@ -2173,7 +2172,7 @@ export default function ProviderDetailPage() {
                     <>
                       <Button
                         size="sm"
-                        icon="lock"
+                        icon="lock_person"
                         variant="secondary"
                         onClick={triggerOAuthConnection}
                         className="w-full sm:w-auto"
@@ -2182,7 +2181,7 @@ export default function ProviderDetailPage() {
                       </Button>
                       <Button
                         size="sm"
-                        icon="key"
+                        icon="key_vertical"
                         onClick={triggerApiKeyConnection}
                         className="w-full sm:w-auto"
                       >
@@ -2192,7 +2191,7 @@ export default function ProviderDetailPage() {
                   ) : (
                     <Button
                       size="sm"
-                      icon="add"
+                      icon="add_circle"
                       onClick={triggerAddConnection}
                       className="w-full sm:w-auto"
                     >
@@ -2210,7 +2209,7 @@ export default function ProviderDetailPage() {
       <CustomConfigCard providerId={providerId} />
 
       {/* Models */}
-      <Card>
+      <Card className="xl:col-span-2">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold">
@@ -2238,12 +2237,12 @@ export default function ProviderDetailPage() {
             return (
               <div className="flex gap-2">
                 {disabledModelIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
+                  <Button size="sm" variant="secondary" icon="replay" onClick={handleEnableAll}>
                     Active All
                   </Button>
                 )}
                 {activeIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
+                  <Button size="sm" variant="secondary" icon="do_not_disturb_on" onClick={() => handleDisableAll(activeIds)}>
                     Disable All
                   </Button>
                 )}
@@ -2273,7 +2272,7 @@ export default function ProviderDetailPage() {
                     className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 transition-colors"
                   >
                     <span>Allow China-hosted models</span>
-                    <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                    <span className="material-symbols-outlined text-[13px]">launch</span>
                   </a>
                 </div>
               );
@@ -2367,7 +2366,7 @@ export default function ProviderDetailPage() {
       >
         <div className="flex flex-col gap-4 text-sm text-text-muted">
           <div className="flex items-center gap-2 p-3 rounded-lg border border-border-subtle bg-surface-2">
-            <span className="material-symbols-outlined text-[20px] text-brand-500">handyman</span>
+            <span className="material-symbols-outlined text-[20px] text-brand-500">build_circle</span>
             <div>
               <p className="text-xs text-text-muted">Current Active Lane</p>
               <p className="text-sm font-semibold text-text-main">
@@ -2384,11 +2383,11 @@ export default function ProviderDetailPage() {
             >
               <div className="flex items-center justify-between gap-2 mb-1">
                 <div className="flex items-center gap-2 font-medium text-text-main">
-                  <span className="material-symbols-outlined text-[18px] text-success">bolt</span>
+                  <span className="material-symbols-outlined text-[18px] text-success">electric_bolt</span>
                   <span>Direct Lane (Default / Recommended)</span>
                 </div>
                 {!selectedLaneMode && (
-                  <span className="material-symbols-outlined text-[18px] text-brand-500">check_circle</span>
+                  <span className="material-symbols-outlined text-[18px] text-brand-500">task_alt</span>
                 )}
               </div>
               <p className="text-xs text-text-muted leading-relaxed">
@@ -2403,11 +2402,11 @@ export default function ProviderDetailPage() {
             >
               <div className="flex items-center justify-between gap-2 mb-1">
                 <div className="flex items-center gap-2 font-medium text-text-main">
-                  <span className="material-symbols-outlined text-[18px] text-warning">terminal</span>
+                  <span className="material-symbols-outlined text-[18px] text-warning">code</span>
                   <span>CLI Lane</span>
                 </div>
                 {selectedLaneMode && (
-                  <span className="material-symbols-outlined text-[18px] text-brand-500">check_circle</span>
+                  <span className="material-symbols-outlined text-[18px] text-brand-500">task_alt</span>
                 )}
               </div>
               <p className="text-xs text-text-muted leading-relaxed">

@@ -24,7 +24,7 @@ export default function ManualUpdatePanel({ latestVersion, installCmd, copied, o
     <div className="w-full max-w-lg rounded-xl bg-surface border border-border p-6 text-text-main">
       <div className="flex items-center gap-3 mb-4">
         <div className="flex items-center justify-center size-11 rounded-full bg-amber-500/20 text-amber-400">
-          <span className="material-symbols-outlined text-[24px]">content_copy</span>
+          <span className="material-symbols-outlined text-[24px]">file_copy</span>
         </div>
         <div>
           <h2 className="text-lg font-semibold">Update 9Router{latestVersion ? ` to ${versionLabel(latestVersion)}` : ""}</h2>

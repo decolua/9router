@@ -121,7 +121,7 @@ export function getConnectionsPageRange(pagination) {
 export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter) {
   if (!totals.eligibleConnections) {
     return {
-      icon: "cloud_off",
+      icon: "cloud_queue",
       title: "No Providers Connected",
       description:
         "Connect to providers with OAuth to track your API quota limits and usage.",
@@ -129,7 +129,7 @@ export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter
   }
   if (!totals.providerFilteredConnections) {
     return {
-      icon: "filter_alt_off",
+      icon: "filter_list_off",
       title: "No Accounts Match Current Filters",
       description:
         providerFilter === "all"
@@ -138,7 +138,7 @@ export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter
     };
   }
   return {
-    icon: "filter_alt_off",
+    icon: "filter_list_off",
     title: "No Accounts On This Page",
     description:
       "Try moving to another page or refreshing the current filters.",

@@ -528,11 +528,11 @@ export default function TokenSaverClient() {
 
   return (
     <div className="space-y-6 p-6">
-      <Card id="rtk">
-        <div className="flex items-center justify-between mb-2">
+      <Card id="rtk" className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.5fr)]">
+        <div className="flex items-center justify-between mb-2 lg:col-span-2">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">
-              bolt
+              electric_bolt
             </span>
             Token Saver
           </h2>
@@ -1199,4 +1199,3 @@ export default function TokenSaverClient() {
     </div>
   );
 }
-

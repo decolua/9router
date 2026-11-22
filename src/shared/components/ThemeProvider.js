@@ -7,9 +7,9 @@ export function ThemeProvider({ children }) {
   const setServerTheme = useThemeStore((state) => state.setServerTheme);
 
   useEffect(() => {
-    // Lock theme strictly to glass everywhere
-    applyTheme("glass");
-    setServerTheme("glass", false);
+    // Reassert the single site-wide neobrutalist system after hydration.
+    applyTheme("neobrutalism");
+    setServerTheme("neobrutalism", false);
   }, [setServerTheme]);
 
   return <>{children}</>;
