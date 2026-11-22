@@ -92,8 +92,8 @@ describe("Gemini 4 Hydrogen Antigravity tier mapping", () => {
     });
   });
 
-  it("resolves bare gemini-4-hydrogen to medium by default and adapts to reasoning_effort", () => {
-    expect(getModelUpstreamId("ag", "gemini-4-hydrogen", {})).toBe("gemini-4-hydrogen-medium(medium)");
+  it("resolves bare gemini-4-hydrogen to high by default and adapts to reasoning_effort", () => {
+    expect(getModelUpstreamId("ag", "gemini-4-hydrogen", {})).toBe("gemini-4-hydrogen-high(high)");
     expect(getModelUpstreamId("ag", "gemini-4-hydrogen", { reasoning_effort: "high" })).toBe("gemini-4-hydrogen-high(high)");
     expect(getModelUpstreamId("ag", "gemini-4-hydrogen", { reasoning_effort: "low" })).toBe("gemini-4-hydrogen-low(low)");
     expect(getModelUpstreamId("ag", "gemini-4-hydrogen", { reasoning_effort: "xhigh" })).toBe("gemini-4-hydrogen-xhigh(xhigh)");
@@ -117,12 +117,12 @@ describe("Gemini 4 Hydrogen Antigravity tier mapping", () => {
 });
 
 describe("Gemini 4 Hydrogen Antigravity quota resolution", () => {
-  it("maps gemini-4-hydrogen to the shared gemini quota family and resolves medium alias", () => {
+  it("maps gemini-4-hydrogen to the shared gemini quota family and resolves high alias", () => {
     expect(getAntigravityModelFamily("gemini-4-hydrogen")).toBe("gemini");
     expect(getAntigravityModelFamily("gemini-4-hydrogen-xhigh")).toBe("gemini");
 
     const quotas = {
-      "gemini-4-hydrogen-medium": { remainingPercentage: 80, resetAt: "2026-11-15T00:00:00Z" },
+      "gemini-4-hydrogen-high": { remainingPercentage: 80, resetAt: "2026-11-15T00:00:00Z" },
       gemini_session: { remainingPercentage: 90, resetAt: "2026-11-14T12:00:00Z" },
     };
     expect(getAntigravityModelQuota(quotas, "gemini-4-hydrogen")).toEqual({
