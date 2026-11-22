@@ -128,8 +128,6 @@ export class BaseExecutor {
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
-      const m0 = transformedBody?.messages?.[0]?.content;
-      console.log("[EXECDBG] provider=%s model=%s msg0content=%s hasImage=%s", this.provider, model, Array.isArray(m0) ? m0.map(c => c.type).join(",") : typeof m0, JSON.stringify(transformedBody).includes("image_url"));
       const headers = this.buildHeaders(credentials, stream, url, model, transformedBody);
       // User per-provider override wins over registry headers (blocked names filtered at the API)
       if (providerOverrides?.headers) Object.assign(headers, providerOverrides.headers);
