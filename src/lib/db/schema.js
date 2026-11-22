@@ -156,6 +156,41 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
+  // Upstream failures (4xx/5xx) are otherwise invisible: usageHistory only
+  // records successful requests, so 429/403 storms leave no trace at all and
+  // diagnosis has to guess. This table stores the quota metadata that decides
+  // whether a 429 was real exhaustion or request-shape bucketing.
+  errorEvents: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      timestamp: "TEXT NOT NULL",
+      provider: "TEXT",
+      model: "TEXT",
+      connectionId: "TEXT",
+      // Normalised hash, never the raw email/account id.
+      accountRef: "TEXT",
+      status: "INTEGER",
+      upstreamStatus: "TEXT",
+      // ErrorInfo.reason, e.g. QUOTA_EXHAUSTED / RATE_LIMIT_EXCEEDED / null.
+      reason: "TEXT",
+      quotaResetDelay: "TEXT",
+      quotaResetTimeStamp: "TEXT",
+      retryDelay: "TEXT",
+      // 1 = response carried usable quota metadata; 0 = detail-free.
+      hasMetadata: "INTEGER DEFAULT 0",
+      // detailFreeQuota | accountCooldown | metadataCooldown | requestScoped | unknown
+      classifiedAs: "TEXT",
+      cooldownMs: "INTEGER DEFAULT 0",
+      message: "TEXT",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ee_ts ON errorEvents(timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_ee_provider ON errorEvents(provider)",
+      "CREATE INDEX IF NOT EXISTS idx_ee_model ON errorEvents(model)",
+      "CREATE INDEX IF NOT EXISTS idx_ee_reason ON errorEvents(reason)",
+      "CREATE INDEX IF NOT EXISTS idx_ee_class ON errorEvents(classifiedAs)",
+    ],
+  },
 };
 
 export function buildCreateTableSql(name, def) {
