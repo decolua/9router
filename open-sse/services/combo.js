@@ -15,6 +15,28 @@ import {
   orderModelsByChoice,
 } from "./systemoneRouter.js";
 
+// Cooldown envelopes carry Retry-After in headers; older callers used a JSON
+// timestamp. Normalize both before comparing members, ignoring malformed data.
+function getComboRetryAfter(response, legacyReset) {
+  const now = Date.now();
+  const header = response.headers.get("retry-after")?.trim();
+  let resetMs = NaN;
+  if (header) {
+    if (/^\d+$/.test(header)) {
+      resetMs = now + Number(header) * 1000;
+    } else if (/^[A-Za-z]{3,9}(?:,|\s)/.test(header)) {
+      // HTTP dates begin with a weekday. Date.parse alone also accepts invalid
+      // numeric delays such as "-3600" as a year, producing a bogus cooldown.
+      resetMs = Date.parse(header);
+    }
+  }
+  if (!Number.isFinite(resetMs) || resetMs < now || !Number.isFinite(new Date(resetMs).getTime())) {
+    resetMs = typeof legacyReset === "string" || typeof legacyReset === "number"
+      ? new Date(legacyReset).getTime() : NaN;
+  }
+  return Number.isFinite(resetMs) && resetMs >= now ? new Date(resetMs).toISOString() : null;
+}
+
 // Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
 // them untouched). For SSE, returns { outcome: "content"|"empty", finishReason, response }
 // where `response` is a faithful replay of the original stream (head buffer + live reader).
@@ -564,6 +586,7 @@ export async function handleComboChat({
       } catch {
         // Ignore JSON parse errors
       }
+      retryAfter = getComboRetryAfter(result, retryAfter);
 
       // Track earliest retryAfter across all combo models
       if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
