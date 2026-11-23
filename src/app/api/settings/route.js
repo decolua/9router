@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+// observability gate lives in one shared module.
+import {
+  invalidateObservabilityConfigCache,
+  MAX_LOG_SIZE_MB,
+  MAX_RETENTION_HOURS,
+  MIN_LOG_SIZE_MB,
+  MIN_RETENTION_HOURS,
+} from "@/lib/observability/config.js";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +28,9 @@ export async function GET() {
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     
+    // NB: this reports the ENV VAR only. Since env is now just an
+    // initial default, the effective gates are `enableObservability` /
+    // `observabilityFrameLogging` in the settings body above, not this field.
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
     
@@ -70,6 +81,29 @@ export async function PATCH(request) {
       delete body.currentPassword;
     }
 
+    // coerce/bound the observability controls. Storing a real
+    // boolean matters — the resolver treats "key present and boolean" as the operator's
+    // explicit choice, which is what makes settings authoritative over the env var.
+    for (const key of ["enableObservability", "observabilityFrameLogging"]) {
+      if (Object.prototype.hasOwnProperty.call(body, key)) {
+        body[key] = body[key] === true || body[key] === "true";
+      }
+    }
+    for (const [key, lo, hi] of [
+      ["observabilityRetentionHours", MIN_RETENTION_HOURS, MAX_RETENTION_HOURS],
+      ["observabilityMaxLogSizeMb", MIN_LOG_SIZE_MB, MAX_LOG_SIZE_MB],
+    ]) {
+      if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+      const n = Number(body[key]);
+      if (!Number.isFinite(n) || n <= 0) {
+        return NextResponse.json(
+          { error: `${key} must be a number between ${lo} and ${hi}` },
+          { status: 400 },
+        );
+      }
+      body[key] = Math.min(Math.max(Math.round(n), lo), hi);
+    }
+
     if (Object.prototype.hasOwnProperty.call(body, "oidcClientSecret")) {
       if (!body.oidcClientSecret || !String(body.oidcClientSecret).trim()) {
         delete body.oidcClientSecret;
@@ -85,6 +119,17 @@ export async function PATCH(request) {
       Object.prototype.hasOwnProperty.call(body, "outboundNoProxy")
     ) {
       applyOutboundProxyEnv(settings);
+    }
+
+    // drop the 5s config cache so the toggle takes effect at once,
+    // for both the SQLite capture and the raw-frame capture.
+    if (
+      Object.prototype.hasOwnProperty.call(body, "enableObservability") ||
+      Object.prototype.hasOwnProperty.call(body, "observabilityFrameLogging") ||
+      Object.prototype.hasOwnProperty.call(body, "observabilityRetentionHours") ||
+      Object.prototype.hasOwnProperty.call(body, "observabilityMaxLogSizeMb")
+    ) {
+      invalidateObservabilityConfigCache();
     }
 
     // Invalidate combo rotation state when strategy settings change
