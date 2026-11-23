@@ -1,10 +1,10 @@
-// P0 GOLDEN (refactor2): lock OUTPUT translateResponse/Request cho các concern
-// SẮP refactor ở P1-P4 (usage field-map, finishReasonMap, reasoningDelta).
-// Bổ sung coverage còn thiếu so với golden-response-stream.test.js:
+// P0 GOLDEN (refactor2): lock translateResponse/Request OUTPUT for the concerns
+// ABOUT to be refactored in P1-P4 (usage field-map, finishReasonMap, reasoningDelta).
+// Fill in coverage still missing compared to golden-response-stream.test.js:
 //   - commandcode usage/finish
 //   - passthrough openai→openai (request + response)
-//   - kiro/ollama finish_reason sau tool (lock behavior HIỆN TẠI, kể cả bug đã biết)
-// Sau refactor chạy lại phải khớp y hệt. Lệch = regression.
+//   - kiro/ollama finish_reason after a tool (lock CURRENT behavior, including known bugs)
+// After the refactor, re-running must match exactly. Any mismatch = regression.
 import { describe, it, expect } from "vitest";
 import "./registerAll.js";
 import { translateRequest, translateResponse, initState } from "../../open-sse/translator/index.js";

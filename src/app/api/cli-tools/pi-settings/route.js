@@ -7,6 +7,7 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { sanitizePiModelCaps } from "@/shared/utils/piModels";
 
 const execAsync = promisify(exec);
 
@@ -142,15 +143,25 @@ export async function POST(request) {
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     const withDefaults = (m) => {
       const prev = prevModels.get(m.id) || {};
-      return {
-        ...prev,
-        ...m,
+      const merged = { ...prev, ...m };
+      const next = {
+        ...merged,
         // The card always sends name === id, so treat that as "unset" and keep
         // a display name the user set by hand in models.json.
         name: m.name && m.name !== m.id ? m.name : (prev.name || m.id),
         contextWindow: cap(m.contextWindow ?? prev.contextWindow, 200000, 2000000),
         maxTokens: cap(m.maxTokens ?? prev.maxTokens, 64000, 200000),
       };
+
+      // Capabilities are optional in models.json. The card always states them, and a
+      // value the schema does not accept is dropped rather than passed through, so a
+      // stale or hand-edited entry is cleaned up the first time the card applies.
+      delete next.input;
+      delete next.reasoning;
+      delete next.thinkingLevelMap;
+      Object.assign(next, sanitizePiModelCaps(merged));
+
+      return next;
     };
 
     let modelList = [];

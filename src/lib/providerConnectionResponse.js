@@ -7,10 +7,15 @@ export function usesAwsCredentialForm(provider) {
 export function toProviderConnectionResponse(connection) {
   const { apiKey, accessToken, refreshToken, idToken, ...safe } = connection;
 
-  if (!usesAwsCredentialForm(connection.provider) || !connection.providerSpecificData) {
+  if (!connection.providerSpecificData) {
     return safe;
   }
 
-  const { sessionToken, ...providerSpecificData } = connection.providerSpecificData;
+  // Credentials that live inside providerSpecificData must never reach the client.
+  const { sessionToken, opendesignControlKey, ...providerSpecificData } = connection.providerSpecificData;
+  if (!usesAwsCredentialForm(connection.provider) && opendesignControlKey === undefined) {
+    return safe;
+  }
+
   return { ...safe, providerSpecificData };
 }
