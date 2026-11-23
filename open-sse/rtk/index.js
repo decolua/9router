@@ -1,6 +1,7 @@
 // RTK port: compress tool_result content in LLM request bodies
 // Applied in chatCore on the source-format body, before translateRequest.
-import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
+import { RAW_CAP, MIN_COMPRESS_SIZE, JSON_GUARD_MAX_BYTES, HEADROOM_TOOL_OUTPUT_MAX_DEPTH } from "./constants.js";
+import { OPENAI_BLOCK, RESPONSES_ITEM } from "../translator/schema/index.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 
@@ -12,6 +13,16 @@ export function compressMessages(body, enabled) {
   // Kiro format: conversationState.history + conversationState.currentMessage
   if (body.conversationState) {
     return compressKiroFormat(body, enabled);
+  }
+
+  // Gemini / Antigravity / Gemini-CLI / Vertex format: contents[].parts[].functionResponse
+  const geminiContents = Array.isArray(body.request?.contents)
+    ? body.request.contents
+    : Array.isArray(body.contents)
+      ? body.contents
+      : null;
+  if (geminiContents) {
+    return compressGeminiFormat(geminiContents);
   }
 
   // Support both OpenAI/Claude "messages" and OpenAI Responses "input"
@@ -112,6 +123,58 @@ function compressKiroFormat(body, enabled) {
     }
   } catch (e) {
     console.warn("[RTK] compressKiroFormat error:", e.message);
+    return null;
+  }
+  return stats;
+}
+
+// Compress Gemini / Antigravity / Gemini-CLI / Vertex format:
+// (request.)contents[].parts[].functionResponse.response
+function compressGeminiFormat(contents) {
+  const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
+  const visit = (object, key, depth = 0) => {
+    if (depth > HEADROOM_TOOL_OUTPUT_MAX_DEPTH) return;
+    const value = object?.[key];
+    if (typeof value === "string") {
+      if (value.length < MIN_COMPRESS_SIZE || value.length > RAW_CAP) {
+        stats.bytesBefore += value.length;
+        stats.bytesAfter += value.length;
+        return;
+      }
+      const trimmed = value.trim();
+      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+        if (
+          trimmed.length > JSON_GUARD_MAX_BYTES &&
+          ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+            (trimmed.startsWith("[") && trimmed.endsWith("]")))
+        ) {
+          return;
+        }
+        if (trimmed.length <= JSON_GUARD_MAX_BYTES) {
+          try { JSON.parse(trimmed); return; } catch { /* plain text */ }
+        }
+      }
+      object[key] = compressText(value, stats, "gemini-tool-result");
+    } else if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) visit(value, i, depth + 1);
+    } else if (value && typeof value === "object") {
+      if (value.error !== undefined || value.is_error === true || value.status === "error") return;
+      if (value.type && value.type !== OPENAI_BLOCK.TEXT && value.type !== RESPONSES_ITEM.INPUT_TEXT) return;
+      for (const field of ["result", "output", "content", "text"]) {
+        if (Object.hasOwn(value, field)) visit(value, field, depth + 1);
+      }
+    }
+  };
+
+  try {
+    for (const content of contents) {
+      if (!Array.isArray(content?.parts)) continue;
+      for (const part of content.parts) {
+        if (part?.functionResponse) visit(part.functionResponse, "response");
+      }
+    }
+  } catch (e) {
+    console.warn("[RTK] compressGeminiFormat error:", e.message);
     return null;
   }
   return stats;
