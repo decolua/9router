@@ -48,6 +48,8 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const settings = useSettingsStore((state) => state.settings);
+  const showUpdateNotifications = settings !== null && settings.showUpdateNotifications !== false;
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -60,14 +62,16 @@ export default function Sidebar({ onClose }) {
 
   // Lazy check for new npm version in background after initial render
   useEffect(() => {
+    if (!showUpdateNotifications) return;
+    let cancelled = false;
     const timer = setTimeout(() => {
       fetch("/api/version")
         .then(res => res.json())
-        .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
+        .then(data => { if (!cancelled && data.hasUpdate) setUpdateInfo(data); })
         .catch(() => {});
     }, 2500);
-    return () => clearTimeout(timer);
-  }, []);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [showUpdateNotifications]);
 
   const isActive = (href) => {
     if (href === "/dashboard/endpoint") {
@@ -131,7 +135,7 @@ export default function Sidebar({ onClose }) {
               <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
             </div>
           </Link>
-          {updateInfo && (
+          {showUpdateNotifications && updateInfo && (
             <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
