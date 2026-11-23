@@ -205,14 +205,24 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   };
   const armStall = () => {
     clearStall();
+    if (!streamController.isConnected()) return;
     stallTimer = setTimeout(() => {
       stallTimer = null;
+      if (!streamController.isConnected()) return;
       abortMessage = "stream stall timeout";
       dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
       streamController.handleError?.(new Error("stream stall timeout"));
       streamController.abort?.();
     }, stallTimeoutMs);
   };
+
+  const origHandleComplete = streamController.handleComplete?.bind(streamController);
+  streamController.handleComplete = () => {
+    clearStall();
+    origHandleComplete?.();
+  };
+  streamController.clearStall = clearStall;
+  streamController.signal?.addEventListener("abort", clearStall);
 
   // Wrap controller so every termination path clears the stall timer.
   // Without this, abort/cancel/downstream-error paths leave the timer armed

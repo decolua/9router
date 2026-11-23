@@ -35,8 +35,9 @@ export function addBufferToUsage(usage) {
 
   const result = { ...usage };
 
-  // Claude format
-  if (result.input_tokens !== undefined) {
+  // Claude format: real upstream tokens should never be inflated with an arbitrary buffer
+  // Only add estimation buffer when explicitly marked as estimated
+  if (result.input_tokens !== undefined && result.estimated) {
     result.input_tokens += BUFFER_TOKENS;
   }
 
@@ -59,12 +60,43 @@ export function addBufferToUsage(usage) {
 export function filterUsageForFormat(usage, targetFormat) {
   if (!usage || typeof usage !== "object") return usage;
 
+  const normalized = { ...usage };
+
+  // Normalize across token conventions when target and source conventions differ:
+  // Claude format: input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens
+  // OpenAI format: prompt_tokens, completion_tokens, cached_tokens
+  if (targetFormat === FORMATS.CLAUDE) {
+    if (normalized.input_tokens === undefined && normalized.prompt_tokens !== undefined) {
+      const cached = normalized.cached_tokens ?? normalized.cache_read_input_tokens ?? 0;
+      const created = normalized.cache_creation_input_tokens ?? 0;
+      normalized.input_tokens = Math.max(0, normalized.prompt_tokens - cached - created);
+    }
+    if (normalized.output_tokens === undefined && normalized.completion_tokens !== undefined) {
+      normalized.output_tokens = normalized.completion_tokens;
+    }
+    if (normalized.cache_read_input_tokens === undefined && normalized.cached_tokens !== undefined) {
+      normalized.cache_read_input_tokens = normalized.cached_tokens;
+    }
+  } else if (targetFormat === FORMATS.OPENAI || !targetFormat) {
+    if (normalized.prompt_tokens === undefined && normalized.input_tokens !== undefined) {
+      const cached = normalized.cached_tokens ?? normalized.cache_read_input_tokens ?? 0;
+      const created = normalized.cache_creation_input_tokens ?? 0;
+      normalized.prompt_tokens = normalized.input_tokens + cached + created;
+    }
+    if (normalized.completion_tokens === undefined && normalized.output_tokens !== undefined) {
+      normalized.completion_tokens = normalized.output_tokens;
+    }
+    if (normalized.cached_tokens === undefined && normalized.cache_read_input_tokens !== undefined) {
+      normalized.cached_tokens = normalized.cache_read_input_tokens;
+    }
+  }
+
   // Helper to pick only defined fields from usage
   const pickFields = (fields) => {
     const filtered = {};
     for (const field of fields) {
-      if (usage[field] !== undefined) {
-        filtered[field] = usage[field];
+      if (normalized[field] !== undefined) {
+        filtered[field] = normalized[field];
       }
     }
     return filtered;
@@ -73,9 +105,9 @@ export function filterUsageForFormat(usage, targetFormat) {
   // Define allowed fields for each format
   const formatFields = {
     [FORMATS.CLAUDE]: [
-      'input_tokens', 'output_tokens', 
+      'input_tokens', 'output_tokens',
       'cache_read_input_tokens', 'cache_creation_input_tokens',
-      'estimated'
+      'server_tool_use'
     ],
     [FORMATS.GEMINI]: [
       'promptTokenCount', 'candidatesTokenCount', 'totalTokenCount',

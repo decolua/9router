@@ -202,14 +202,12 @@ export function kiroToClaudeResponse(chunk, state) {
 
     if (state.toolCalls) {
       for (const [idx, toolInfo] of state.toolCalls) {
-        const buffered = state.toolArgBuffers?.get(idx);
-        if (buffered) {
-          results.push({
-            type: "content_block_delta",
-            index: toolInfo.blockIndex,
-            delta: { type: "input_json_delta", partial_json: buffered },
-          });
-        }
+        const buffered = state.toolArgBuffers?.get(idx) ?? "{}";
+        results.push({
+          type: "content_block_delta",
+          index: toolInfo.blockIndex,
+          delta: { type: "input_json_delta", partial_json: buffered || "{}" },
+        });
         results.push({ type: "content_block_stop", index: toolInfo.blockIndex });
       }
     }

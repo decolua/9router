@@ -1,3 +1,4 @@
+import { toNumericSessionId } from "../utils/sessionManager.js";
 import { makeKv } from "../../src/lib/db/helpers/kvStore.js";
 
 const MAX_SIGNATURES = 2000;
@@ -9,6 +10,29 @@ const SCOPE = "gemini_thought_signatures";
 const signatureKv = makeKv(SCOPE);
 const memorySignatures = new Map();
 let pruneCounter = 0;
+
+// Hydrate in-memory cache from persistent SQLite store on module load so unexpired signatures survive restarts
+(async () => {
+  try {
+    const all = await signatureKv.getAll();
+    if (all && typeof all === "object") {
+      const now = Date.now();
+      for (const [k, entry] of Object.entries(all)) {
+        if (entry && typeof entry.signature === "string" && (!entry.expiresAt || entry.expiresAt > now)) {
+          if (!memorySignatures.has(k)) {
+            memorySignatures.set(k, {
+              signature: entry.signature,
+              family: entry.family || null,
+              expiresAt: entry.expiresAt || (now + MEMORY_TTL_MS),
+            });
+          }
+        }
+      }
+    }
+  } catch {
+    // Fail-open
+  }
+})();
 
 /**
  * Model family that produced / will consume a signature. Antigravity serves Gemini and Claude
@@ -94,6 +118,8 @@ export function storeGeminiThoughtSignature(toolCallId, signature, sessionId = n
   const keys = [];
   if (sessionId && typeof sessionId === "string") {
     keys.push(`${sessionId}:${toolCallId}`);
+    const numSid = toNumericSessionId(sessionId);
+    if (numSid && numSid !== sessionId) keys.push(`${numSid}:${toolCallId}`);
   }
   keys.push(toolCallId);
 
@@ -127,10 +153,12 @@ export async function getGeminiThoughtSignature(toolCallId, sessionId = null, mo
   pruneMemoryExpired();
 
   if (sessionId && typeof sessionId === "string") {
-    const sessionKey = `${sessionId}:${toolCallId}`;
-    const sessionEntry = memorySignatures.get(sessionKey);
-    if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
-      return sessionEntry.signature;
+    const numSid = toNumericSessionId(sessionId);
+    for (const sid of (numSid && numSid !== sessionId ? [sessionId, numSid] : [sessionId])) {
+      const sessionEntry = memorySignatures.get(`${sid}:${toolCallId}`);
+      if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
+        return sessionEntry.signature;
+      }
     }
   }
 
@@ -184,10 +212,12 @@ export function getGeminiThoughtSignatureSync(toolCallId, sessionId = null, mode
   pruneMemoryExpired();
 
   if (sessionId && typeof sessionId === "string") {
-    const sessionKey = `${sessionId}:${toolCallId}`;
-    const sessionEntry = memorySignatures.get(sessionKey);
-    if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
-      return sessionEntry.signature;
+    const numSid = toNumericSessionId(sessionId);
+    for (const sid of (numSid && numSid !== sessionId ? [sessionId, numSid] : [sessionId])) {
+      const sessionEntry = memorySignatures.get(`${sid}:${toolCallId}`);
+      if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
+        return sessionEntry.signature;
+      }
     }
   }
 

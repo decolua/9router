@@ -9,6 +9,15 @@ import * as log from "../utils/logger.js";
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
+function getConnectionInFlightCount(connId) {
+  if (!connId) return 0;
+  const acct = global._pendingRequests?.byAccount?.[connId];
+  const pending = acct ? Object.values(acct).reduce((sum, n) => sum + (n > 0 ? n : 0), 0) : 0;
+  const resTime = global._activeConnectionReservations?.get(connId);
+  const reserved = (resTime && (Date.now() - resTime < 15000)) ? 1 : 0;
+  return pending + reserved;
+}
+
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
 function githubMonthlyResetMs(status, errorText, provider) {
@@ -153,6 +162,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
     }
+    const getInFlight = (c) => getConnectionInFlightCount(c.id);
+
     if (connection) {
       // skip strategy
     } else if (strategy === "round-robin") {
@@ -169,7 +180,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const current = byRecency[0];
       const currentCount = current?.consecutiveUseCount || 0;
 
-      if (current && current.lastUsedAt && currentCount < stickyLimit) {
+      // Concurrency balancing: if current candidate is already busy, pick an idle account
+      const currentBusy = current && getInFlight(current) > 0;
+      const idleCandidate = currentBusy ? availableConnections.find((c) => getInFlight(c) === 0) : null;
+
+      if (idleCandidate) {
+        log.info("AUTH", `${provider} | ${current.id?.slice(0, 8)} busy (${getInFlight(current)} in-flight) → balancing to idle ${idleCandidate.id?.slice(0, 8)} (${idleCandidate.displayName || idleCandidate.email || idleCandidate.name || "unnamed"})`);
+        connection = idleCandidate;
+      } else if (current && current.lastUsedAt && currentCount < stickyLimit) {
         // Stay with current account
         connection = current;
         // Update lastUsedAt and increment count (await to ensure persistence)
@@ -196,8 +214,27 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      // Concurrency balancing: if the top account is already serving an in-flight stream,
+      // route concurrent requests to an idle account to prevent Google Cloud Code stream throttling.
+      const top = availableConnections[0];
+      const topBusy = getInFlight(top);
+      if (topBusy > 0 && availableConnections.length > 1) {
+        const idle = availableConnections.find((c) => getInFlight(c) === 0);
+        if (idle) {
+          log.info("AUTH", `${provider} | ${top.id?.slice(0, 8)} busy (${topBusy} in-flight) → balancing to idle ${idle.id?.slice(0, 8)} (${idle.displayName || idle.email || idle.name || "unnamed"})`);
+          connection = idle;
+        } else {
+          // If all accounts are busy, select the least loaded
+          const leastLoaded = [...availableConnections].sort((a, b) => getInFlight(a) - getInFlight(b))[0];
+          connection = leastLoaded || top;
+        }
+      } else {
+        connection = top;
+      }
     }
+
+    if (!global._activeConnectionReservations) global._activeConnectionReservations = new Map();
+    global._activeConnectionReservations.set(connection.id, Date.now());
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
