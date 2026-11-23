@@ -1,5 +1,5 @@
 /**
- * OpenCode Go usage — GET https://opencode.ai/zen/go/v1/usage
+ * OpenCode Go usage — GET https://opencode.ai/inference/go/v1/usage
  * Auth: Bearer <apiKey>
  */
 

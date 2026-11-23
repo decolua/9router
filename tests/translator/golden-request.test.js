@@ -1,12 +1,12 @@
-// P0 GOLDEN: lock OUTPUT của translateRequest (body) cho các đích đặc biệt.
+// P0 GOLDEN: lock the translateRequest (body) OUTPUT for special targets.
 // openai → claude/gemini/kiro: thinking, tools, image, system, tool_result.
-// Sau refactor chạy lại phải khớp y hệt.
+// After the refactor, re-running must match exactly.
 import { describe, it, expect } from "vitest";
 import "./registerAll.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
-// Body openai mẫu phủ nhiều concern (text, image, tool, tool_result, system, thinking).
+// Sample openai body covering many concerns (text, image, tool, tool_result, system, thinking).
 function baseBody() {
   return {
     messages: [
@@ -27,7 +27,7 @@ function baseBody() {
   };
 }
 
-// Khử field động: toolNameMap, kiro conversationId (uuid), timestamp trong content.
+// Strip dynamic fields: toolNameMap, kiro conversationId (uuid), timestamps in content.
 function clean(body) {
   const s = JSON.stringify(body, (k, v) => {
     if (k === "_toolNameMap" || k === "conversationId") return undefined;

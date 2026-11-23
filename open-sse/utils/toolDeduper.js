@@ -6,7 +6,10 @@
  *   (verified live 2026-08-15 against api.deepseek.com, opencode.go and a LiteLLM
  *   gateway; GLM/MiniMax/Kimi upstreams accept duplicates). First definition wins,
  *   tool_choice and message-history references are by name/id so nothing breaks.
+ * - tool_reference cleanup: history refs naming a stripped tool are replaced, so
+ *   strict Claude-compatible upstreams don't reject the request.
  */
+import { CLAUDE_BLOCK } from "../translator/schema/blocks.js";
 import { isDeepSeekModel } from "../providers/models/helpers.js";
 
 const DEDUP_RULES = [
@@ -36,11 +39,42 @@ function matches(name, pattern) {
   return pattern instanceof RegExp ? pattern.test(name) : false;
 }
 
+// Claude Code's deferred tool loading returns `tool_reference` blocks inside a
+// tool_result. When dedup strips a tool the model already loaded (e.g. WebSearch
+// dropped because the Exa MCP is present), a surviving reference names a tool no
+// longer in the request — strict Claude-compatible upstreams reject the whole
+// request over it (z.ai 400 code 1210, verified live 2026-11-08). Remove such
+// references; if nothing remains, leave a text note — an empty content array is
+// itself invalid — so the model knows the tool is gone and falls back to the
+// MCP equivalent that replaced it.
+function cleanStrippedToolReferences(messages, strippedNames) {
+  if (!Array.isArray(messages) || strippedNames.size === 0) return 0;
+  let cleaned = 0;
+  for (const msg of messages) {
+    const content = msg?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block?.type !== CLAUDE_BLOCK.TOOL_RESULT || !Array.isArray(block.content)) continue;
+      const removed = block.content.filter(
+        (p) => p?.type === CLAUDE_BLOCK.TOOL_REFERENCE && strippedNames.has(p.tool_name)
+      );
+      if (removed.length === 0) continue;
+      cleaned += removed.length;
+      const kept = block.content.filter((p) => !removed.includes(p));
+      block.content = kept.length
+        ? kept
+        : [{ type: CLAUDE_BLOCK.TEXT, text: removed.map((p) => `[Tool ${p.tool_name} is unavailable]`).join("\n") }];
+    }
+  }
+  return cleaned;
+}
+
 /**
  * @param {Array} tools - translated tools array
  * @param {Object} [opts]
  * @param {string|null} [opts.clientTool] - detected client ("claude" | "codex" | ...)
  * @param {string|null} [opts.model] - model id, may carry a (level) thinking suffix
+ * @param {Array|null} [opts.messages] - translated messages; tool_reference blocks naming a stripped tool are replaced
  * @returns {{ tools: Array, stripped: Array<string> }}
  */
 function dedupeTools(tools, opts = {}) {
@@ -74,6 +108,7 @@ function dedupeTools(tools, opts = {}) {
   }
 
   if (toStrip.size === 0 && toDrop.size === 0) return { tools, stripped: [] };
+  cleanStrippedToolReferences(opts.messages, toStrip);
   const out = tools.filter((t, i) => !toDrop.has(i) && !toStrip.has(getToolName(t)));
   const stripped = Array.from(toDrop).map((i) => getToolName(tools[i])).concat(Array.from(toStrip));
   return { tools: out, stripped };
