@@ -184,8 +184,12 @@ export function formatSSE(data, sourceFormat) {
 export function buildStreamErrorBytes(statusCode, message, clientFormat) {
   const { error } = buildErrorBody(statusCode, message);
 
+  // Claude Code retries a mid-stream error event only when its type is
+  // overloaded_error (what Anthropic emits for transient failures); the frame has
+  // no HTTP status, so server_error would end the run. Every abort that reaches
+  // here (upstream cut, stall) is transient, so keep the message, change the type.
   const sse = clientFormat === FORMATS.CLAUDE
-    ? formatSSE({ type: "error", error }, FORMATS.CLAUDE)
+    ? formatSSE({ type: "error", error: { ...error, type: "overloaded_error" } }, FORMATS.CLAUDE)
     : formatSSE({ error }, clientFormat) + SSE_DONE;
 
   return sharedEncoder.encode(sse);
