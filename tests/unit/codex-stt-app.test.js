@@ -2,7 +2,7 @@ import { it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), refresh: vi.fn(), core: vi.fn(), clear: vi.fn(), mark: vi.fn(), access: vi.fn(), proxy: vi.fn(),
 }));
-vi.mock("@/sse/services/auth.js", () => ({ extractApiKey: () => null, isValidApiKey: vi.fn(), getProviderCredentials: mocks.get, clearAccountError: mocks.clear, markAccountUnavailable: mocks.mark }));
+vi.mock("@/sse/services/auth.js", () => ({ extractApiKey: () => null, checkApiKeyQuota: async () => null, isValidApiKey: vi.fn(), getProviderCredentials: mocks.get, clearAccountError: mocks.clear, markAccountUnavailable: mocks.mark }));
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({}), getCustomModels: async () => [] }));
 vi.mock("@/sse/services/model.js", () => ({ getModelInfo: async () => ({ provider: "codex", model: "transcribe" }) }));
 vi.mock("@/sse/services/keyAccess.js", () => ({ getKeyAccessContext: async () => ({}), enforceKeyAccessResolved: mocks.access }));

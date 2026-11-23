@@ -78,3 +78,14 @@ export function validateKeyAccessInput(input) {
   }
   return { ok: true, value: { restricted: input.restricted, allow: normalizeAllowList(allow) } };
 }
+
+// Older versions of the per-key branch exposed allowedModels. Accept that
+// input at the boundary while persisting only the canonical access columns.
+export function resolveKeyAccessInput({ access, allowedModels } = {}) {
+  if (access !== undefined) return validateKeyAccessInput(access);
+  if (allowedModels == null) return validateKeyAccessInput({ restricted: false, allow: [] });
+  if (!Array.isArray(allowedModels)) {
+    return { ok: false, error: "allowedModels must be an array of strings or null" };
+  }
+  return validateKeyAccessInput({ restricted: allowedModels.length > 0, allow: allowedModels });
+}

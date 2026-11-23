@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
-import { validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
+import { resolveKeyAccessInput } from "@/shared/utils/keyAccess.js";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -22,7 +22,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, access } = body;
+    const { name, isActive, access, tokenLimit, usedTokens } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,12 +30,20 @@ export async function PUT(request, { params }) {
     }
 
     const updateData = {};
+    if (name !== undefined) updateData.name = name;
     if (isActive !== undefined) updateData.isActive = isActive;
-    if (access !== undefined) {
-      const checked = validateKeyAccessInput(access);
+    if (access !== undefined || body.allowedModels !== undefined) {
+      const checked = resolveKeyAccessInput(body);
       if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
       updateData.access = checked.value;
     }
+    for (const field of ["tokenLimit", "usedTokens"]) {
+      if (body[field] !== undefined && (!Number.isSafeInteger(body[field]) || body[field] < 0)) {
+        return NextResponse.json({ error: `${field} must be a non-negative integer` }, { status: 400 });
+      }
+    }
+    if (tokenLimit !== undefined) updateData.tokenLimit = tokenLimit;
+    if (usedTokens !== undefined) updateData.usedTokens = usedTokens;
 
     const updated = await updateApiKey(id, updateData);
 

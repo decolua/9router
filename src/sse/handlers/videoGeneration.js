@@ -3,7 +3,7 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
+  checkApiKeyQuota,
 } from "../services/auth.js";
 import { getSettings, getProviderConnectionById } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -47,11 +47,8 @@ const CREATE_ROTATION_STATUSES = new Set([
 async function requireValidApiKey(request) {
   const apiKey = extractApiKey(request);
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-  }
+  const quotaError = await checkApiKeyQuota(apiKey, settings.requireApiKey);
+  if (quotaError) return errorResponse(quotaError.status, quotaError.error);
   return null;
 }
 

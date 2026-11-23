@@ -290,6 +290,13 @@ export async function saveRequestUsage(entry) {
         ]
       );
 
+      if (typeof entry.apiKey === "string") {
+        const totalTokens = promptTokens + completionTokens;
+        if (totalTokens > 0) {
+          db.run(`UPDATE apiKeys SET usedTokens = COALESCE(usedTokens, 0) + ? WHERE key = ?`, [totalTokens, entry.apiKey.trim()]);
+        }
+      }
+
       const dateKey = getLocalDateKey(entry.timestamp);
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
       const day = row ? parseJson(row.data, {}) : {
