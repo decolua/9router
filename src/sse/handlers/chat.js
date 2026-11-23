@@ -20,7 +20,9 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { detectFormatByEndpoint, FORMATS } from "open-sse/translator/formats.js";
+import { CONTEXT_LENGTH_EXCEEDED_CODE } from "open-sse/config/errorConfig.js";
+import { formatOpenAIResponsesStreamFailure } from "open-sse/utils/responsesStreamHelpers.js";
 import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -42,6 +44,28 @@ export async function handleChat(request, clientRawRequest = null) {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
+
+  const response = await handleParsedChat(request, body, clientRawRequest);
+  // Keep HTTP failures intact while accounts/combos select their final result.
+  // Only the client-facing Responses stream needs a protocol failure event.
+  if (response.status === HTTP_STATUS.BAD_REQUEST && body.stream === true
+    && detectFormatByEndpoint(new URL(request.url).pathname, body) === FORMATS.OPENAI_RESPONSES) {
+    try {
+      const { error } = await response.clone().json();
+      if (error?.code === CONTEXT_LENGTH_EXCEEDED_CODE) {
+        return new Response(formatOpenAIResponsesStreamFailure(error), {
+          headers: {
+            "Content-Type": "text/event-stream", "Cache-Control": "no-cache",
+            "Access-Control-Allow-Origin": "*", ...upstreamResponseHeaders(response.headers),
+          },
+        });
+      }
+    } catch { /* preserve unstructured HTTP failures */ }
+  }
+  return response;
+}
+
+async function handleParsedChat(request, body, clientRawRequest) {
 
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {

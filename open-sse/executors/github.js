@@ -2,6 +2,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { CONTEXT_LENGTH_EXCEEDED_CODE } from "../config/errorConfig.js";
 import { openaiToOpenAIResponsesRequest } from "../translator/request/openai-responses.js";
 import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
 import { initState, translateRequest, translateResponse } from "../translator/index.js";
@@ -51,6 +52,21 @@ export class GithubExecutor extends BaseExecutor {
       "anthropic-version": ANTHROPIC_API_VERSION,
       "Accept": stream ? "text/event-stream" : "application/json"
     };
+  }
+
+  parseError(response, bodyText) {
+    try {
+      const error = JSON.parse(bodyText)?.error;
+      if (response.status === HTTP_STATUS.BAD_REQUEST && error?.code === "invalid_request_body"
+        && typeof error.message === "string"
+        && error.message.startsWith("Your input exceeds the context window of this model.")) {
+        return {
+          status: response.status, message: error.message,
+          code: CONTEXT_LENGTH_EXCEEDED_CODE, type: "invalid_request_error",
+        };
+      }
+    } catch { /* keep the normal parser for unstructured errors */ }
+    return super.parseError(response, bodyText);
   }
 
   // Sanitize messages for GitHub Copilot /chat/completions endpoint (gpt/gemini/grok models —
