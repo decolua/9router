@@ -76,3 +76,66 @@ describe("Gemini 4 Argon Antigravity tier", () => {
     expect(finalBody.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: expectedLevel, includeThoughts: true });
   });
 });
+
+describe("Gemini 4 Antigravity catalog and thinking levels (#5785)", () => {
+  it.each([
+    ["gemini-4-carbon", "gemini-4-carbon-high", "high", ["low", "medium", "high"]],
+    ["gemini-4-argon", "gemini-4-argon-high", "high", ["low", "medium", "high"]],
+    ["gemini-4-neon", "gemini-4-neon-high", "high", ["low", "medium", "high", "xhigh"]],
+    ["gemini-4-hydrogen", "gemini-4-hydrogen-high", "high", ["low", "medium", "high", "xhigh"]],
+  ])("maps base alias %s to %s(%s) with expected thinking levels", (baseId, expectedWire, expectedLevel, expectedLevels) => {
+    const upstreamModel = getModelUpstreamId("ag", baseId);
+    expect(upstreamModel).toBe(`${expectedWire}(${expectedLevel})`);
+    expect(stripThinkingSuffix(upstreamModel)).toBe(expectedWire);
+    expect(getThinkingLevels("antigravity", baseId)).toEqual(expectedLevels);
+    expect(getThinkingLevels("ag", baseId)).toEqual(expectedLevels);
+  });
+
+  it.each([
+    ["gemini-4-neon", "xhigh", "gemini-4-neon-xhigh", "xhigh"],
+    ["gemini-4-neon", "max", "gemini-4-neon-xhigh", "xhigh"],
+    ["gemini-4-hydrogen", "xhigh", "gemini-4-hydrogen-xhigh", "xhigh"],
+    ["gemini-4-hydrogen", "max", "gemini-4-hydrogen-xhigh", "xhigh"],
+    ["gemini-4-carbon", "xhigh", "gemini-4-carbon-high", "high"],
+    ["gemini-4-argon", "max", "gemini-4-argon-high", "high"],
+  ])("resolves %s with reasoning_effort=%s to %s(%s)", (baseId, effort, expectedWire, expectedLevel) => {
+    const upstreamModel = getModelUpstreamId("ag", baseId, { reasoning_effort: effort });
+    expect(upstreamModel).toBe(`${expectedWire}(${expectedLevel})`);
+
+    const body = {
+      model: stripThinkingSuffix(upstreamModel),
+      request: {
+        contents: [{ role: "user", parts: [{ text: "hello" }] }],
+        generationConfig: {},
+      },
+    };
+
+    applyThinking("antigravity", upstreamModel, body, "antigravity");
+    const finalBody = new AntigravityExecutor().transformRequest(
+      expectedWire,
+      body,
+      true,
+      { projectId: "project", connectionId: "connection" }
+    );
+
+    expect(finalBody.model).toBe(expectedWire);
+    expect(finalBody.request.generationConfig.thinkingConfig).toEqual({
+      thinkingLevel: expectedLevel,
+      includeThoughts: true,
+    });
+  });
+
+  it("clamps reasoning_effort none to low for Gemini 4 Neon and Hydrogen", () => {
+    for (const model of ["gemini-4-neon", "gemini-4-hydrogen"]) {
+      const body = {
+        reasoning_effort: "none",
+        request: { contents: [], generationConfig: {} },
+      };
+      applyThinking("antigravity", model, body, "antigravity");
+      expect(body.request.generationConfig.thinkingConfig).toEqual({
+        thinkingLevel: "low",
+        includeThoughts: true,
+      });
+    }
+  });
+});
