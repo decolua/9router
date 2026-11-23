@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { getKeyUsageSnapshot } from "@/lib/keyUsageLimit.js";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/keys - List API keys
+// GET /api/keys - List API keys (with current-period usage for keys that have limits)
 export async function GET() {
   try {
     const keys = await getApiKeys();
-    return NextResponse.json({ keys });
+    const withUsage = await Promise.all(keys.map(async (k) => ({ ...k, usage: await getKeyUsageSnapshot(k) })));
+    return NextResponse.json({ keys: withUsage });
   } catch (error) {
     console.log("Error fetching keys:", error);
     return NextResponse.json({ error: "Failed to fetch keys" }, { status: 500 });

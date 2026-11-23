@@ -315,6 +315,48 @@ export async function saveRequestUsage(entry) {
   }
 }
 
+/**
+ * Usage of one client API key since each given start, in a single indexed scan.
+ * @param {string} apiKey - raw client key (as stored in usageHistory.apiKey)
+ * @param {Object<string, Date>} startsByPeriod - e.g. { daily: Date, weekly: Date }
+ * @returns {Promise<Object<string, {inputTokens: number, outputTokens: number, cost: number, requests: number}>>}
+ */
+export async function getApiKeyUsageByPeriods(apiKey, startsByPeriod) {
+  const periods = Object.keys(startsByPeriod || {});
+  const result = {};
+  for (const p of periods) result[p] = { inputTokens: 0, outputTokens: 0, cost: 0, requests: 0 };
+  if (!apiKey || periods.length === 0) return result;
+
+  const startIsos = periods.map((p) => startsByPeriod[p].toISOString());
+  const earliest = startIsos.reduce((a, b) => (a < b ? a : b));
+  const selects = [];
+  const params = [];
+  periods.forEach((p, i) => {
+    selects.push(
+      `COALESCE(SUM(CASE WHEN timestamp >= ? THEN promptTokens END), 0) AS in_${i}`,
+      `COALESCE(SUM(CASE WHEN timestamp >= ? THEN completionTokens END), 0) AS out_${i}`,
+      `COALESCE(SUM(CASE WHEN timestamp >= ? THEN cost END), 0) AS cost_${i}`,
+      `COALESCE(SUM(CASE WHEN timestamp >= ? THEN 1 END), 0) AS req_${i}`,
+    );
+    params.push(startIsos[i], startIsos[i], startIsos[i], startIsos[i]);
+  });
+
+  const db = await getAdapter();
+  const row = db.get(
+    `SELECT ${selects.join(", ")} FROM usageHistory WHERE apiKey = ? AND timestamp >= ?`,
+    [...params, apiKey, earliest]
+  ) || {};
+  periods.forEach((p, i) => {
+    result[p] = {
+      inputTokens: Number(row[`in_${i}`]) || 0,
+      outputTokens: Number(row[`out_${i}`]) || 0,
+      cost: Number(row[`cost_${i}`]) || 0,
+      requests: Number(row[`req_${i}`]) || 0,
+    };
+  });
+  return result;
+}
+
 export async function getUsageHistory(filter = {}) {
   const db = await getAdapter();
   const conds = [];

@@ -3,6 +3,12 @@ import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { checkKeyUsageLimit } from "@/lib/keyUsageLimit";
+import { keyUsageExceededMessage } from "@/shared/constants/keyUsageLimit";
+
+// Read-only LLM calls (model listing, CORS preflight) never consume quota.
+const USAGE_LIMIT_EXEMPT_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const MS_PER_SECOND = 1000;
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -164,6 +170,26 @@ async function canAccessPublicLlmApi(request) {
   return await hasValidApiKey(request);
 }
 
+// 429 when the presented 9Router key has exhausted one of its usage limits.
+// Applies to local requests too: a limit belongs to the key, not the network path.
+async function enforceKeyUsageLimit(request) {
+  if (USAGE_LIMIT_EXEMPT_METHODS.has(request.method)) return null;
+  const exceeded = await checkKeyUsageLimit(extractApiKey(request));
+  if (!exceeded) return null;
+  console.warn(`[KEY_LIMIT] key "${exceeded.keyName}" exhausted ${exceeded.period} ${exceeded.metric} (${exceeded.used}/${exceeded.max})`);
+  const retryAfterSec = Math.max(1, Math.ceil((new Date(exceeded.resetAt).getTime() - Date.now()) / MS_PER_SECOND));
+  return NextResponse.json(
+    {
+      error: {
+        message: keyUsageExceededMessage(exceeded.period, exceeded.metric, exceeded.resetAt),
+        type: "rate_limit_error",
+        code: "key_usage_limit_exceeded",
+      },
+    },
+    { status: 429, headers: { "Retry-After": String(retryAfterSec) } }
+  );
+}
+
 async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
@@ -226,8 +252,12 @@ export async function proxy(request) {
   }
 
   if (isPublicLlmApi(pathname)) {
-    if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    if (!(await canAccessPublicLlmApi(request))) {
+      return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    }
+    const limitDenied = await enforceKeyUsageLimit(request);
+    if (limitDenied) return limitDenied;
+    return NextResponse.next();
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
