@@ -6,6 +6,7 @@ import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTrackin
 import { createErrorResult } from "../../utils/error.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { detectQuotaExhaustion } from "../../services/accountFallback.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
@@ -269,6 +270,19 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // bare OpenAI body and usage tracking sees data.usage. No-op unless the
   // provider opts in via transport.quirks.clineEnvelope.
   responseBody = unwrapClineEnvelope(responseBody, provider);
+
+  // Issue #5359: some providers report free-tier quota exhaustion in an
+  // HTTP 200 error envelope. Treat quota wording as an account error so
+  // the fallback loop locks the connection instead of counting a success.
+  const bodyError = responseBody?.error;
+  if (bodyError) {
+    const errMsg = bodyError.message || (typeof bodyError === "string" ? bodyError : JSON.stringify(bodyError));
+    const quota = detectQuotaExhaustion(providerResponse.status, errMsg);
+    if (quota.exhausted) {
+      appendLog({ status: "FAILED 429" });
+      return createErrorResult(HTTP_STATUS.RATE_LIMITED, errMsg, quota.resetAtMs);
+    }
+  }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {

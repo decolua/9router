@@ -121,6 +121,38 @@ export async function PUT(request, { params }) {
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
 
+    // Issue #5359: manual quota lockout scheduling.
+    // quotaLockout: null clears; { reactivateAt } (ISO) schedules until then;
+    // { reactivateAt: null } suspends indefinitely until explicitly cleared.
+    if (body.quotaLockout !== undefined) {
+      if (body.quotaLockout === null) {
+        updateData.quotaLockout = null;
+      } else if (typeof body.quotaLockout === "object") {
+        const reactivateAt = body.quotaLockout.reactivateAt;
+        if (reactivateAt !== null && reactivateAt !== undefined) {
+          const ms = Date.parse(reactivateAt);
+          if (!Number.isFinite(ms)) {
+            return NextResponse.json({ error: "Invalid quotaLockout.reactivateAt date" }, { status: 400 });
+          }
+          updateData.quotaLockout = {
+            ...(existing.quotaLockout || {}),
+            status: "quota_exhausted",
+            source: "manual",
+            reactivateAt: new Date(ms).toISOString(),
+          };
+        } else {
+          updateData.quotaLockout = {
+            ...(existing.quotaLockout || {}),
+            status: "quota_exhausted",
+            source: "manual",
+            reactivateAt: null,
+          };
+        }
+      } else {
+        return NextResponse.json({ error: "quotaLockout must be an object or null" }, { status: 400 });
+      }
+    }
+
     if (
       shouldMergeProviderSpecificData(
         existing.providerSpecificData,

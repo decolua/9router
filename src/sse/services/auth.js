@@ -1,6 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, detectQuotaExhaustion, isQuotaLockoutActive, buildQuotaLockoutUpdate, clearQuotaLockoutUpdate } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
@@ -86,6 +86,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
+      // Issue #5359: quota lockout is account-wide, all strategies respect it
+      if (isQuotaLockoutActive(c)) return false;
       if (isModelLockActive(c, model)) return false;
       const enabled = c.providerSpecificData?.enabledModels;
       if (providerId === "codex" && Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) return false;
@@ -114,8 +116,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     if (availableConnections.length === 0) {
       // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
-      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
+      const lockedConns = connections.filter(c => isModelLockActive(c, model) || isQuotaLockoutActive(c));
+      const expiries = lockedConns.map(c => c.quotaLockout?.reactivateAt || getEarliestModelLockUntil(c)).filter(Boolean);
       if (isAntigravity && model && antigravityQuotaCache) {
         connections.forEach((c) => {
           const connQuotas = antigravityQuotaCache.get(c.id);
@@ -253,6 +255,27 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
 
+  // Issue #5359: free-tier quota exhaustion locks the ACCOUNT until the
+  // provider reset (or indefinitely), not a short model cooldown.
+  const quota = detectQuotaExhaustion(status, errorText);
+  if (quota.exhausted && !conn?.quotaLockout?.source?.startsWith("manual")) {
+    const resetAtMs = quota.resetAtMs || (resetsAtMs && resetsAtMs > Date.now() ? resetsAtMs : null);
+    await updateProviderConnection(connectionId, {
+      ...buildQuotaLockoutUpdate({ status, message: errorText, resetAtMs, source: "auto" }),
+      testStatus: "unavailable",
+      lastError: (typeof errorText === "string" ? errorText : "Quota exhausted").slice(0, 200),
+      errorCode: status,
+      lastErrorAt: new Date().toISOString(),
+    });
+    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+    log.warn("AUTH", `${connName} quota-locked until ${resetAtMs ? new Date(resetAtMs).toISOString() : "manual re-enable"} [${status}]`);
+    return { shouldFallback: true, cooldownMs: resetAtMs ? resetAtMs - Date.now() : 0 };
+  }
+  if (quota.exhausted && conn?.quotaLockout?.source?.startsWith("manual")) {
+    // Already under a manually scheduled lockout — keep the user's schedule.
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
+
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
   if (githubResetAtMs) {
@@ -339,6 +362,14 @@ export async function clearAccountError(connectionId, currentConnection, model =
       lastErrorAt: null,
       backoffLevel: 0
     });
+  }
+
+  // Issue #5359: success never clears an active quota lockout (indefinite or
+  // manually scheduled); only auto lockouts past their reset are cleared.
+  if (conn.quotaLockout?.status) {
+    const reactivateAt = conn.quotaLockout.reactivateAt;
+    const expired = reactivateAt !== null && new Date(reactivateAt).getTime() <= now;
+    if (expired || !isQuotaLockoutActive(conn)) Object.assign(clearObj, clearQuotaLockoutUpdate());
   }
 
   await updateProviderConnection(connectionId, clearObj);
