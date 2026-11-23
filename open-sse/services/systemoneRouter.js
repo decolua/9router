@@ -7,14 +7,8 @@
 export const DEFAULT_SYSTEMONE_ROUTER_MODEL = "oc/jev-1.13-free";
 export const DEFAULT_SYSTEMONE_TIMEOUT_MS = 8000;
 export const MAX_STATE_CHARS = 2000;
-export const MAX_STICKY_SESSIONS = 5000;
-export const STICKY_SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
-
-/**
- * In-memory session stickiness store for smart-routed combos.
- * Key: `${comboName}:${sessionId}` -> Value: { model, lastUsed }
- */
-const comboSessionModelStore = new Map();
+export { MAX_STICKY_SESSIONS, STICKY_SESSION_TTL_MS } from "../config/sessionAffinity.js";
+export { getStickyComboModel, setStickyComboModel, clearStickyComboSession, pruneStickyComboSessions, resetStickyComboStore } from "./comboSession.js";
 
 /**
  * Extract prompt text from the request body for System One classification.
@@ -157,103 +151,4 @@ export function orderModelsByChoice(models, choiceResult) {
   }
 
   return [choice, ...others];
-}
-
-/**
- * Check if a session already has a sticky model assigned for this combo.
- *
- * @param {string} comboName - Combo name
- * @param {string|null} sessionId - Client session identifier
- * @param {string[]} models - Currently available combo models
- * @returns {string|null} Model to use, or null if no sticky model
- */
-export function getStickyComboModel(comboName, sessionId, models) {
-  if (!sessionId || !comboName || !Array.isArray(models)) return null;
-
-  const key = `${comboName}:${sessionId}`;
-  const entry = comboSessionModelStore.get(key);
-  if (!entry) return null;
-
-  // Check TTL (2 hours)
-  if (Date.now() - entry.lastUsed > STICKY_SESSION_TTL_MS) {
-    comboSessionModelStore.delete(key);
-    return null;
-  }
-
-  // Ensure stored model still belongs to combo
-  if (!models.includes(entry.model)) {
-    comboSessionModelStore.delete(key);
-    return null;
-  }
-
-  entry.lastUsed = Date.now();
-  return entry.model;
-}
-
-/**
- * Record sticky model for this session so subsequent turns keep prompt-cache warm.
- *
- * @param {string} comboName - Combo name
- * @param {string|null} sessionId - Client session identifier
- * @param {string} model - Selected model
- */
-export function setStickyComboModel(comboName, sessionId, model) {
-  if (!sessionId || !comboName || !model) return;
-
-  pruneStickyComboSessions();
-  const key = `${comboName}:${sessionId}`;
-  comboSessionModelStore.set(key, { model, lastUsed: Date.now() });
-}
-
-/**
- * Clear a sticky session mapping (e.g. after a model fails or resets).
- *
- * @param {string} comboName - Combo name
- * @param {string|null} [sessionId] - Specific session ID; omit to clear all for combo
- */
-export function clearStickyComboSession(comboName, sessionId = null) {
-  if (!comboName) {
-    comboSessionModelStore.clear();
-    return;
-  }
-  if (sessionId) {
-    comboSessionModelStore.delete(`${comboName}:${sessionId}`);
-    return;
-  }
-  // Clear all for this combo
-  const prefix = `${comboName}:`;
-  for (const k of comboSessionModelStore.keys()) {
-    if (k.startsWith(prefix)) comboSessionModelStore.delete(k);
-  }
-}
-
-/**
- * Prune old or excess sticky sessions to prevent unbounded memory growth.
- */
-export function pruneStickyComboSessions() {
-  if (comboSessionModelStore.size < MAX_STICKY_SESSIONS) return;
-
-  const now = Date.now();
-  // Remove expired
-  for (const [k, v] of comboSessionModelStore.entries()) {
-    if (now - v.lastUsed > STICKY_SESSION_TTL_MS) {
-      comboSessionModelStore.delete(k);
-    }
-  }
-
-  // If still above ceiling, drop oldest entries
-  if (comboSessionModelStore.size >= MAX_STICKY_SESSIONS) {
-    const sorted = [...comboSessionModelStore.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed);
-    const toDrop = sorted.slice(0, Math.floor(MAX_STICKY_SESSIONS / 4));
-    for (const [k] of toDrop) {
-      comboSessionModelStore.delete(k);
-    }
-  }
-}
-
-/**
- * Reset sticky store (for testing).
- */
-export function resetStickyComboStore() {
-  comboSessionModelStore.clear();
 }

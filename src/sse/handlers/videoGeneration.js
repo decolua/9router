@@ -1,3 +1,4 @@
+import { accountSelectionOptions } from "../services/accountSelection.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -7,7 +8,7 @@ import {
 } from "../services/auth.js";
 import { getSettings, getProviderConnectionById } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccessResolved, getProviderAllowedConnectionIds, keyAccessDeniedResponse } from "../services/keyAccess.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -94,7 +95,7 @@ async function resolveVideoProvider(parsedBody) {
     }
     return { error: errorResponse(HTTP_STATUS.BAD_REQUEST, `Provider '${modelInfo.provider}' does not support video generation`) };
   }
-  return { provider: modelInfo.provider, model: modelInfo.model };
+  return { provider: modelInfo.provider, model: modelInfo.model, connectionId: modelInfo.connectionId };
 }
 
 function withConnectionHeader(response, connectionId) {
@@ -134,7 +135,9 @@ export async function handleVideoCreate(request, action) {
     forwardBody = JSON.stringify({ ...bodyInfo.parsed, model });
   }
 
-  const preferredConnectionId = request.headers.get("x-connection-id") || null;
+  const preferredConnectionId = resolved.connectionId || request.headers.get("x-connection-id") || null;
+  const selection = await accountSelectionOptions(resolved, request, { keyAccess: await getKeyAccessContext(request) });
+  if (NO_AUTH_VIDEO_PROVIDERS.has(provider) && preferredConnectionId) return errorResponse(HTTP_STATUS.BAD_REQUEST, "This provider does not support account selection");
   const idempotencyKey = request.headers.get("idempotency-key") || null;
 
   // noAuth providers — executor-driven generation, no credential needed
@@ -158,7 +161,7 @@ export async function handleVideoCreate(request, action) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, selection);
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
@@ -231,7 +234,10 @@ export async function handleVideoGet(request, requestId) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const provider = await resolveGetProvider(request, preferredConnectionId);
 
-  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
+  const keyAccess = await getKeyAccessContext(request);
+  const allowedConnectionIds = await getProviderAllowedConnectionIds(keyAccess, provider);
+  if (allowedConnectionIds && (!allowedConnectionIds.size || (preferredConnectionId && !allowedConnectionIds.has(preferredConnectionId)))) return keyAccessDeniedResponse(keyAccess, "video job");
+  const credentials = await getProviderCredentials(provider, null, null, { requiredConnectionId: preferredConnectionId, preferredConnectionId, allowedConnectionIds });
   if (!credentials || credentials.allRateLimited) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
   }

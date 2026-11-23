@@ -1,3 +1,4 @@
+import { accountSelectionOptions } from "../services/accountSelection.js";
 import {
   extractApiKey, isValidApiKey,
   getProviderCredentials, markAccountUnavailable,
@@ -59,22 +60,25 @@ export async function handleTts(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style),
+      handleSingleModel: (b, m, routing) => handleSingleModelTts(b, m, responseFormat, language, style, request, { ...routing, grantedByCombo: true }),
       log,
       comboName: modelStr,
       comboStrategy,
       comboStickyLimit,
+      accountFallbackMode: comboStrategies[modelStr]?.accountFallbackMode,
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language, style);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, style, request);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style) {
+async function handleSingleModelTts(body, modelStr, responseFormat, language, style, request, routing = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+  const selection = await accountSelectionOptions(modelInfo, request, { ...routing, keyAccess: await getKeyAccessContext(request) });
+  if (!CREDENTIALED_PROVIDERS.has(provider) && selection.preferredConnectionId) return errorResponse(HTTP_STATUS.BAD_REQUEST, "This provider does not support account selection");
   log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
 
   // noAuth providers — no credential needed
@@ -90,7 +94,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, selection);
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

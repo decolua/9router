@@ -1,3 +1,4 @@
+import { parseModelReference } from "../utils/modelReference.js";
 import REGISTRY from "../providers/registry/index.js";
 
 // Alias→id derived from registry single-source: id→id, alias→id, aliases[]→id.
@@ -30,28 +31,35 @@ export function resolveProviderAlias(aliasOrId) {
 
 /**
  * Parse model string: "alias/model" or "provider/model" or just alias
+ * Also extracts optional connection affinity suffix "@connectionId"
  */
 export function parseModel(modelStr) {
   if (!modelStr) {
     return { provider: null, model: null, isAlias: false, providerAlias: null };
   }
 
+  const { model: cleanStr, connectionId } = parseModelReference(modelStr);
+
   // Check if standard format: provider/model or alias/model
-  if (modelStr.includes("/")) {
-    const firstSlash = modelStr.indexOf("/");
-    const providerOrAlias = modelStr.slice(0, firstSlash);
-    const model = modelStr.slice(firstSlash + 1);
+  if (cleanStr.includes("/")) {
+    const firstSlash = cleanStr.indexOf("/");
+    const providerOrAlias = cleanStr.slice(0, firstSlash);
+    const model = cleanStr.slice(firstSlash + 1);
     const provider = resolveProviderAlias(providerOrAlias);
-    return { provider, model, isAlias: false, providerAlias: providerOrAlias };
+    const out = { provider, model, isAlias: false, providerAlias: providerOrAlias };
+    if (connectionId) out.connectionId = connectionId;
+    return out;
   }
 
   // Alias format (model alias, not provider alias)
-  return {
+  const out = {
     provider: null,
-    model: modelStr,
+    model: cleanStr,
     isAlias: true,
     providerAlias: null,
   };
+  if (connectionId) out.connectionId = connectionId;
+  return out;
 }
 
 /**
@@ -67,19 +75,18 @@ export function resolveModelAliasFromMap(alias, aliases) {
 
   // Resolved value is "provider/model" format
   if (typeof resolved === "string" && resolved.includes("/")) {
-    const firstSlash = resolved.indexOf("/");
-    const providerOrAlias = resolved.slice(0, firstSlash);
-    return {
-      provider: resolveProviderAlias(providerOrAlias),
-      model: resolved.slice(firstSlash + 1),
-    };
+    const parsed = parseModel(resolved);
+    return { provider: parsed.provider, model: parsed.model, ...(parsed.connectionId ? { connectionId: parsed.connectionId } : {}) };
   }
 
   // Or object { provider, model }
   if (typeof resolved === "object" && resolved.provider && resolved.model) {
+    const parsed = parseModelReference(resolved.model);
+    const connectionId = resolved.connectionId || parsed.connectionId;
     return {
       provider: resolveProviderAlias(resolved.provider),
-      model: resolved.model,
+      model: parsed.model,
+      ...(connectionId ? { connectionId } : {}),
     };
   }
 
@@ -95,10 +102,12 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
-    return {
+    const res = {
       provider: parsed.provider,
       model: parsed.model,
     };
+    if (parsed.connectionId) res.connectionId = parsed.connectionId;
+    return res;
   }
 
   // Get aliases (from object or function)
@@ -112,14 +121,19 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
     resolveModelAliasFromMap(parsed.model, aliases) ||
     resolveModelAliasFromMap(parsed.model, BUILTIN_MODEL_ALIASES);
   if (resolved) {
-    return resolved;
+    const res = { ...resolved };
+    const connId = parsed.connectionId || resolved.connectionId;
+    if (connId) res.connectionId = connId;
+    return res;
   }
 
   // Fallback: infer provider from model name prefix
-  return {
+  const res = {
     provider: inferProviderFromModelName(parsed.model),
     model: parsed.model,
   };
+  if (parsed.connectionId) res.connectionId = parsed.connectionId;
+  return res;
 }
 
 // Config-driven prefix → provider inference (first match wins, fallback "openai").

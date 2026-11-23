@@ -1,3 +1,4 @@
+import { accountSelectionOptions } from "../services/accountSelection.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -53,7 +54,6 @@ export async function handleImageGeneration(request) {
   }
 
   const url = new URL(request.url);
-  const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const wantsStream = (request.headers.get("accept") || "").includes("text/event-stream");
   const binaryOutput = url.searchParams.get("response_format") === "binary";
   const modelStr = body.model;
@@ -83,22 +83,25 @@ export async function handleImageGeneration(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname }),
+      handleSingleModel: (b, m, routing) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, apiKey, endpoint: url.pathname, request, ...routing, grantedByCombo: true }),
       log,
       comboName: modelStr,
       comboStrategy,
       comboStickyLimit,
+      accountFallbackMode: comboStrategies[modelStr]?.accountFallbackMode,
     });
   }
 
-  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname });
+  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, apiKey, endpoint: url.pathname, request });
 }
 
-async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint } = {}) {
+async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, apiKey, endpoint, request, ...routing } = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+  const selection = await accountSelectionOptions(modelInfo, request, { ...routing, keyAccess: await getKeyAccessContext(request) });
+  if (NO_AUTH_PROVIDERS.has(provider) && selection.preferredConnectionId) return errorResponse(HTTP_STATUS.BAD_REQUEST, "This provider does not support account selection");
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
@@ -118,7 +121,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, selection);
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

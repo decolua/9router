@@ -15,6 +15,7 @@ export default function Modal({
   closeOnOverlay = true,
   showTrafficLights = true,
   className,
+  zIndex = "z-50",
 }) {
   const sizes = {
     sm: "max-w-sm",
@@ -44,7 +45,7 @@ export default function Modal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className={cn("fixed inset-0 flex items-center justify-center p-4", zIndex)}>
       {/* Overlay */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-[2px] fade-in"
