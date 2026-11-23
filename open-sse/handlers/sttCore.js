@@ -248,6 +248,13 @@ async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
     const v = formData.get(k);
     if (v !== null && v !== undefined && v !== "") fd.append(k, v);
   }
+  const requested = new Set([
+    ...formData.getAll("timestamp_granularities[]"),
+    ...formData.getAll("timestamp_granularities"),
+  ]);
+  for (const g of ["word", "segment"]) {
+    if (requested.has(g)) fd.append("timestamp_granularities[]", g);
+  }
   const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
   if (!res.ok) return upstreamError(res);
   const ct = res.headers.get("content-type") || "application/json";
