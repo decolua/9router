@@ -13,10 +13,12 @@ export default function SmartPolicyModal({
   comboName,
   currentPolicy = "smart",
   currentThreshold = 80,
+  currentInstructions = "",
   onSave,
 }) {
   const [selectedPolicy, setSelectedPolicy] = useState("smart");
   const [threshold, setThreshold] = useState(80);
+  const [instructions, setInstructions] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -27,8 +29,9 @@ export default function SmartPolicyModal({
       setSelectedPolicy(initialPolicy);
       const parsedThresh = Math.round((currentThreshold || 0.8) * (currentThreshold <= 1 ? 100 : 1));
       setThreshold(parsedThresh || 80);
+      setInstructions(typeof currentInstructions === "string" ? currentInstructions : "");
     }
-  }, [isOpen, currentPolicy, currentThreshold]);
+  }, [isOpen, currentPolicy, currentThreshold, currentInstructions]);
 
   const handleSave = () => {
     const finalThreshold = selectedPolicy === "custom"
@@ -41,6 +44,7 @@ export default function SmartPolicyModal({
       smartPolicy: selectedPolicy,
       sessionSticky: selectedPolicy !== "per-turn",
       confidenceThreshold: finalThreshold,
+      smartInstructions: instructions.trim(),
     });
     onClose();
   };
@@ -183,6 +187,24 @@ export default function SmartPolicyModal({
               </div>
             );
           })}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="smart-routing-instructions" className="text-sm font-medium text-text-main">
+            Routing instructions <span className="text-text-muted font-normal">(optional)</span>
+          </label>
+          <textarea
+            id="smart-routing-instructions"
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            rows={5}
+            placeholder="Describe when to choose each model, using the model IDs configured in this combo."
+            aria-describedby="smart-routing-instructions-help"
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary resize-y"
+          />
+          <p id="smart-routing-instructions-help" className="text-xs text-text-muted">
+            Guide this combo&apos;s model selection by capability, cost or speed. Leave blank to use the default routing instructions.
+          </p>
         </div>
 
         {/* Prompt Cache Benefit Callout */}

@@ -867,6 +867,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           comboName={combo.name}
           currentPolicy={strategy.smartPolicy || (strategy.sessionSticky === false ? "per-turn" : "smart")}
           currentThreshold={strategy.confidenceThreshold ?? 80}
+          currentInstructions={strategy.smartInstructions || ""}
           onSave={onSetStrategy}
         />
       )}

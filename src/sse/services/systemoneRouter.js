@@ -22,6 +22,7 @@ import {
  * @param {object} opts.body - Client request body
  * @param {string[]} opts.models - Combo model candidate array
  * @param {string} [opts.routerModel] - System One router model (defaults to oc/jev-1.13-free)
+ * @param {string} [opts.smartInstructions] - Optional per-combo routing instructions
  * @param {object} [opts.log] - Logger
  * @param {number} [opts.timeoutMs=DEFAULT_SYSTEMONE_TIMEOUT_MS] - Hard ceiling for router evaluation
  * @returns {Promise<{ choice: string, confidence: number|null, probabilities: Record<string, number>|null } | null>}
@@ -30,6 +31,7 @@ export async function resolveSmartChoice({
   body,
   models,
   routerModel = DEFAULT_SYSTEMONE_ROUTER_MODEL,
+  smartInstructions,
   log,
   timeoutMs = DEFAULT_SYSTEMONE_TIMEOUT_MS,
 }) {
@@ -69,7 +71,8 @@ export async function resolveSmartChoice({
       questions: {
         route: {
           type: "choice",
-          instructions: "Which of these configured models is the most appropriate for this request?",
+          instructions: (typeof smartInstructions === "string" && smartInstructions.trim())
+            || "Which of these configured models is the most appropriate for this request?",
           criteria,
         },
       },
