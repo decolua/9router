@@ -327,6 +327,14 @@ function isCustomTool(state, name) {
   return !!name && state.customToolNames?.has(name);
 }
 
+function restoreNamespaceTool(name, namespaceToolMap) {
+  const mapped = name && namespaceToolMap?.[name];
+  if (mapped && typeof mapped.name === "string" && typeof mapped.namespace === "string") {
+    return { name: mapped.name, namespace: mapped.namespace };
+  }
+  return { name: name || "" };
+}
+
 function extractCustomToolInput(argumentsText) {
   if (typeof argumentsText !== "string") return "";
   try {
@@ -360,7 +368,7 @@ function emitToolCall(state, emit, tc) {
         type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
         ...(custom ? { input: "" } : { arguments: "" }),
         call_id: callId,
-        name: state.funcNames[tcIdx] || ""
+        ...(custom ? { name: state.funcNames[tcIdx] || "" } : restoreNamespaceTool(state.funcNames[tcIdx], state.namespaceToolMap))
       }
     });
   }
@@ -418,7 +426,7 @@ function closeToolCall(state, emit, idx) {
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
       call_id: callId,
-      name: state.funcNames[idx] || ""
+      ...(custom ? { name: state.funcNames[idx] || "" } : restoreNamespaceTool(state.funcNames[idx], state.namespaceToolMap))
     };
 
     emit("response.output_item.done", {
