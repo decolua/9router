@@ -108,6 +108,39 @@ describe("native Codex OAuth image generation", () => {
     expect(result.success).toBe(false);
     expect(await result.response.text()).toContain("Codex Images API returned invalid JSON.");
   });
+
+  describe("usage limit cooldown", () => {
+    const usageLimit = (extra) => Response.json({
+      error: { type: "usage_limit_reached", message: "The usage limit has been reached", plan_type: "pro", ...extra },
+    }, { status: 429 });
+
+    it("returns the provider reset time from resets_at", async () => {
+      const resetsAt = Math.floor(Date.now() / 1000) + 15 * 3600;
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(usageLimit({ resets_at: resetsAt })));
+      const result = await handleImageGenerationCore(request());
+      expect(result.success).toBe(false);
+      expect(result.status).toBe(429);
+      expect(result.error).toContain("The usage limit has been reached");
+      expect(result.resetsAtMs).toBe(resetsAt * 1000);
+    });
+
+    it("falls back to resets_in_seconds", async () => {
+      const now = Date.now();
+      vi.spyOn(Date, "now").mockReturnValue(now);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(usageLimit({ resets_in_seconds: 600 })));
+      const result = await handleImageGenerationCore(request());
+      expect(result.status).toBe(429);
+      expect(result.resetsAtMs).toBe(now + 600_000);
+    });
+
+    it("leaves the cooldown to backoff when no reset is reported", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(usageLimit({})));
+      const result = await handleImageGenerationCore(request());
+      expect(result.status).toBe(429);
+      expect(result.error).toContain("The usage limit has been reached");
+      expect(result.resetsAtMs).toBeUndefined();
+    });
+  });
 });
 
 describe("legacy Codex image Responses compatibility", () => {
