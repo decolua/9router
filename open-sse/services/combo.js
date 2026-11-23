@@ -7,7 +7,11 @@ import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { parseModel } from "./model.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
-import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
+import { toOpenAIFinish } from "../translator/concerns/finishReason.js";
+import { FORMATS } from "../translator/formats.js";
+import { OPENAI_FINISH } from "../translator/schema/finishReasons.js";
+import { CLAUDE_BLOCK, RESPONSES_ITEM } from "../translator/schema/blocks.js";
+import { peekStreamForContent, reconstructStream, deltaHasClientContent, isNoRetryFinish } from "./emptyFailover.js";
 import {
   getStickyComboModel,
   setStickyComboModel,
@@ -293,44 +297,80 @@ export function getComboModelsFromData(modelStr, combosData) {
   return null;
 }
 
+// Non-whitespace string.
+const hasText = (s) => typeof s === "string" && s.trim().length > 0;
+
 /**
- * Detect whether a 2xx JSON response contains zero usable content
- * (e.g. empty assistant message with in_progress/incomplete)
- * so combo fallback can continue to the next model.
+ * Extract the finish/stop reason from a 2xx JSON response in any client format,
+ * reported in the OpenAI (hub) vocabulary so isNoRetryFinish applies uniformly.
+ */
+export function responseFinishReason(data) {
+  if (!data || typeof data !== "object") return null;
+  if (Array.isArray(data.choices)) return data.choices[0]?.finish_reason || null;
+  if (Array.isArray(data.content)) return toOpenAIFinish(data.stop_reason, FORMATS.CLAUDE);
+  const gemini = data.candidates?.[0];
+  if (gemini) return toOpenAIFinish(gemini.finishReason, FORMATS.GEMINI);
+  if (Array.isArray(data.output)) {
+    if (data.status !== "incomplete") return null;
+    const reason = data.incomplete_details?.reason;
+    // max_output_tokens → length (truncated, not blocked); content_filter stays itself.
+    return reason === "max_output_tokens" ? OPENAI_FINISH.LENGTH : reason;
+  }
+  return null;
+}
+
+/**
+ * Detect whether a 2xx JSON response carries zero usable content, so combo
+ * fallback can continue to the next model (or report an error) instead of
+ * handing the client a hollow 200. A "200 + empty answer" looks like success to
+ * the HTTP-status check, which is exactly what stalls agents (#2229).
+ *
+ * Content means anything the caller can act on: answer text, a tool call, or
+ * reasoning. An empty body, an unknown shape (`{}`), or a shape that only
+ * carries `{"text": ""}` is zero content. Whether that emptiness is retryable is
+ * the caller's decision (responseFinishReason + isNoRetryFinish).
  */
 export function isZeroContentResponse(data) {
-  if (!data || typeof data !== "object") return false;
+  if (!data || typeof data !== "object") return true;
 
   // OpenAI chat format
   if (Array.isArray(data.choices)) {
     if (data.choices.length === 0) return true;
     const choice = data.choices[0];
     if (!choice) return true;
-
-    const msg = choice.message || choice.delta;
-    const content = msg?.content;
-    const hasContent = typeof content === "string" ? content.trim().length > 0 : (Array.isArray(content) && content.length > 0);
-    const hasToolCalls = (Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0) || Boolean(msg?.function_call);
-    const hasReasoning = typeof msg?.reasoning_content === "string" ? msg.reasoning_content.trim().length > 0 : false;
-
-    const finish = choice.finish_reason;
-    const isNormalFinish = finish === "stop" || finish === "length" || finish === "tool_calls" || finish === "function_call";
-
-    if (!hasContent && !hasToolCalls && !hasReasoning && (!isNormalFinish || finish === "in_progress" || finish === "incomplete")) {
-      return true;
-    }
+    const msg = choice.message || choice.delta || {};
+    if (deltaHasClientContent(msg)) return false;
+    if (hasText(msg.reasoning_content)) return false;
+    return !hasText(choice.text);
   }
 
-  // Anthropic messages format
+  // Anthropic messages format (thinking blocks are not answer text, same rule as streams)
   if (Array.isArray(data.content)) {
-    const hasContent = data.content.some((c) => (c.type === "text" && c.text?.trim().length > 0) || c.type === "tool_use");
-    const stopReason = data.stop_reason;
-    if (!hasContent && (!stopReason || stopReason === "in_progress" || stopReason === "incomplete")) {
-      return true;
-    }
+    return !data.content.some((c) =>
+      (c?.type === CLAUDE_BLOCK.TEXT && hasText(c.text)) ||
+      c?.type === CLAUDE_BLOCK.TOOL_USE ||
+      hasText(c?.thinking));
   }
 
-  return false;
+  // Gemini native format
+  const parts = data.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    return !parts.some((p) => p?.functionCall || hasText(p?.text) || p?.inlineData?.data || p?.inline_data?.data);
+  }
+
+  // OpenAI Responses format
+  if (Array.isArray(data.output)) {
+    return !data.output.some((o) => {
+      if (Array.isArray(o?.content)) return o.content.some((c) => hasText(c?.text));
+      return o?.type === RESPONSES_ITEM.FUNCTION_CALL || o?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL;
+    });
+  }
+
+  // Bare text shape (`{ "text": "..." }`) served by some custom OpenAI-compatible models.
+  if ("text" in data) return !hasText(data.text);
+
+  // Empty object: nothing at all was returned.
+  return Object.keys(data).length === 0;
 }
 
 /**
@@ -496,26 +536,31 @@ export async function handleComboChat({
         }
 
         if (!peeked) {
-          // Non-streaming (or non-SSE) response — not this peek's job. The zero-content
-          // JSON check still applies on a non-final seat.
-          const isLastModel = i === rotatedModels.length - 1;
-          if (!isLastModel) {
-            const contentType = result.headers?.get?.("content-type") || "";
-            if (contentType.includes("application/json")) {
-              try {
-                const peekBody = await result.clone().json();
-                if (isZeroContentResponse(peekBody)) {
-                  log.warn("COMBO", `Model ${modelStr} returned HTTP 200 with zero usable content, falling back to next model`);
-                  if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
-                    clearStickyComboSession(comboName, sessionId);
-                  }
-                  lastError = "Zero usable content";
-                  lastStatus = 200;
-                  continue;
-                }
-              } catch {
-                // Ignore JSON parse errors
+          // Non-streaming (or non-SSE) response: check the JSON for usable content on every
+          // seat. A 200 that carries nothing (`{}`, `{"text":""}`, an empty message) is not
+          // success — retry the next candidate, and if none carries content the combo ends in
+          // the error envelope below instead of passing a hollow 200 to the client (#2229).
+          const contentType = result.headers?.get?.("content-type") || "";
+          if (contentType.includes("application/json")) {
+            let peekBody = null;
+            try {
+              peekBody = await result.clone().json();
+            } catch {
+              // Ignore JSON parse errors
+            }
+            if (peekBody !== null && isZeroContentResponse(peekBody)) {
+              const reason = responseFinishReason(peekBody);
+              if (isNoRetryFinish(reason)) {
+                log.warn("COMBO", `Model ${modelStr} returned empty on a no-retry finish (${reason}), returning as-is`);
+                return result;
               }
+              log.warn("COMBO", `Model ${modelStr} returned HTTP 200 with zero usable content (${reason || "no-content"}), falling back to next model`);
+              if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+                clearStickyComboSession(comboName, sessionId);
+              }
+              lastError = `Zero usable content (${reason || "no-content"})`;
+              if (!lastStatus) lastStatus = 502;
+              continue;
             }
           }
 
@@ -528,13 +573,13 @@ export async function handleComboChat({
           return peeked.response;
         }
 
-        // Empty generation. Fall through to the next candidate unless this is a legitimately
-        // empty class (content filter) or the last candidate — in which case return the
-        // (empty) response as-is, preserving prior behaviour rather than manufacturing a 5xx.
+        // Empty generation. A no-retry class (content filter) is legitimately empty and would
+        // recur on every candidate — return it as-is. Everything else falls through to the next
+        // candidate; when none is left the loop ends in the error envelope below, so the client
+        // sees a retryable failure instead of a 200 carrying nothing (#2229).
         const reasonLabel = peeked.finishReason || "no-content";
-        const isLast = i === rotatedModels.length - 1;
-        if (isNoRetryFinish(peeked.finishReason) || isLast) {
-          log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
+        if (isNoRetryFinish(peeked.finishReason)) {
+          log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — no-retry class, returning as-is`);
           return peeked.response;
         }
 
