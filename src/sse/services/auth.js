@@ -360,6 +360,12 @@ export function extractApiKey(request) {
     return xApiKey;
   }
 
+  // Check Gemini CLI header (native /v1beta path sends the 9router key here)
+  const googApiKey = request.headers.get("x-goog-api-key");
+  if (googApiKey) {
+    return googApiKey;
+  }
+
   return null;
 }
 
