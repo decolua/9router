@@ -1,11 +1,12 @@
 "use client";
+import Image from "next/image";
 export default function Footer() {
   return (
     <footer className="border-t-2 border-[#191817] bg-[#efe4d1] px-6 pb-8 pt-12 md:pt-16">
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-10 border-b-2 border-[#191817] pb-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr] lg:gap-8 lg:pb-14">
           <div className="sm:col-span-2 lg:col-span-1">
-            <a href="/" className="mb-5 inline-flex items-center gap-3"><span className="flex size-10 items-center justify-center border-2 border-[#191817] bg-[#ff7657] text-[#191817] shadow-[3px_3px_0_#191817]"><span className="material-symbols-outlined text-[18px]">route</span></span><span className="text-xl font-black text-[#191817]">9Router</span></a>
+            <a href="/" className="mb-5 inline-flex items-center gap-3"><Image src="/providers/9router-logo.png" alt="" width={40} height={40} className="size-10 object-contain" unoptimized /><span className="text-xl font-black text-[#191817]">9Router</span></a>
             <p className="mb-5 max-w-xs text-sm leading-relaxed text-[#514c43]">Connect, route, and manage your AI providers from one endpoint.</p>
             <a className="inline-flex border-b-2 border-[#191817] pb-1 text-sm font-bold text-[#191817] hover:text-[#b83b26]" href="https://github.com/serenhope/9router" target="_blank" rel="noopener noreferrer" aria-label="9Router on GitHub">GitHub ↗</a>
           </div>

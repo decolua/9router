@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 export default function Navigation() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const router = useRouter();
@@ -9,7 +10,7 @@ export default function Navigation() {
     <nav className="fixed top-0 z-50 w-full border-b-2 border-[#191817] bg-[#f7f1e4] shadow-[0_3px_0_#191817]">
       <div className="mx-auto flex h-[4.5rem] max-w-7xl items-center justify-between px-5 md:px-8">
         <button type="button" className="flex items-center gap-3 bg-transparent p-0" onClick={() => router.push("/")} aria-label="Navigate to home">
-          <span className="flex size-10 items-center justify-center border-2 border-[#191817] bg-[#ff7657] text-[#191817] shadow-[3px_3px_0_#191817]"><span className="material-symbols-outlined text-[20px]">route</span></span>
+          <Image src="/providers/9router-logo.png" alt="" width={36} height={36} className="size-9 object-contain" priority unoptimized />
           <span className="text-xl font-black tracking-tight text-[#191817]">9Router<span className="ml-1 text-[#b83b26]">/</span></span>
         </button>
         <div className="hidden items-center gap-7 md:flex">

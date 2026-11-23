@@ -1,6 +1,7 @@
 # 23-11-2026
 ## WHAT'S FIXED?
 - Fixed DeepSeek Web model routing so Flash uses Default mode, Pro and Reasoner use Expert, and Reasoner and R1 aliases enable thinking.
+- Matched the landing-page header and footer logos to the existing donut image used in the dashboard sidebar.
 
 # 22-11-2026
 ## WHAT'S UPDATED?
