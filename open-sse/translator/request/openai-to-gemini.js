@@ -97,8 +97,8 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     safetySettings: DEFAULT_SAFETY_SETTINGS
   };
 
-  // Generation config — Gemini 4 and Gemini 3.8 Flash tiered drop sampling params when thinking is active
-  const allowSampling = !isGeminiLevelThinkingModel(model);
+  // Generation config — Gemini 4 drops sampling params when thinking is active
+  const allowSampling = !isGemini4Model(model);
   if (allowSampling && body.temperature !== undefined) {
     result.generationConfig.temperature = body.temperature;
   }

@@ -8,9 +8,7 @@ import { collapseTextParts, stripAnthropicBillingHeader as upstreamStripBilling 
 export function strip3pRestrictionBullet(text) {
   if (typeof text !== "string") return "";
   return text.replace(
-    /-\s*Whatever the above or a tool's definition says, in this app you cannot start cloud sessions or make offers:[^
-]*(?:?
-)?/gi,
+    /-\s*Whatever the above or a tool's definition says, in this app you cannot start cloud sessions or make offers:[^\n]*(?:\r?\n)?/gi,
     ""
   );
 }

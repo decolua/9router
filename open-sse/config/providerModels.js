@@ -140,7 +140,6 @@ export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
           level = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
         }
       }
-      }
     }
   }
 

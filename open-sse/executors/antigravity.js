@@ -440,18 +440,19 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
-    const isLevelThinkingModel = isGeminiLevelThinkingModel(body.model || model);
-    if (isLevelThinkingModel) {
+    const isGemini4 = isGemini4Model(body.model || model);
+    if (isGemini4) {
       delete generationConfig.temperature;
       delete generationConfig.topP;
       delete generationConfig.topK;
-      if (generationConfig.thinkingConfig) {
-        const tc = generationConfig.thinkingConfig;
-        if (tc.thinkingBudget !== undefined || tc.thinkingLevel === "minimal") {
-          const b = Number(tc.thinkingBudget);
-          const lvl = tc.thinkingLevel === "minimal" ? "low" : (Number.isFinite(b) && b > 0 ? (b <= 4096 ? "low" : b <= 16384 ? "medium" : "high") : "high");
-          generationConfig.thinkingConfig = { thinkingLevel: lvl, includeThoughts: true };
-        }
+    }
+    const isLevelThinkingModel = isGeminiLevelThinkingModel(body.model || model);
+    if (isLevelThinkingModel && generationConfig.thinkingConfig) {
+      const tc = generationConfig.thinkingConfig;
+      if (tc.thinkingBudget !== undefined || tc.thinkingLevel === "minimal") {
+        const b = Number(tc.thinkingBudget);
+        const lvl = tc.thinkingLevel === "minimal" ? "low" : (Number.isFinite(b) && b > 0 ? (b <= 4096 ? "low" : b <= 16384 ? "medium" : "high") : "high");
+        generationConfig.thinkingConfig = { thinkingLevel: lvl, includeThoughts: true };
       }
     }
     // Long-decode models (Hydrogen accepts up to 1M live) keep the client budget; others stay capped.
@@ -460,7 +461,6 @@ export class AntigravityExecutor extends BaseExecutor {
       : MAX_ANTIGRAVITY_OUTPUT_TOKENS;
     if (generationConfig.maxOutputTokens > outputCap) {
       generationConfig.maxOutputTokens = outputCap;
-    }
     }
 
     const transformedRequest = {
@@ -486,17 +486,13 @@ export class AntigravityExecutor extends BaseExecutor {
     // `search` buckets are unaffected and keep their own requestType.
     delete body.requestType;
 
-    let cleanModel = (body.model || model).replace(/\([^()]+\)\s*$/, "").trim();
-    if (cleanModel.startsWith("gemini-3.8-flash")) {
-      cleanModel = "gemini-3.8-flash-tiered";
-    }
-
+    const targetModel = (body.model || model).replace(/\([^()]+\)\s*$/, "").trim();
     return {
       ...body,
       project: projectId,
-      model: cleanModel,
+      model: targetModel,
       userAgent: "antigravity",
-      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model: cleanModel, requestType: "agent" }),
+      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model: targetModel, requestType: "agent" }),
       request: transformedRequest
     };
   }
