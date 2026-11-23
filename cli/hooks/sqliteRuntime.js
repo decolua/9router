@@ -14,7 +14,7 @@ const [NODE_MAJOR] = process.versions.node.split(".").map(Number);
 const USE_NAPI_BUILD = NODE_MAJOR >= 22;
 const BETTER_SQLITE3_VERSION = USE_NAPI_BUILD ? "13.0.3" : "12.6.2";
 const SQL_JS_VERSION = "1.14.1";
-const TIMSLITE_VERSION = "0.1.4";
+const TIMSLITE_VERSION = "0.1.7";
 
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;

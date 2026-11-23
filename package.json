@@ -59,7 +59,7 @@
     "@aws-sdk/credential-providers": "^3.1135.0",
     "ajv": "^8.17.1",
     "better-sqlite3": "^12.6.2",
-    "timslite": "^0.1.6",
+    "timslite": "^0.1.7",
     "ws": "^8.18.0"
   },
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
