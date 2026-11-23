@@ -444,9 +444,11 @@ export async function POST(request) {
         }
 
         case "opencode-go": {
+          // ponytail: session id derived from key hash so validate looks like a normal session; upgrade path = per-request session from executor
+          const sessionId = "validate-" + (await import("node:crypto")).createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
           const res = await fetch("https://opencode.ai/inference/go/openai/v1/chat/completions", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}`, "x-opencode-session": sessionId },
             body: JSON.stringify({
               model: getDefaultModel("opencode-go"),
               messages: [{ role: "user", content: "ping" }],

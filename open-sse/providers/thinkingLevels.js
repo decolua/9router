@@ -39,10 +39,19 @@ const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh
 // Opus/Sonnet 4.6 lack xhigh (Anthropic + Kiro docs) — keep the 4-level+max set.
 const CLAUDE_NO_XHIGH = ["none", "low", "medium", "high", "max"];
 
+const AG_CLAUDE_5_5_LEVELS = ["low", "medium", "high", "max"];
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
-  // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
+  // Gemini 4 Neon & Hydrogen support xhigh in addition to low/medium/high (no minimal/none).
+  { pattern: "*gemini-4-neon*", levels: ["low", "medium", "high", "xhigh"] },
+  { pattern: "*gemini-4-hydrogen*", levels: ["low", "medium", "high", "xhigh"] },
+  // Gemini 4 (Argon, Carbon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
+  // Antigravity Claude 5.5 supports low, medium, high, max (no xhigh, no none).
+  { provider: "antigravity", pattern: "*claude*sonnet-5-5*", levels: AG_CLAUDE_5_5_LEVELS },
+  { provider: "antigravity", pattern: "*claude*sonnet-5.5*", levels: AG_CLAUDE_5_5_LEVELS },
+  { provider: "antigravity", pattern: "*claude*opus-5-5*", levels: AG_CLAUDE_5_5_LEVELS },
+  { provider: "antigravity", pattern: "*claude*opus-5.5*", levels: AG_CLAUDE_5_5_LEVELS },
   { pattern: "*claude*4.6*", levels: CLAUDE_NO_XHIGH },
   { pattern: "*claude*4-6*", levels: CLAUDE_NO_XHIGH },
   { provider: "codex", pattern: "*gpt-6*", levels: CODEX_GPT_5_6_LEVELS },
@@ -108,18 +117,19 @@ const isOpenAICompatibleNode = (provider) => String(provider || "").startsWith("
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
 export function getThinkingLevels(provider, model) {
-  if (provider === "kiro" && resolveKiroEffortPath(model) === null) return null;
-  const caps = getCapabilitiesForModel(provider, model);
+  const normalizedProvider = provider === "ag" ? "antigravity" : provider;
+  if (normalizedProvider === "kiro" && resolveKiroEffortPath(model) === null) return null;
+  const caps = getCapabilitiesForModel(normalizedProvider, model);
   if (!caps.reasoning) return null;
   const baseId = String(model || "").replace(/\([^()]+\)\s*$/, "");
-  const modelLevels = provider === "codex"
+  const modelLevels = normalizedProvider === "codex"
     ? getProviderModels("cx").find((entry) => entry.id === baseId)?.thinkingLevels
     : null;
   const hit = PATTERN_THINKING.find((entry) =>
-    (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model)
+    (!entry.provider || entry.provider === normalizedProvider) && matchPattern(entry.pattern, model)
   );
   let levels = modelLevels || hit?.levels
-    || (isOpenAICompatibleNode(provider) && OPENAI_MAX_EFFORT_MODEL.test(baseId) ? CODEX_GPT_5_6_LEVELS : null)
+    || (isOpenAICompatibleNode(normalizedProvider) && OPENAI_MAX_EFFORT_MODEL.test(baseId) ? CODEX_GPT_5_6_LEVELS : null)
     || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
