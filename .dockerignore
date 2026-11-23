@@ -1,32 +1,68 @@
-# VCS
+# VCS / CI / local tooling
 .git
 **/.git
-
-# Editor
+.github
+.codegraph
 .vscode
 **/.vscode
+.idea
+.cursor
+.claude
+.kiro
+.vercel
+.DS_Store
 
 # Dependencies and build output
 node_modules
+**/node_modules
 .next
+.next-cli-build
+.next-analyze
 out
 build
 dist
 coverage
+open-sse.old
+graphify-out
 
 # Runtime data and logs
 data
 logs
+*.pem
 
-# Local env files (inject at runtime via --env-file or -e)
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Local env / secrets (inject at runtime via --env-file or -e)
+.env*
+!.env.example
+.engine-token.txt
+.oauth-session.json
+.tmp-prov.json
+.tmp-providers.json
+.dev-server.log
+.dev-server-err.log
+debug.log
 
-# Debug logs
+# Debug package-manager logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# Not needed for Next standalone image build
+tests
+cli
+docs
+gitbook
+images
+i18n
+skills
+eslint.config.mjs
+captain-definition
+start.sh
+*.md
+9router-*
+
+# Docker meta (daemon still receives Dockerfile/.dockerignore)
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose*.yml
