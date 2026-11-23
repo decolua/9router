@@ -146,3 +146,6 @@ export function resolveRetryEntry(entry) {
 export const SKIP_PATTERNS = [
   "Please write a 5-10 word title for the following conversation:"
 ];
+
+// Bound per-process Azure deployment token-parameter preferences.
+export const AZURE_TOKEN_LIMIT_CACHE_MAX_ENTRIES = 256;
