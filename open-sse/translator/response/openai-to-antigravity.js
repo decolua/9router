@@ -126,3 +126,6 @@ export function openaiToAntigravityResponse(chunk, state) {
 
 // Register
 register(FORMATS.OPENAI, FORMATS.ANTIGRAVITY, null, openaiToAntigravityResponse);
+register(FORMATS.OPENAI, FORMATS.GEMINI, null, openaiToAntigravityResponse);
+register(FORMATS.OPENAI, FORMATS.GEMINI_CLI, null, openaiToAntigravityResponse);
+register(FORMATS.OPENAI, FORMATS.VERTEX, null, openaiToAntigravityResponse);
