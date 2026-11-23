@@ -132,9 +132,14 @@ export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
     if (typeof rawEffort === "string" && rawEffort) {
       level = rawEffort.toLowerCase().trim();
     } else if (clientBody.thinking && typeof clientBody.thinking === "object") {
-      const b = Number(clientBody.thinking.budget_tokens);
-      if (Number.isFinite(b) && b > 0) {
-        level = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
+      if (clientBody.thinking.type === "adaptive") {
+        level = "high";
+      } else {
+        const b = Number(clientBody.thinking.budget_tokens);
+        if (Number.isFinite(b) && b > 0) {
+          level = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
+        }
+      }
       }
     }
   }

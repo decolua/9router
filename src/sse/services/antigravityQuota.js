@@ -24,7 +24,7 @@ const MIN_REFRESH_INTERVAL_MS = 30_000; // 30s between refreshes per connection
 // cache-block that pair instead of retry-storming upstream.
 const STRIKE_WINDOW_MS = 60_000; // strikes older than this reset the count
 const STRIKE_THRESHOLD = 3;
-const STRIKE_BLOCK_MS = 15 * 60_000;
+const STRIKE_BLOCK_MS = 60_000; // 1m instead of 15m to avoid locking account on prompt filter errors
 const strikeCounts = new Map(); // "connectionId|model" → { count, windowStart (anchored at first strike) }
 const strikeBlocks = new Map(); // "connectionId|model" → blockedUntil ms
 
@@ -296,7 +296,7 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
       strikeCounts.delete(key);
       const blockedUntil = now + STRIKE_BLOCK_MS;
       const reading = quota ? `${Math.round(quota.remainingPercentage)}%` : "unknown";
-      log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | STRIKE_${status} ${model} — ${count}x 429 (quota ${reading}); CACHE_BLOCK 15m`);
+      log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | STRIKE_${status} ${model} — ${count}x 429 (quota ${reading}); CACHE_BLOCK ${Math.round(STRIKE_BLOCK_MS / 1000)}s`);
       // Synthesize a 0% entry in the shared cache so the auth pre-filter skips
       // this pair on subsequent requests too, not just the current retry loop
       // (the chat handler does not persist modelLock_* for this path).

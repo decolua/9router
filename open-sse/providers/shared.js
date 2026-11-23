@@ -102,6 +102,7 @@ export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 // intentionally matching the Hub client, not the server host.
 export { ANTIGRAVITY_IDE_VERSION };
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
+export const ANTIGRAVITY_IDE_DAILY_BASE_URL = ANTIGRAVITY_IDE_BASE_URL;
 export const ANTIGRAVITY_IDE_USER_AGENT = buildAntigravityUserAgent(ANTIGRAVITY_IDE_VERSION);
 
 // Antigravity OAuth client credentials (public CLI client — duplicated in usage.js + src/lib/oauth)
