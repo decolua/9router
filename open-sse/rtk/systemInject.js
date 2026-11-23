@@ -3,6 +3,7 @@
 // native-passthrough flows. Used by caveman.js and ponytail.js.
 
 import { FORMATS } from "../translator/formats.js";
+import { CLAUDE_SYSTEM_PROMPT } from "../config/appConstants.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK, RESPONSES_ITEM } from "../translator/schema/blocks.js";
 import { ROLE } from "../translator/schema/roles.js";
 
@@ -228,10 +229,16 @@ function injectClaudeSystem(body, prompt) {
           if (sys[i]?.cache_control) { lastCacheIdx = i; break; }
         }
       } catch (_) {}
+      let insertAt = lastCacheIdx >= 0 ? lastCacheIdx : sys.length;
+      // OAuth-backed Anthropic nodes reject Opus/Sonnet unless system[0] is the
+      // Claude Code identity line. With a single cached block the splice index
+      // is 0, so inserting there moves the identity to system[1] and yields a
+      // bare 429 (#5756). Keep the identity first.
       try {
-        if (lastCacheIdx >= 0) sys.splice(lastCacheIdx, 0, block);
-        else sys.push(block);
+        if (typeof sys[insertAt]?.text === "string"
+          && sys[insertAt].text.startsWith(CLAUDE_SYSTEM_PROMPT)) insertAt += 1;
       } catch (_) {}
+      try { sys.splice(insertAt, 0, block); } catch (_) {}
       return;
     }
     // absent/null
