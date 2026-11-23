@@ -19,6 +19,7 @@ import {
 import { CLAUDE_BLOCK, RESPONSES_ITEM } from "../translator/schema/blocks.js";
 import { CLAUDE_EVENT, CLAUDE_DELTA, RESPONSES_EVENT, RESPONSES_EVENT_PREFIX } from "../translator/schema/streamEvents.js";
 import { toOpenAIFinish } from "../translator/concerns/finishReason.js";
+import { extractReasoningText } from "../translator/concerns/reasoning.js";
 import { FORMATS } from "../translator/formats.js";
 import { EMPTY_PEEK_DEADLINE_MS } from "../config/runtimeConfig.js";
 import { parseSSELine } from "../utils/streamHelpers.js";
@@ -31,8 +32,10 @@ import { parseSSELine } from "../utils/streamHelpers.js";
 //   * delta.role — 9router emits {role:"assistant"} on the first frame regardless of
 //     content; treating it as content would defeat the whole check (and A0's own retry,
 //     which is gated on "no chunk received yet").
-//   * reasoning_content / delta.reasoning — a think-then-abort produces reasoning only,
-//     which A0 treats as an unusable-but-non-empty turn; it must still fall through.
+//   * reasoning_content / delta.reasoning — NOT content, but a progress signal: the peek
+//     commits the seat on it (see inspectSSELine().reasoning). A think-then-abort seat is
+//     therefore delivered, not retried: its reasoning bytes already reached the client and
+//     two seats' streams must never be concatenated.
 export function deltaHasClientContent(delta) {
   if (!delta || typeof delta !== "object") return false;
   const c = delta.content;
@@ -48,17 +51,19 @@ export function deltaHasClientContent(delta) {
 // Anthropic Messages (/v1/messages) or OpenAI Responses (/v1/responses). A format the peek
 // cannot read never shows content: every combo member would be judged "empty" and called in
 // turn, and the LAST one returned. Every format gets the same rule: answer text and tool calls
-// are content; reasoning / thinking is not (as reasoning_content is not). Finish reasons are
-// reported in the hub (OpenAI) vocabulary so isNoRetryFinish applies to every format.
+// are content; reasoning / thinking is not content but is progress (`reasoning`), which releases
+// the peek. Finish reasons are reported in the hub (OpenAI) vocabulary so isNoRetryFinish
+// applies to every format.
 const nonEmptyString = (s) => typeof s === "string" && s.length > 0;
 
 // Anthropic Messages event.
 function inspectClaudeEvent(obj) {
-  let content = false, finishReason = null;
+  let content = false, reasoning = false, finishReason = null;
   if (obj.type === CLAUDE_EVENT.CONTENT_BLOCK_DELTA) {
     const d = obj.delta || {};
     if (d.type === CLAUDE_DELTA.TEXT && nonEmptyString(d.text)) content = true;
     if (d.type === CLAUDE_DELTA.INPUT_JSON && nonEmptyString(d.partial_json)) content = true;
+    if (d.type === CLAUDE_DELTA.THINKING && nonEmptyString(d.thinking)) reasoning = true;
   } else if (obj.type === CLAUDE_EVENT.CONTENT_BLOCK_START) {
     const b = obj.content_block || {};
     if (b.type === CLAUDE_BLOCK.TOOL_USE) content = true;
@@ -67,7 +72,7 @@ function inspectClaudeEvent(obj) {
     // refusal → content_filter (the translator renders content_filter as refusal for Claude clients)
     finishReason = toOpenAIFinish(obj.delta.stop_reason, FORMATS.CLAUDE);
   }
-  return { content, finishReason };
+  return { content, reasoning, finishReason };
 }
 
 // OpenAI Responses event. Tool calls are function_call / custom_tool_call output items or
@@ -79,8 +84,12 @@ const RESPONSES_INCOMPLETE_FINISH = {
   [RESPONSES_INCOMPLETE_REASON.MAX_OUTPUT_TOKENS]: OPENAI_FINISH.LENGTH,
 };
 function inspectResponsesEvent(obj) {
-  let content = false, finishReason = null;
+  let content = false, reasoning = false, finishReason = null;
   switch (obj.type) {
+    case RESPONSES_EVENT.REASONING_SUMMARY_TEXT_DELTA:
+    case RESPONSES_EVENT.REASONING_TEXT_DELTA:
+      reasoning = nonEmptyString(obj.delta);
+      break;
     case RESPONSES_EVENT.OUTPUT_TEXT_DELTA:
     case RESPONSES_EVENT.FUNCTION_CALL_ARGUMENTS_DELTA:
     case RESPONSES_EVENT.CUSTOM_TOOL_CALL_INPUT_DELTA:
@@ -103,34 +112,39 @@ function inspectResponsesEvent(obj) {
       finishReason = RESPONSES_STATUS.FAILED;
       break;
   }
-  return { content, finishReason };
+  return { content, reasoning, finishReason };
 }
 
 // Inspect one complete client-format SSE line (parsed with the shared parseSSELine) and report
-// whether it carries content and/or a finish reason. Non-data lines and "[DONE]" carry nothing.
+// whether it carries content, reasoning progress and/or a finish reason. Non-data lines and
+// "[DONE]" carry nothing.
 export function inspectSSELine(line) {
   const parsed = parseSSELine(line.trimStart());
-  if (!parsed || parsed.done) return { content: false, finishReason: null };
+  if (!parsed || parsed.done) return { content: false, reasoning: false, finishReason: null };
   if (typeof parsed.type === "string" && !Array.isArray(parsed.choices)) {
     return parsed.type.startsWith(RESPONSES_EVENT_PREFIX) ? inspectResponsesEvent(parsed) : inspectClaudeEvent(parsed);
   }
-  let content = false, finishReason = null;
+  let content = false, reasoning = false, finishReason = null;
   for (const choice of parsed.choices || []) {
-    if (deltaHasClientContent(choice.delta || choice.message || {})) content = true;
+    const delta = choice.delta || choice.message || {};
+    if (deltaHasClientContent(delta)) content = true;
+    if (extractReasoningText(delta)) reasoning = true;
     if (choice.finish_reason) finishReason = choice.finish_reason;
   }
-  return { content, finishReason };
+  return { content, reasoning, finishReason };
 }
 
 // Scan the COMPLETE lines of a decoded SSE buffer and update the running decision.
 // The trailing fragment (a line still being received) is not parsed — it is returned in
-// `state.pending` for the caller to prepend to the next chunk. `sawContent` latches true.
-export function scanSSEBuffer(text, state = { sawContent: false, finishReason: null }) {
+// `state.pending` for the caller to prepend to the next chunk. `sawContent` and `sawReasoning`
+// latch true.
+export function scanSSEBuffer(text, state = { sawContent: false, sawReasoning: false, finishReason: null }) {
   const lines = text.split("\n");
   state.pending = lines.pop();
   for (const line of lines) {
     const info = inspectSSELine(line);
     if (info.content) state.sawContent = true;
+    if (info.reasoning) state.sawReasoning = true;
     if (info.finishReason) state.finishReason = info.finishReason;
   }
   return state;
@@ -144,16 +158,18 @@ export function isNoRetryFinish(finishReason) {
   return NO_RETRY_EMPTY_FINISH.has(String(finishReason).toLowerCase());
 }
 
-// Peek a streaming Response body: read frames until the first content frame (→ "content"),
-// the stream ends (→ "empty"), or the deadline elapses (→ "content", fail-open: never hold a
-// possibly-valid slow stream). Returns the decision, the buffered head bytes, the live reader,
-// and — if the deadline fired mid-read — the still-pending read() (`pendingRead`) so the caller
-// can resume from it WITHOUT abandoning the chunk it will deliver.
+// Peek a streaming Response body: read frames until the first content frame (→ "content",
+// trigger "content"), the first non-empty reasoning frame (→ "content", trigger "reasoning":
+// progress, so the seat is committed), the stream ends (→ "empty", trigger "end"), or the
+// deadline elapses (→ "content", trigger "deadline", fail-open: never hold a possibly-valid
+// slow stream). Returns the decision, the buffered head bytes, the live reader, and — if the
+// deadline fired mid-read — the still-pending read() (`pendingRead`) so the caller can resume
+// from it WITHOUT abandoning the chunk it will deliver.
 export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADLINE_MS } = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const headChunks = [];
-  const state = { sawContent: false, finishReason: null };
+  const state = { sawContent: false, sawReasoning: false, finishReason: null };
   let textBuf = "";
 
   // Clamp: 0 / NaN / negative would otherwise disable the timeout and let a stalled-but-open
@@ -173,25 +189,27 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
       // Upstream errored mid-peek. Body is locked to this reader; hand it back so the caller
       // can reconstruct (the replay will surface the same error). The failed read is consumed.
       pendingRead = null;
-      return settle({ outcome: state.sawContent ? "content" : "empty", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason, error: err });
+      return settle({ outcome: state.sawContent ? "content" : "empty", trigger: "error", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason, error: err });
     }
     if (res === "__deadline__") {
       // Fail-open: commit whatever we have. Hand the STILL-PENDING read to the caller so its
       // chunk is replayed, not dropped (fixes the content-dropping deadline race).
-      return settle({ outcome: "content", timedOut: true, head: headChunks, reader, pendingRead, finishReason: state.finishReason });
+      return settle({ outcome: "content", trigger: "deadline", timedOut: true, head: headChunks, reader, pendingRead, finishReason: state.finishReason });
     }
     const { done, value } = res;
     pendingRead = null;
     if (done) {
       if (textBuf) scanSSEBuffer(textBuf + "\n", state); // final line without a trailing newline
-      return settle({ outcome: state.sawContent ? "content" : "empty", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
+      // Reasoning seen on the final unterminated line still counts as progress.
+      const trigger = state.sawContent ? "content" : state.sawReasoning ? "reasoning" : "end";
+      return settle({ outcome: trigger === "end" ? "empty" : "content", trigger, timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
     }
     headChunks.push(value);
     textBuf += decoder.decode(value, { stream: true });
     scanSSEBuffer(textBuf, state);
     textBuf = state.pending; // only the not-yet-complete line carries over
-    if (state.sawContent) {
-      return settle({ outcome: "content", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
+    if (state.sawContent || state.sawReasoning) {
+      return settle({ outcome: "content", trigger: state.sawContent ? "content" : "reasoning", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
     }
   }
 }

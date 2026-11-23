@@ -11,12 +11,15 @@ export const CLAUDE_EVENT = {
 export const CLAUDE_DELTA = {
   TEXT: "text_delta",
   INPUT_JSON: "input_json_delta",
+  THINKING: "thinking_delta",
 };
 
 // OpenAI Responses API SSE events (client format of /v1/responses).
 // Every one of these starts with RESPONSES_EVENT_PREFIX.
 export const RESPONSES_EVENT_PREFIX = "response.";
 export const RESPONSES_EVENT = {
+  REASONING_SUMMARY_TEXT_DELTA: "response.reasoning_summary_text.delta",
+  REASONING_TEXT_DELTA: "response.reasoning_text.delta",
   OUTPUT_ITEM_ADDED: "response.output_item.added",
   OUTPUT_ITEM_DONE: "response.output_item.done",
   OUTPUT_TEXT_DELTA: "response.output_text.delta",

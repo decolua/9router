@@ -63,6 +63,10 @@ describe("inspectSSELine", () => {
     expect(r.content).toBe(false); expect(r.finishReason).toBe("stop");
   });
   it("content frame: content true", () => expect(inspectSSELine(CONTENT.trim()).content).toBe(true));
+  it("reasoning frame: reasoning true, content false", () => {
+    expect(inspectSSELine(REASONING.trim())).toMatchObject({ content: false, reasoning: true });
+    expect(inspectSSELine(CONTENT.trim()).reasoning).toBe(false);
+  });
   it("non-data lines are inert", () => {
     expect(inspectSSELine("event: ping").content).toBe(false);
     expect(inspectSSELine(": keep-alive").content).toBe(false);
@@ -99,9 +103,53 @@ describe("peekStreamForContent", () => {
     expect(p.outcome).toBe("content");
   });
 
-  it("reasoning-only then abort → still empty (reasoning is not content)", async () => {
+  // Reasoning is a progress signal. The seat is committed as soon as a non-empty reasoning
+  // frame is read; a think-then-abort seat is not retried.
+  it("reasoning-only then abort → committed on reasoning progress (trigger=reasoning)", async () => {
     const p = await peekStreamForContent(sseStream([ROLE, REASONING, EMPTY_STOP, DONE]));
+    expect(p.outcome).toBe("content");
+    expect(p.trigger).toBe("reasoning");
+    expect(p.timedOut).toBe(false);
+  });
+
+  it("OpenAI reasoning_content frame releases the peek before a 45000 ms deadline", async () => {
+    // reasoning arrives at 20ms; the following frame is 5s away — the peek must not wait for it.
+    const t0 = Date.now();
+    const p = await peekStreamForContent(sseStream([ROLE, REASONING, CONTENT], [0, 20, 5000]), { deadlineMs: 45000 });
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(p.outcome).toBe("content");
+    expect(p.trigger).toBe("reasoning");
+    expect(p.timedOut).toBe(false);
+    p.reader.cancel().catch(() => {});
+  });
+
+  it("empty reasoning_content does not release the peek", async () => {
+    const EMPTY_REASONING = `data: {"id":"x","choices":[{"index":0,"delta":{"reasoning_content":""},"finish_reason":null}]}\n\n`;
+    const p = await peekStreamForContent(sseStream([ROLE, EMPTY_REASONING, EMPTY_STOP, DONE]));
     expect(p.outcome).toBe("empty");
+    expect(p.trigger).toBe("end");
+  });
+
+  it("trigger is content / end / deadline for the other release paths", async () => {
+    expect((await peekStreamForContent(sseStream([ROLE, CONTENT, DONE]))).trigger).toBe("content");
+    expect((await peekStreamForContent(sseStream([ROLE, EMPTY_STOP, DONE]))).trigger).toBe("end");
+    expect((await peekStreamForContent(sseStream([ROLE, CONTENT], [0, 200]), { deadlineMs: 30 })).trigger).toBe("deadline");
+  });
+
+  it("Anthropic thinking_delta releases the peek with trigger=reasoning", async () => {
+    const thinking = `data: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "hmm" } })}\n\n`;
+    const p = await peekStreamForContent(sseStream([thinking, CONTENT]));
+    expect(p.outcome).toBe("content");
+    expect(p.trigger).toBe("reasoning");
+  });
+
+  it("Responses reasoning_summary_text.delta and reasoning_text.delta release the peek", async () => {
+    for (const type of ["response.reasoning_summary_text.delta", "response.reasoning_text.delta"]) {
+      const frame = `data: ${JSON.stringify({ type, item_id: "rs_1", delta: "hmm" })}\n\n`;
+      const p = await peekStreamForContent(sseStream([frame, CONTENT]));
+      expect(p.outcome).toBe("content");
+      expect(p.trigger).toBe("reasoning");
+    }
   });
 
   it("content-filter empty → empty with content_filter reason (caller won't retry)", async () => {
@@ -344,10 +392,10 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
         const { tried } = await combo([[ROLE, TOOL, DONE], [ROLE, C("from-m1"), STOP, DONE]], fmt);
         expect(tried).toEqual(["openai/m0"]);
       });
-      it("reasoning-only first member falls through", async () => {
+      it("reasoning-only first member is committed (D-1) — the next member is NOT called", async () => {
         const { out, tried } = await combo([[ROLE, REASONING, STOP, DONE], [ROLE, C("from-m1"), STOP, DONE]], fmt);
-        expect(tried).toEqual(["openai/m0", "openai/m1"]);
-        expect(out).toContain("from-m1");
+        expect(tried).toEqual(["openai/m0"]);
+        expect(out).not.toContain("from-m1");
       });
     });
   }
@@ -384,9 +432,9 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
       expect(out).toContain("from-m1");
       expect(out).not.toContain("response.failed");
     });
-    it("a function_call item counts as content; reasoning-only does not", async () => {
+    it("a function_call item counts as content; reasoning-only is committed too (D-1)", async () => {
       expect((await combo([[CREATED, FC, COMPLETED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP)).tried).toEqual(["openai/m0"]);
-      expect((await combo([[CREATED, REASON, COMPLETED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP)).tried).toEqual(["openai/m0", "openai/m1"]);
+      expect((await combo([[CREATED, REASON, COMPLETED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP)).tried).toEqual(["openai/m0"]);
     });
     it("response.incomplete (content_filter) is NOT retried", async () => {
       const { out, tried } = await combo([[CREATED, FILTERED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP);

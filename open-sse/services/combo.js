@@ -27,7 +27,7 @@ async function peekComboResponse(result, log) {
     statusText: result.statusText,
     headers: result.headers,
   });
-  return { outcome: peeked.outcome, finishReason: peeked.finishReason, timedOut: peeked.timedOut, response };
+  return { outcome: peeked.outcome, trigger: peeked.trigger, finishReason: peeked.finishReason, timedOut: peeked.timedOut, response };
 }
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
@@ -524,7 +524,7 @@ export async function handleComboChat({
         }
 
         if (peeked.outcome === "content") {
-          log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
+          log.info("COMBO", `Model ${modelStr} succeeded (trigger=${peeked.trigger})`);
           return peeked.response;
         }
 

@@ -207,9 +207,10 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     clearStall();
     stallTimer = setTimeout(() => {
       stallTimer = null;
-      abortMessage = "stream stall timeout";
-      dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
-      streamController.handleError?.(new Error("stream stall timeout"));
+      // One budget, two phases: no upstream byte yet = prefill (first-chunk), else mid-stream stall.
+      abortMessage = totalBytes === 0 ? "stream first-chunk timeout" : "stream stall timeout";
+      dbg(tag, `${abortMessage.toUpperCase()} ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
+      streamController.handleError?.(new Error(abortMessage));
       streamController.abort?.();
     }, stallTimeoutMs);
   };
