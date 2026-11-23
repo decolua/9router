@@ -113,7 +113,11 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
-      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(item.name);
+      const name = item.name.replace(/^functions\./, "");
+      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
+        customToolNames.add(item.name);
+        customToolNames.add(name);
+      }
       const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
         ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
         : item.arguments;
@@ -121,7 +125,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         id: item.call_id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
-          name: item.name,
+          name,
           arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
@@ -174,14 +178,13 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   }
 
   // Convert tools format.
-  // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
-  // explicit `name` field and cannot be represented as Chat Completions function declarations.
-  // Filter them out to avoid sending nameless functionDeclarations to downstream providers
-  // such as Gemini, which strictly validates function names.
-  const responseTools = [
-    ...(Array.isArray(body.tools) ? body.tools : []),
-    ...additionalTools,
-  ];
+  // Responses API supports tools grouped into namespaces (e.g. { type: "namespace", name: "functions", tools: [...] })
+  // as well as "hosted" tools without explicit names. Recursively unpack namespace tools into top-level declarations
+  // so downstream models (Gemini, Claude, etc.) can discover and call them.
+  const unpackTools = (tools) =>
+    Array.isArray(tools) ? tools.flatMap(t => (t?.type === "namespace" && Array.isArray(t.tools) ? unpackTools(t.tools) : t || [])) : [];
+
+  const responseTools = unpackTools([...(Array.isArray(body.tools) ? body.tools : []), ...additionalTools]);
   if (responseTools.length > 0) {
     result.tools = responseTools
       .map(tool => {
@@ -195,6 +198,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         if (!name || typeof name !== "string" || name.trim() === "") return null;
         if (tool.type === "custom") {
           customToolNames.add(name);
+          customToolNames.add(`functions.${name}`);
           const formatHint = [tool.format?.syntax, tool.format?.definition].filter(Boolean).join("\n");
           return {
             type: OPENAI_BLOCK.FUNCTION,
