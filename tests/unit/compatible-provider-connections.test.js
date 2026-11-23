@@ -38,13 +38,13 @@ async function setupTestContext(nodeData) {
   };
 }
 
-function makeRequest(provider, name = "Test Connection") {
+function makeRequest(provider, name = "Test Connection", apiKey = "test-key") {
   return new Request("https://9router.local/api/providers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       provider,
-      apiKey: "test-key",
+      apiKey,
       name,
       defaultModel: "test-model",
     }),
@@ -71,16 +71,32 @@ describe("compatible provider connections API", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    delete global._dbAdapter;
   });
 
   afterEach(() => {
     vi.doUnmock("next/server");
     vi.resetModules();
     vi.clearAllMocks();
+    global._dbAdapter?.instance?.close?.();
+    delete global._dbAdapter;
     cleanup();
     cleanup = () => {};
     if (originalDataDir === undefined) delete process.env.DATA_DIR;
     else process.env.DATA_DIR = originalDataDir;
+  });
+
+  it.each(["openai-compatible", "anthropic-compatible"])("persists an explicit empty key for %s", async (type) => {
+    const ctx = await setupTestContext({
+      id: `${type}-keyless-test`, type, name: "Keyless Node", prefix: "keyless",
+      apiType: "chat", baseUrl: "https://keyless.test/v1",
+    });
+    cleanup = ctx.cleanup;
+    const response = await ctx.POST(makeRequest(ctx.node.id, "Keyless", ""));
+    expect(response.status).toBe(201);
+    const stored = await ctx.getProviderConnections({ provider: ctx.node.id });
+    expect(stored).toHaveLength(1);
+    expect(stored[0].apiKey).toBe("");
   });
 
   it("creates one API-key connection for an OpenAI-compatible node", async () => {

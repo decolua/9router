@@ -57,7 +57,8 @@ export async function POST(request) {
     const body = await request.json();
     const { baseUrl, apiKey, type, modelId } = body;
 
-    if (!baseUrl || !apiKey) {
+    const isExplicitlyKeyless = apiKey === "" && (type === "openai-compatible" || type === "anthropic-compatible");
+    if (!baseUrl || (!apiKey && !isExplicitlyKeyless)) {
       return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });
     }
 
@@ -116,9 +117,8 @@ export async function POST(request) {
       const res = await fetchWithTimeout(modelsUrl, {
         method: "GET",
         headers: {
-          "x-api-key": apiKey,
+          ...(apiKey ? { "x-api-key": apiKey, "Authorization": `Bearer ${apiKey}` } : {}),
           "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${apiKey}`
         }
       });
 
@@ -134,9 +134,8 @@ export async function POST(request) {
         const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${apiKey}`,
+            ...(apiKey ? { "Authorization": `Bearer ${apiKey}`, "x-api-key": apiKey } : {}),
             "Content-Type": "application/json",
-            "x-api-key": apiKey,
             "anthropic-version": "2023-06-01"
           },
           body: JSON.stringify({
@@ -161,7 +160,7 @@ export async function POST(request) {
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
     const res = await fetchWithTimeout(modelsUrl, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+      headers: apiKey ? { "Authorization": `Bearer ${apiKey}` } : {},
     });
 
     if (res.ok) return NextResponse.json({ valid: true });
@@ -176,7 +175,7 @@ export async function POST(request) {
       const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
+          ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
