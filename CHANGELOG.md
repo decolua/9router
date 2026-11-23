@@ -1,3 +1,7 @@
+# Unreleased
+
+## Fixes
+- **CodeBuddy CN**: preserve system prompt content instead of rewriting it; keep normalizing the `developer` role to `system`.
 # v0.5.123 (2026-11-22)
 
 ## Features
