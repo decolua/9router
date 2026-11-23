@@ -155,7 +155,8 @@ async function transcribeElevenLabs(cfg, file, model, token, formData) {
   if (language) fd.append("language_code", language);
 
   const granularity = get("timestamps_granularity");
-  if (["word", "character", "none"].includes(granularity)) {
+  const includeWords = ["word", "character"].includes(granularity);
+  if (includeWords || granularity === "none") {
     fd.append("timestamps_granularity", granularity);
   }
   if (get("tag_audio_events") === "true") fd.append("tag_audio_events", "true");
@@ -200,7 +201,10 @@ async function transcribeElevenLabs(cfg, file, model, token, formData) {
     });
   }
   if (fmt === "text") return textResponse(text);
-  return jsonResponse({ text });
+  return jsonResponse({
+    text,
+    ...(includeWords && Array.isArray(data?.words) ? { words: data.words } : {}),
+  });
 }
 
 // ElevenLabs returns `additional_formats[].content` as a plain string (srt/vtt) or
