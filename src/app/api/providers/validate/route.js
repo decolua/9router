@@ -8,6 +8,7 @@ import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-t
 import { buildCommandCodeHeaders } from "open-sse/shared/commandCodeHeaders.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
+import { probeAssemblyAiKey } from "open-sse/services/assemblyai.js";
 import {
   createNousApiKeyProbe,
   getNousApiKeyValidationError,
@@ -412,7 +413,6 @@ export async function POST(request) {
         case "hyperbolic":
         case "ollama":
         case "ollama-local":
-        case "assemblyai":
         case "nanobanana":
         case "chutes":
         case "runcrate":
@@ -475,6 +475,13 @@ export async function POST(request) {
           });
           isValid = res.status !== 401 && res.status !== 403;
           break;
+        }
+
+        case "assemblyai": {
+          const result = await probeAssemblyAiKey(apiKey, (url, options) =>
+            fetch(url, { ...options, signal: AbortSignal.timeout(8000) }),
+          );
+          return NextResponse.json(result);
         }
 
         case "deepgram": {
