@@ -12,8 +12,11 @@ const STRIP_RULES = [
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
-  // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
-  { provider: "cloudflare-ai", flattenContent: true },
+  // Cloudflare Workers AI legacy /ai/run oneOf schema only accepted content as a
+  // plain string (#1926). The OpenAI-compatible /ai/v1/chat/completions endpoint
+  // used by the chat transport accepts content-part arrays natively - including
+  // image_url parts - and flattening there silently deletes images for every
+  // vision-capable Workers AI model (#5810). flattenContent removed.
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
   // VolcEngine Ark caps the Kimi family at max_tokens <= 32768, but the model's
   // advertised ceiling is far higher (Kimi-K2.7-Code resolves to maxOutput 262144),

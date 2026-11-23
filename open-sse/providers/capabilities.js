@@ -190,6 +190,12 @@ export const MODEL_CAPABILITIES = {
   // "deepseek-v4-1-flash" (dash instead of dot); add it as an alias (#4293).
   "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
   "deepseek-v4-1-flash": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+  // Cloudflare Workers AI release id (2026-10-17 build, vision per CF changelog).
+  // Exact entry required: the -1017 suffix misses the *deepseek-v4.* pattern on
+  // the deployed catalog-overlay path, so images were silently stripped (#5810).
+  "deepseek-v4.1-flash-1017": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+  // Cloudflare Workers AI Inkling 2 Small: multimodal per CF catalog (2026-11-12).
+  "inkling-2-small": { vision: true, reasoning: true, thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "deepseek-flash":      { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 128000, maxOutput: 64000 },
 
   // Qwen plain coder/text (no vision) — registry "vision-model" / "coder-model" aliases
