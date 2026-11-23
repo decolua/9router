@@ -53,9 +53,11 @@ describe("pending response.completed watchdog", () => {
 
       // No trailer, no [DONE] — only the watchdog can close this out.
       await vi.advanceTimersByTimeAsync(3000);
+      const readPromise = readAll(reader);
       source.close();
+      await vi.runOnlyPendingTimersAsync();
 
-      const completed = completedResponses(await readAll(reader));
+      const completed = completedResponses(await readPromise);
       expect(completed.length, "exactly one response.completed").toBe(1);
       expect(completed[0].status).toBe("completed");
       expect(completed[0].usage, "no usage was ever reported").toBeUndefined();
@@ -75,9 +77,11 @@ describe("pending response.completed watchdog", () => {
 
       // Well past the watchdog window: nothing more may be emitted.
       await vi.advanceTimersByTimeAsync(10000);
+      const readPromise = readAll(reader);
       source.close();
+      await vi.runOnlyPendingTimersAsync();
 
-      const completed = completedResponses(await readAll(reader));
+      const completed = completedResponses(await readPromise);
       expect(completed.length, "exactly one response.completed").toBe(1);
       expect(completed[0].usage).toMatchObject({ input_tokens: 120, output_tokens: 30 });
     } finally {

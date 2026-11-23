@@ -1,6 +1,7 @@
 // Bun runtime adapter — uses built-in bun:sqlite (native, fastest under Bun).
 // Loaded only when process.versions.bun is present.
 import { PRAGMA_SQL } from "../schema.js";
+import { registerShutdownStep, ShutdownPhase } from "@/lib/runtime/shutdownCoordinator.js";
 
 const CHECKPOINT_INTERVAL_MS = 60 * 1000;
 
@@ -30,10 +31,14 @@ export async function createBunSqliteAdapter(filePath) {
     try { stmtCache.clear(); } catch {}
     try { db.close(); } catch {}
   }
-  const onShutdown = () => gracefulClose();
-  process.once("beforeExit", onShutdown);
-  process.once("SIGINT", () => { onShutdown(); process.exit(0); });
-  process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
+  function close() {
+    clearInterval(checkpointTimer);
+    gracefulClose();
+  }
+
+  // Register at the coordinator's CLOSE phase so request-details flush finishes
+  // before WAL is checkpointed and the connection is closed.
+  registerShutdownStep("db-adapter:bun:sqlite", close, { phase: ShutdownPhase.CLOSE });
 
   return {
     driver: "bun:sqlite",
@@ -54,10 +59,7 @@ export async function createBunSqliteAdapter(filePath) {
       return tx();
     },
     checkpoint() { try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {} },
-    close() {
-      clearInterval(checkpointTimer);
-      gracefulClose();
-    },
+    close,
     raw: db,
   };
 }

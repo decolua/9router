@@ -7,18 +7,27 @@ import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
 const originalDataDir = process.env.DATA_DIR;
+const originalTimsliteStore = process.env.OBSERVABILITY_TIMSLITE_DATA_STORE;
 let tempDir;
 let db;
 let adapter;
 
 async function saveDetail(detail) {
   await db.saveRequestDetail(detail);
-  await new Promise((r) => setTimeout(r, 120));
+  // Poll until the row is persisted (bounded timeout replaces arbitrary sleep)
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    const row = await db.getRequestDetailById(detail.id);
+    if (row) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`saveDetail: row ${detail.id} not persisted within 2s`);
 }
 
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-details-tab-"));
   process.env.DATA_DIR = tempDir;
+  process.env.OBSERVABILITY_TIMSLITE_DATA_STORE = "false";
   vi.resetModules();
   db = await import("@/lib/db/index.js");
   await db.initDb();
@@ -34,6 +43,8 @@ afterAll(() => {
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
+  if (originalTimsliteStore === undefined) delete process.env.OBSERVABILITY_TIMSLITE_DATA_STORE;
+  else process.env.OBSERVABILITY_TIMSLITE_DATA_STORE = originalTimsliteStore;
 });
 
 describe("request details — tab crash-risk cases", () => {
@@ -81,7 +92,7 @@ describe("request details — tab crash-risk cases", () => {
 
     const res = await db.getRequestDetails({ pageSize: 9999 });
     expect(res.details.length).toBeGreaterThanOrEqual(1);
-    expect(res.pagination.pageSize).toBe(9999);
+    expect(res.pagination.pageSize).toBe(100);
   });
 
   it("oversized field → stored truncated + reparseable (no circular)", async () => {

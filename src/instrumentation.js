@@ -1,5 +1,8 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { installProcessSignalHandlers } = await import("@/lib/runtime/shutdownCoordinator.js");
+    installProcessSignalHandlers();
+
     const { initConsoleLogCapture } = await import("@/lib/consoleLogBuffer");
     initConsoleLogCapture();
 

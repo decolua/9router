@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
+import { registerShutdownStep, ShutdownPhase } from "@/lib/runtime/shutdownCoordinator.js";
 
 let SQL = null;
 
@@ -99,17 +100,19 @@ export async function createSqlJsAdapter(filePath) {
     }
   }
 
+  let closed = false;
+
   function close() {
+    if (closed) return;
+    closed = true;
     if (saveTimer) clearTimeout(saveTimer);
     if (dirty) persist();
     db.close();
   }
 
-  // Flush on shutdown
-  const flush = () => { if (dirty) try { persist(); } catch {} };
-  process.on("beforeExit", flush);
-  process.on("SIGINT", flush);
-  process.on("SIGTERM", flush);
+  // Register at the coordinator's CLOSE phase so request-details flush finishes
+  // before the in-memory database is persisted and closed.
+  registerShutdownStep("db-adapter:sql.js", close, { phase: ShutdownPhase.CLOSE });
 
   return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
 }
