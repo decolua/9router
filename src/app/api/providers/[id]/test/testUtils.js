@@ -3,8 +3,11 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
+import { ANTIGRAVITY_IDE_USER_AGENT } from "open-sse/providers/shared.js";
 import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
+import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
 import { GROK_CLI_PAGER_USER_AGENT, GROK_CLI_VERSION } from "open-sse/config/grokCli.js";
 import {
@@ -238,7 +241,7 @@ function parseProviderErrorMessage(bodyText, fallback) {
 
 async function probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy = null) {
   const userAgent = connection.provider === "antigravity"
-    ? (ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent || "antigravity/hub/2.24.0 darwin/arm64")
+    ? (ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent || ANTIGRAVITY_IDE_USER_AGENT)
     : "google-api-nodejs-client/9.15.1 gemini-cli/0.34.0";
 
   const res = await fetchWithConnectionProxy(CLOUD_CODE_ASSIST_TEST_URL, {
@@ -289,7 +292,9 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "claude") {
-      const response = await fetch(CLAUDE_CONFIG.tokenUrl, {
+      // proxyAwareFetch, not bare fetch: the curved dispatcher is required to
+      // survive the DPI that RSTs Node's default ClientHello.
+      const response = await proxyAwareFetch(CLAUDE_CONFIG.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({
@@ -321,7 +326,7 @@ async function refreshOAuthToken(connection) {
       }
       const response = await fetch(KIRO_CONFIG.socialRefreshUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "User-Agent": "kiro-cli/1.0.0" },
+        headers: { "Content-Type": "application/json", ...buildKiroIdentityHeaders({ refreshToken }) },
         body: JSON.stringify({ refreshToken }),
       });
       if (!response.ok) return null;
@@ -799,7 +804,8 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "agnes":
       case "bai":
       case "muse":
-      case "runcrate": {
+      case "runcrate":
+      case "synthetic": {
         const cfg = PROVIDERS[connection.provider];
         const res = await fetchWithConnectionProxy(cfg.validateUrl, { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
@@ -874,7 +880,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "OpenCode free tier unavailable" };
       }
       case "opencode-go": {
-        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
+        const res = await fetchWithConnectionProxy("https://opencode.ai/inference/go/openai/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${connection.apiKey}` },
           body: JSON.stringify({ model: getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
@@ -928,8 +934,11 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
       }
-      case "sensenova": {
-        const validateUrl = PROVIDERS.sensenova?.validateUrl || "https://token.sensenova.cn/v1/models";
+      case "sensenova":
+      case "sensenova-intl": {
+        // China and international sites are separate providers; each registry entry owns its host.
+        const validateUrl = PROVIDERS[connection.provider]?.validateUrl;
+        if (!validateUrl) return { valid: false, error: "Provider test not supported" };
         const res = await fetchWithConnectionProxy(validateUrl, {
           method: "GET",
           headers: {

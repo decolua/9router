@@ -4,6 +4,7 @@ import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { safeParseJSON } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
+import { stripAnthropicBillingHeader } from "../concerns/message.js";
 import { extractTextContent } from "../formats/gemini.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
@@ -39,7 +40,10 @@ export function openaiToClaudeRequest(model, body, stream) {
     // Extract system messages
     for (const msg of body.messages) {
       if (msg.role === ROLE.SYSTEM) {
-        systemParts.push(typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n"));
+        const textParts = Array.isArray(msg.content)
+          ? msg.content.filter(part => part.type === OPENAI_BLOCK.TEXT).map(part => part.text)
+          : [msg.content];
+        systemParts.push(...textParts.map(stripAnthropicBillingHeader).filter(Boolean));
       }
     }
 
@@ -227,16 +231,31 @@ function convertToolResultContent(content) {
   return parts.length > 0 ? parts : content;
 }
 
+// Zed's Anthropic wire types (and other strict serde parsers) require `is_error`
+// as a non-optional bool on every tool_result. Anthropic's public API treats it
+// as optional (default false), so always emitting is safe for all Claude targets.
+function resolveToolResultIsError(source) {
+  if (!source || typeof source !== "object") return false;
+  if (source.is_error === true) return true;
+  if (source.status === "error") return true;
+  return false;
+}
+
+function buildToolResultBlock(toolUseId, content, source) {
+  return {
+    type: CLAUDE_BLOCK.TOOL_RESULT,
+    tool_use_id: toolUseId,
+    content,
+    is_error: resolveToolResultIsError(source),
+  };
+}
+
 // Get content blocks from single message
 function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
   const blocks = [];
 
   if (msg.role === ROLE.TOOL) {
-    blocks.push({
-      type: CLAUDE_BLOCK.TOOL_RESULT,
-      tool_use_id: msg.tool_call_id,
-      content: convertToolResultContent(msg.content)
-    });
+    blocks.push(buildToolResultBlock(msg.tool_call_id, convertToolResultContent(msg.content), msg));
   } else if (msg.role === ROLE.USER) {
     if (typeof msg.content === "string") {
       if (msg.content) {
@@ -247,12 +266,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
           blocks.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
         } else if (part.type === CLAUDE_BLOCK.TOOL_RESULT) {
-          blocks.push({
-            type: CLAUDE_BLOCK.TOOL_RESULT,
-            tool_use_id: part.tool_use_id,
-            content: part.content,
-            ...(part.is_error && { is_error: part.is_error })
-          });
+          blocks.push(buildToolResultBlock(part.tool_use_id, part.content, part));
         } else if (part.type === OPENAI_BLOCK.IMAGE_URL) {
           const url = part.image_url.url;
           const parsed = parseDataUri(url);

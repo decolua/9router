@@ -5,6 +5,7 @@ import { Card } from "@/shared/components";
 import { getProviderAlias, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { INPUT_TYPE_VALUES, DEFAULT_INPUT_TYPE } from "open-sse/config/embeddingParams.js";
 import { Row } from "./exampleShared";
 
 const DEFAULT_RESPONSE_EXAMPLE = `{
@@ -24,8 +25,13 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
   const embeddingModels = isCustom ? [] : getModelsByProviderId(providerId).filter((m) => getModelKind(m) === "embedding");
 
   const [selectedModel, setSelectedModel] = useState(embeddingModels[0]?.id ?? "");
+  const selectedModelObj = embeddingModels.find((m) => m.id === selectedModel);
+  // Models that declare extra params (e.g. NVIDIA's asymmetric embedding models
+  // require `input_type`) — the row only shows for those.
+  const allowedParams = Array.isArray(selectedModelObj?.params) ? selectedModelObj.params : [];
   const [input, setInput] = useState("The quick brown fox jumps over the lazy dog");
   const [dimensions, setDimensions] = useState("");
+  const [inputType, setInputType] = useState(DEFAULT_INPUT_TYPE);
   const [apiKey, setApiKey] = useState("");
   const [useTunnel, setUseTunnel] = useState(false);
   const [localEndpoint, setLocalEndpoint] = useState("");
@@ -56,6 +62,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
     const body = { model: modelFull, input: input.trim() };
     const dim = Number(dimensions);
     if (dimensions && Number.isFinite(dim) && dim > 0) body.dimensions = dim;
+    if (allowedParams.includes("input_type")) body.input_type = inputType;
     return body;
   };
 
@@ -185,6 +192,21 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
             )}
           </div>
         </Row>
+
+        {/* Input type — only for models that declare it (asymmetric embedding models) */}
+        {allowedParams.includes("input_type") && (
+          <Row label="Input Type">
+            <select
+              value={inputType}
+              onChange={(e) => setInputType(e.target.value)}
+              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            >
+              {INPUT_TYPE_VALUES.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </Row>
+        )}
 
         {/* Dimensions (optional) — truncate embedding vector length */}
         <Row label="Dimensions">
