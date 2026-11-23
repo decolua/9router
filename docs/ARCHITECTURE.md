@@ -514,11 +514,13 @@ Translations are selected dynamically based on source payload shape and provider
 
 Runtime visibility sources:
 
-- console logs from `src/sse/utils/logger.js`
-- per-request usage aggregates in `usage.json`
-- textual request status log in `log.txt`
-- optional deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
+- console output and request summaries from `src/sse/utils/logger.js` (controlled by `ENABLE_REQUEST_LOGS` when explicitly configured)
+- SQLite usage/request aggregates in `usageHistory` and `usageDaily`
+- SQLite request details in `requestDetails`
+- optional deep request/translation files under `logs/` when `ENABLE_REQUEST_LOGS=true`
 - dashboard usage endpoints (`/api/usage/*`) for UI consumption
+
+When `ENABLE_REQUEST_LOGS=false`, new console output and request-related SQLite writes are suppressed, and the in-flight activity tracker (`trackPendingRequest`) stops feeding the dashboard's live topology animation, so it stays idle. When it is unset, the existing UI observability fallback remains available. Usage/request logging settings are process-level and require a restart after changes; operational behavior should be validated with the deployment's logging policy.
 
 ## Security-Sensitive Boundaries
 
@@ -542,7 +544,7 @@ Environment variables actively used by code:
 
 ## Known Architectural Notes
 
-1. `usageDb` currently stores under `~/.9router` and does not follow `DATA_DIR`.
+1. Usage and request details are stored in `${DATA_DIR}/db/data.sqlite`; legacy JSON paths are migration inputs only.
 2. `/api/v1/route.js` returns a static model list and is not the main models source used by `/v1/models`.
 3. Request logger writes full headers/body when enabled; treat log directory as sensitive.
 4. Cloud behavior depends on correct `NEXT_PUBLIC_BASE_URL` and cloud endpoint reachability.
