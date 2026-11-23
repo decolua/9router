@@ -1,6 +1,7 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
+import { toOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
@@ -12,7 +13,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
-import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { ROLE, RESPONSES_ITEM, OPENAI_FINISH } from "../../translator/schema/index.js";
 
 /**
  * Convert an OpenAI Chat Completions non-streaming response body into the
@@ -92,18 +93,33 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 }
 
 /**
- * Translate non-streaming response body from provider format → OpenAI format.
+ * Convert an OpenAI Chat Completions body (the hub format every provider body is
+ * first translated into) into the client's format: Anthropic `message` for Claude
+ * clients, Responses `response` for Responses clients. Other client formats get the
+ * hub body unchanged, as before.
+ */
+export function openAICompletionToClientFormat(responseBody, sourceFormat, customToolNames = null) {
+  if (sourceFormat === FORMATS.CLAUDE) return openAICompletionToClaudeMessage(responseBody);
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) return openAICompletionToResponses(responseBody, customToolNames);
+  return responseBody;
+}
+
+/**
+ * Translate a non-streaming response body from the provider format into the
+ * client's format: provider → OpenAI Chat Completions (hub) → client.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
-  // Provider responded in OpenAI Chat Completions shape but the client speaks
-  // Responses API — convert so tool_calls/text surface as Responses `output`.
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAICompletionToResponses(responseBody, customToolNames);
-  }
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
-  }
+  const openAIBody = providerResponseToOpenAI(responseBody, targetFormat);
+  return openAICompletionToClientFormat(openAIBody, sourceFormat, customToolNames);
+}
+
+/**
+ * Translate a non-streaming response body from the provider format into the
+ * OpenAI Chat Completions hub format. Bodies already in that shape, and formats
+ * without a converter, are returned unchanged.
+ */
+export function providerResponseToOpenAI(responseBody, targetFormat) {
   if (targetFormat === FORMATS.OPENAI) return responseBody;
 
   // Gemini / Antigravity
@@ -143,8 +159,9 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     if (toolCalls.length > 0) message.tool_calls = toolCalls;
     if (!message.content && !message.tool_calls) message.content = "";
 
-    let finishReason = (candidate.finishReason || "stop").toLowerCase();
-    if (finishReason === "stop" && toolCalls.length > 0) finishReason = "tool_calls";
+    // Same mapping as the streaming Gemini translator (MAX_TOKENS → length, SAFETY → content_filter).
+    let finishReason = toOpenAIFinish(candidate.finishReason, FORMATS.GEMINI);
+    if (finishReason === OPENAI_FINISH.STOP && toolCalls.length > 0) finishReason = OPENAI_FINISH.TOOL_CALLS;
 
     const result = {
       id: `chatcmpl-${response.responseId || Date.now()}`,
@@ -287,23 +304,29 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
-    : responseBody;
+  // provider → OpenAI Chat Completions (hub) → client format. Every provider body is
+  // converted to the client's format, not only bodies from OpenAI-format providers.
+  const translate = needsTranslation(targetFormat, sourceFormat);
+  const openAIResponse = translate ? providerResponseToOpenAI(responseBody, targetFormat) : responseBody;
+
+  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other").
+  // Applied to the hub body so the client format (e.g. Claude stop_reason) inherits it.
+  if (openAIResponse?.choices?.[0]) {
+    const choice = openAIResponse.choices[0];
+    const msg = choice.message;
+    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+    if (hasToolCalls && choice.finish_reason !== OPENAI_FINISH.TOOL_CALLS) {
+      choice.finish_reason = OPENAI_FINISH.TOOL_CALLS;
+    }
+  }
+
+  const translatedResponse = translate
+    ? openAICompletionToClientFormat(openAIResponse, sourceFormat, customToolNames)
+    : openAIResponse;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
   // `choices`; skip the Chat-Completions-specific post-processing below for it.
   const isResponsesResponse = sourceFormat === FORMATS.OPENAI_RESPONSES && translatedResponse?.object === "response";
-
-  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
-  if (translatedResponse?.choices?.[0]) {
-    const choice = translatedResponse.choices[0];
-    const msg = choice.message;
-    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
-    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
-      choice.finish_reason = "tool_calls";
-    }
-  }
 
   // Ensure OpenAI-required fields
   if (!isClaudeMessageResponse && !isResponsesResponse) {
@@ -344,10 +367,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     request: extractRequestConfig(body, stream),
     providerRequest: finalBody || translatedBody || null,
     providerResponse: responseBody || null,
+    // Recorded from the hub body, so the detail reads the same whatever the client format.
     response: {
-      content: translatedResponse?.choices?.[0]?.message?.content || translatedResponse?.content || null,
-      thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || translatedResponse?.reasoning_content || null,
-      finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
+      content: openAIResponse?.choices?.[0]?.message?.content || openAIResponse?.content || null,
+      thinking: openAIResponse?.choices?.[0]?.message?.reasoning_content || openAIResponse?.reasoning_content || null,
+      finish_reason: openAIResponse?.choices?.[0]?.finish_reason || "unknown"
     },
     pxpipe,
     status: "success"
