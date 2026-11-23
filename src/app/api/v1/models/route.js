@@ -210,7 +210,7 @@ const parseOpenAIStyleModels = (data) => {
   return data?.data || data?.models || data?.results || [];
 };
 
-// Header sent by fetchCompatibleModelIds to detect cross-instance /models fetches
+// Header sent by fetchCompatibleModels to detect cross-instance /models fetches
 // and break recursive loops between 9router instances connected to each other.
 const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
 
@@ -244,7 +244,71 @@ function inferKindFromUnknownModelId(modelId) {
   return LLM_KIND;
 }
 
-async function fetchCompatibleModelIds(connection) {
+// Runtime context-window fields an OpenAI-compatible /models response may carry,
+// in priority order. Only fields that describe the window the server will actually
+// accept are read: LM Studio `loaded_context_length` (its /api/v0 list), vLLM
+// `max_model_len`, and the OpenRouter-style `context_length` / `context_window` /
+// `limit.context`. A model's trained maximum (`max_context_length`, llama.cpp
+// `meta.n_ctx_train`) is deliberately ignored: it overstates a smaller loaded window.
+function readCompatibleContextLength(model) {
+  const candidates = [
+    model?.loaded_context_length,
+    model?.max_model_len,
+    model?.context_length,
+    model?.context_window,
+    model?.limit?.context,
+  ];
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  return null;
+}
+
+// Hosts whose LM Studio native list (/api/v0/models) was not reachable; skipped for a while
+// so a cloud OpenAI-compatible node does not pay a failing extra request on every listing.
+const LMSTUDIO_PROBE_MISS_TTL_MS = 10 * 60 * 1000;
+const lmStudioProbeMisses = new Map();
+
+async function fetchJson(url, headers, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { method: "GET", headers, cache: "no-store", signal: controller.signal });
+    if (!response.ok) return null;
+    return await response.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// LM Studio's OpenAI-compatible /v1/models returns only ids; the loaded window is in its
+// native /api/v0/models (`loaded_context_length`, set only while the model is loaded).
+async function fetchLmStudioLoadedContexts(baseUrl, headers) {
+  if (!/\/v1$/.test(baseUrl)) return new Map();
+  const root = baseUrl.slice(0, -3);
+  const missAt = lmStudioProbeMisses.get(root);
+  if (missAt && Date.now() - missAt < LMSTUDIO_PROBE_MISS_TTL_MS) return new Map();
+  try {
+    const data = await fetchJson(`${root}/api/v0/models`, headers, 3000);
+    const contexts = new Map();
+    for (const model of parseOpenAIStyleModels(data)) {
+      const n = Number(model?.loaded_context_length);
+      if (model?.id && Number.isFinite(n) && n > 0) contexts.set(model.id, Math.floor(n));
+    }
+    if (!data) lmStudioProbeMisses.set(root, Date.now());
+    else lmStudioProbeMisses.delete(root);
+    return contexts;
+  } catch {
+    lmStudioProbeMisses.set(root, Date.now());
+    return new Map();
+  }
+}
+
+// Returns [{ id, contextLength }] for a compatible provider node. contextLength is the
+// runtime window the node reports, or null when it reports none (the caller then falls
+// back to the static capability table, as before).
+async function fetchCompatibleModels(connection) {
   if (!connection?.apiKey) return [];
 
   const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
@@ -258,7 +322,8 @@ async function fetchCompatibleModelIds(connection) {
     "Content-Type": "application/json",
   };
 
-  if (isOpenAICompatibleProvider(connection.provider)) {
+  const isOpenAICompatible = isOpenAICompatibleProvider(connection.provider);
+  if (isOpenAICompatible) {
     headers.Authorization = `Bearer ${connection.apiKey}`;
   } else if (isAnthropicCompatibleProvider(connection.provider)) {
     if (url.endsWith("/messages/models")) {
@@ -274,28 +339,22 @@ async function fetchCompatibleModelIds(connection) {
   }
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { ...headers, [INTERNAL_MODELS_FETCH_HEADER]: "1" },
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return [];
-
-    const data = await response.json();
-    const rawModels = parseOpenAIStyleModels(data);
-
-    return Array.from(
-      new Set(
-        rawModels
-          .map((model) => model?.id || model?.name || model?.model)
-          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
-      )
-    );
+    const data = await fetchJson(url, { ...headers, [INTERNAL_MODELS_FETCH_HEADER]: "1" }, 5000);
+    if (!data) return [];
+    const byId = new Map();
+    for (const model of parseOpenAIStyleModels(data)) {
+      const id = model?.id || model?.name || model?.model;
+      if (typeof id !== "string" || id.trim() === "" || byId.has(id)) continue;
+      byId.set(id, { id, contextLength: readCompatibleContextLength(model) });
+    }
+    const models = Array.from(byId.values());
+    if (isOpenAICompatible && models.length > 0 && models.every((m) => m.contextLength === null)) {
+      const loaded = await fetchLmStudioLoadedContexts(baseUrl, headers);
+      for (const model of models) {
+        if (loaded.has(model.id)) model.contextLength = loaded.get(model.id);
+      }
+    }
+    return models;
   } catch {
     return [];
   }
@@ -365,7 +424,7 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
  */
 export async function buildModelsList(kindFilter, options = {}) {
   // When this header is present, the /v1/models request came from another
-  // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
+  // 9router instance's fetchCompatibleModels — skip dynamic fetch to break
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
   let connections = [];
@@ -522,8 +581,17 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
+      // Runtime context windows reported by a compatible node itself (e.g. the window
+      // LM Studio loaded). They beat the static table, which can only guess from the id.
+      let liveContextById = new Map();
       if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
-        rawModelIds = await fetchCompatibleModelIds(conn);
+        const compatibleModels = await fetchCompatibleModels(conn);
+        rawModelIds = compatibleModels.map((m) => m.id);
+        liveContextById = new Map(
+          compatibleModels
+            .filter((m) => Number.isFinite(m.contextLength))
+            .map((m) => [m.id, m.contextLength])
+        );
       }
 
       // Config-driven live catalog override (e.g. Kiro returns dynamic
@@ -640,7 +708,11 @@ export async function buildModelsList(kindFilter, options = {}) {
         // Emitted at top level because not every client recurses into nested
         // objects; the camelCase `capabilities` block stays for compatibility.
         if (kind === LLM_KIND || allowAsLlm) {
-          let contextWindow = caps?.contextWindow;
+          const liveContext = liveContextById.get(modelId) ?? liveContextById.get(`${outputAlias}/${modelId}`);
+          let contextWindow = Number.isFinite(liveContext) ? liveContext : caps?.contextWindow;
+          if (Number.isFinite(liveContext) && model.capabilities) {
+            model.capabilities = { ...model.capabilities, contextWindow: liveContext };
+          }
           let maxOutput = caps?.maxOutput;
           // Live-catalog and service-kind capabilities are usually partial
           // (often just { tools: true }), so fill the gaps from the static
