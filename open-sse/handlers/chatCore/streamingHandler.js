@@ -1,11 +1,12 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } from "../../utils/stream.js";
-import { pipeWithDisconnect } from "../../utils/streamHandler.js";
+import { pipeWithDisconnect, buildDefaultEmptyStreamTerminal } from "../../utils/streamHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { HTTP_STATUS, STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
+import { EMPTY_STREAM_ERROR } from "../../config/errorConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
-import { buildStreamErrorBytes } from "../../utils/streamHelpers.js";
+import { buildStreamErrorBytes, formatSSE } from "../../utils/streamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -43,6 +44,21 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
   // rename map (read -> read_client) has to be handed over explicitly —
   // otherwise the client receives a call to a tool it never declared (#4986).
   return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, toolNameMap);
+}
+
+// The empty-stream error frame per client format. OpenAI-style clients get an
+// error payload, then [DONE]; Anthropic clients (Claude Code) need an
+// `event: error` with Anthropic's envelope; every Responses client (Codex) gets
+// the response.failed terminal used for aborts, whether the route is a
+// passthrough or translated from a chat-format provider.
+function buildEmptyStreamTerminal(sourceFormat) {
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) return () => buildAbortedResponsesTerminalBytes();
+  if (sourceFormat === FORMATS.CLAUDE) {
+    return (message) => new TextEncoder().encode(
+      formatSSE({ type: "error", error: { type: EMPTY_STREAM_ERROR.claudeType, message } }, FORMATS.CLAUDE)
+    );
+  }
+  return (message) => buildDefaultEmptyStreamTerminal(message);
 }
 
 /**
@@ -95,7 +111,10 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     ? buildAbortedResponsesTerminalBytes
     : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  // In-band error frame when the stream produced nothing, in the client's own
+  // error shape.
+  const emptyStreamTerminal = buildEmptyStreamTerminal(sourceFormat);
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, emptyStreamTerminal);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
@@ -131,6 +150,16 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
+    // An empty stream is NOT a success. This was hardcoded to "success", so a
+    // request that produced no content at all was recorded green — the
+    // dashboard, the usage view and anything reading requestDetails all agreed
+    // nothing was wrong while the caller received an empty body. Recording it
+    // truthfully is what makes the failure findable; pipeWithDisconnect emits
+    // the client-facing error frame.
+    const producedNothing = !contentObj?.content && !contentObj?.thinking &&
+      !(usage?.completion_tokens > 0);
+    const detailStatus = producedNothing ? "error" : "success";
+
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency,
@@ -140,10 +169,13 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       pxpipe,
-      status: "success"
+      status: detailStatus
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
+    if (producedNothing && log?.errorLine) {
+      log.errorLine(reqTag, "✗", `EMPTY STREAM · ${provider}/${model} · no content and no completion tokens`);
+    }
 
     // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE", silent: true });
