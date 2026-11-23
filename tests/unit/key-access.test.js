@@ -24,7 +24,7 @@ vi.mock("@/sse/utils/logger.js", () => ({ warn: vi.fn(), info: vi.fn(), debug: v
 
 const engine = await import("../../src/sse/services/keyAccess.js");
 const helpers = await import("../../src/shared/utils/keyAccess.js");
-const { keyAccessDeniedMessage, KEY_ACCESS_MAX_ENTRIES } = await import("../../src/shared/constants/keyAccess.js");
+const { keyAccessDeniedMessage, keyAccessWildcardProvider, KEY_ACCESS_MAX_ENTRIES } = await import("../../src/shared/constants/keyAccess.js");
 
 function key(id, access) {
   fx.keys[`sk-${id}`] = { id, name: `key-${id}`, isActive: true, access };
@@ -194,6 +194,44 @@ describe("/v1/models filtering", () => {
   });
   it("leaves the list untouched for an unrestricted key", async () => {
     expect(await engine.filterModelsListForKey(await ctxFor("sk-open"), list)).toBe(list);
+  });
+});
+
+describe('whole provider ("provider/*")', () => {
+  beforeEach(() => {
+    key("wcx", { restricted: true, allow: ["cx/*"] });
+    key("wnode", { restricted: true, allow: ["mock/*"] });
+    key("wtavily", { restricted: true, allow: ["tavily/*"] });
+  });
+  it("grants every model of the provider, by alias or full id", async () => {
+    for (const m of ["cx/gpt-5", "cx/gpt-5-mini", "codex/anything"]) expect(await status("sk-wcx", m)).toBe(200);
+    expect(await status("sk-wcx", "openai/gpt-5")).toBe(403);
+  });
+  it("resolves custom-node prefixes like a request does", async () => {
+    expect(await status("sk-wnode", "mock/glm-5")).toBe(200);
+    expect(await status("sk-wnode", "openai-compatible-chat-n1/glm-5")).toBe(200);
+  });
+  it("does not grant combos or aliases that resolve to another provider", async () => {
+    expect(await status("sk-wcx", "Main")).toBe(403);
+    expect(await status("sk-wcx", "fast")).toBe(403); // fast -> openai/model-a
+  });
+  it("applies to resolved gates, search/fetch providers and /v1/models", async () => {
+    const ctx = await ctxFor("sk-wcx");
+    expect(await engine.enforceKeyAccessResolved(ctx, "cx/gpt-5", "codex", "gpt-5")).toBeNull();
+    expect((await engine.enforceKeyAccessResolved(ctx, "openai/x", "openai", "x")).status).toBe(403);
+    expect(await engine.enforceKeyAccessProvider(await ctxFor("sk-wtavily"), "tavily", null)).toBeNull();
+    const list = [
+      { id: "Main", owned_by: "combo" },
+      { id: "cx/gpt-5", owned_by: "cx" },
+      { id: "openai/model-a", owned_by: "openai" },
+    ];
+    expect((await engine.filterModelsListForKey(ctx, list)).map((m) => m.id)).toEqual(["cx/gpt-5"]);
+  });
+  it("only a single-segment prefix counts as a wildcard", () => {
+    expect(keyAccessWildcardProvider("openai/*")).toBe("openai");
+    expect(keyAccessWildcardProvider("a/b/*")).toBeNull();
+    expect(keyAccessWildcardProvider("/*")).toBeNull();
+    expect(keyAccessWildcardProvider("openai/gpt-4o")).toBeNull();
   });
 });
 
