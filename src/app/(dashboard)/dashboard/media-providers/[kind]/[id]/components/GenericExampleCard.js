@@ -128,14 +128,24 @@ export function GenericExampleCard({ providerId, kind }) {
     acc[k] = v;
     return acc;
   }, {});
-  const systemoneQuestions = kind === "systemone" ? {
-    questions: {
-      is_urgent: {
-        type: "noul",
-        instructions: question.trim() || "Does this request require urgent attention?",
+  const isFieldsShape = selectedModelObj?.payloadShape === "fields";
+  const systemoneQuestions = kind === "systemone" ? (
+    isFieldsShape ? {
+      fields: {
+        summary: {
+          type: "text",
+          instructions: question.trim() || "Extract the key request summary.",
+        },
       },
-    },
-  } : {};
+    } : {
+      questions: {
+        is_urgent: {
+          type: "noul",
+          instructions: question.trim() || "Does this request require urgent attention?",
+        },
+      },
+    }
+  ) : {};
   const requestBody = {
     model: modelFull,
     [exConfig.bodyKey]: input,
