@@ -280,6 +280,39 @@ describe("OpenCode Stable Session Reuse (429 follow-up)", () => {
     expect(forKey("user-A")).toMatch(OPENCODE_SESSION_RE);
   });
 
+  it("isolates stable sessions by client tool when the API key is shared", () => {
+    const executor = getExecutor("opencode");
+    const body = { messages: [{ role: "user", content: "hello" }] };
+    const forTool = (clientTool) => executor.prepareRequestCredentials({
+      body,
+      credentials: anonymousCredentials("shared-key"),
+      providerSessionId: null,
+      clientTool,
+    })._opencodeSession;
+
+    // Apps sharing one 9Router key must not pool into one upstream session:
+    // upstream quota is per session, so pooled sessions exhaust together.
+    expect(forTool("claude")).not.toBe(forTool("codex"));
+    expect(forTool("claude")).toBe(forTool("claude"));
+  });
+
+  it("falls back to the raw User-Agent when no client tool is detected", () => {
+    const executor = getExecutor("opencode");
+    const body = { messages: [{ role: "user", content: "hello" }] };
+    const forUa = (ua) => executor.prepareRequestCredentials({
+      body,
+      credentials: { connectionId: "direct-conn", rawHeaders: { "user-agent": ua } },
+      providerSessionId: null,
+      clientTool: null,
+    })._opencodeSession;
+
+    // Generic chat apps (no detectable tool) each get their own pool instead
+    // of all of them sharing the single "generic" session.
+    expect(forUa("CherryStudio/1.0")).not.toBe(forUa("chatbox/2.3"));
+    expect(forUa("CherryStudio/1.0")).toBe(forUa("CherryStudio/1.0"));
+    expect(forUa("CherryStudio/1.0")).toMatch(OPENCODE_SESSION_RE);
+  });
+
   it("exposes the stable session helper directly", () => {
     const first = stableSessionId({ connectionId: "direct-conn" });
     expect(stableSessionId({ connectionId: "direct-conn" })).toBe(first);
