@@ -5,6 +5,8 @@ import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
+import { isWindowStrategy, orderAccountsByWindow } from "@/shared/utils/accountOrdering.js";
+import { ensureProviderQuotaWindows, getAccountQuotaSnapshot } from "@/shared/services/accountQuotaWindows.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -32,6 +34,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
   const requestedModel = options?.requestedModel || model;
+  // Refresh in background, outside the global account-selection mutex.
+  ensureProviderQuotaWindows(resolveProviderId(provider));
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -194,6 +198,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           consecutiveUseCount: 1
         });
       }
+    } else if (strategy === "random") {
+      connection = availableConnections[Math.floor(Math.random() * availableConnections.length)];
+    } else if (isWindowStrategy(strategy)) {
+      const snapshots = Object.fromEntries(availableConnections.map(c => [c.id, getAccountQuotaSnapshot(c.id)]));
+      connection = orderAccountsByWindow(availableConnections, strategy, snapshots, requestedModel)[0];
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
       connection = availableConnections[0];

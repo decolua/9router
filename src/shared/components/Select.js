@@ -40,11 +40,11 @@ export default function Select({
           )}
           {...props}
         >
-          <option value="" disabled>
-            {placeholder}
-          </option>
+          {!options.some((option) => option.value === "") && (
+            <option value="" disabled>{placeholder}</option>
+          )}
           {options.map((option) => (
-            <option key={option.value} value={option.value}>
+            <option key={option.value} value={option.value} disabled={option.disabled}>
               {option.label}
             </option>
           ))}
