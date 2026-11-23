@@ -22,6 +22,7 @@ const FormData = FormDataImpl;
 function buildAuthHeaders(cfg, token) {
   if (!token) return {};
   switch (cfg.authHeader) {
+    case "authorization": return { "Authorization": token };
     case "bearer":     return { "Authorization": `Bearer ${token}` };
     case "token":      return { "Authorization": `Token ${token}` };
     case "x-api-key":  return { "x-api-key": token };

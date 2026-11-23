@@ -20,7 +20,7 @@ export default {
   authType: "apikey",
   transport: {
     baseUrl: "https://api.assemblyai.com/v1/audio/transcriptions",
-    validateUrl: "https://api.assemblyai.com/v1/account",
+    validateUrl: "https://api.assemblyai.com/v2/transcript?limit=1",
   },
   models: [
     { id: "universal-3-pro", name: "Universal 3 Pro", params: ["language"], kind: "stt" },
