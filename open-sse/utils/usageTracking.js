@@ -176,6 +176,18 @@ export function canonicalizeUsage(usage) {
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
   let cached;
 
+  // An emitter that already folded cache into prompt_tokens (and kept the raw
+  // cache-exclusive input_tokens alongside) must not be folded again — that
+  // double-count stored 2x the prompt for every streamed Claude -> OpenAI
+  // request. prompt === input + read + creation identifies the folded shape
+  // exactly; with zero cache both readings agree, so no guess is involved.
+  const cacheRead = num(usage.cache_read_input_tokens);
+  const alreadyFolded =
+    typeof usage.prompt_tokens === "number" &&
+    typeof usage.input_tokens === "number" &&
+    cacheRead + cacheCreation > 0 &&
+    usage.prompt_tokens === usage.input_tokens + cacheRead + cacheCreation;
+
   // Claude path: prompt excludes cache; cache_read_input_tokens and/or
   // cache_creation_input_tokens are separate. A cache-miss "first write" only
   // carries cache_creation_input_tokens (no cache_read_input_tokens yet), so
@@ -184,9 +196,11 @@ export function canonicalizeUsage(usage) {
   // Guard on the absence of `cached_tokens`: our own canonical output always
   // sets that key (even to 0), so re-running canonicalizeUsage on an already-
   // folded result takes the passthrough branch instead of folding again.
-  if (usage.cached_tokens === undefined &&
+  if (alreadyFolded) {
+    cached = cacheRead;
+  } else if (usage.cached_tokens === undefined &&
       (usage.cache_read_input_tokens !== undefined || usage.cache_creation_input_tokens !== undefined)) {
-    cached = num(usage.cache_read_input_tokens);
+    cached = cacheRead;
     prompt = prompt + cached + cacheCreation;
   } else {
     // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
