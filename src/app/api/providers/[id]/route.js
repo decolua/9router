@@ -173,7 +173,14 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
 
+    // Read first: once the row is gone the credential cannot be matched to the
+    // Infisical/env seed, which would otherwise recreate it on the next boot.
+    const existing = await getProviderConnectionById(id);
     const deleted = await deleteProviderConnection(id);
+    if (deleted && existing?.provider === "claude-cli") {
+      const { dismissSeededCredential } = await import("@/shared/services/claudeCliInfisicalSeed");
+      await dismissSeededCredential(existing).catch((e) => console.log("[claude-cli] could not record seed dismissal:", e.message));
+    }
     if (!deleted) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }

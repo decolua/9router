@@ -33,6 +33,10 @@ export default function ClaudeCliAccountsCard() {
   const [message, setMessage] = useState("");
   const [pendingId, setPendingId] = useState(null);
   const [token, setToken] = useState("");
+  const [tokenName, setTokenName] = useState("");
+  // Account being renamed, and what is typed so far.
+  const [renaming, setRenaming] = useState(null);
+  const [draftName, setDraftName] = useState("");
   // Cron keepalive schedules, keyed by connection id. Same settings contract the
   // other providers use, so the server-side scheduler needs no special case.
   const [cron, setCron] = useState({});
@@ -148,6 +152,28 @@ export default function ClaudeCliAccountsCard() {
     }
   };
 
+  const testKeepalive = async (id) => {
+    setBusy(true);
+    setPendingId(id);
+    setMessage("");
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ping: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMessage(data.error || `HTTP ${res.status}`); return; }
+      setMessage(data.ok ? "Keepalive sent." : `Keepalive failed: ${data.error || "no reason given"}`);
+      await reload();
+    } catch (e) {
+      setMessage(e.message);
+    } finally {
+      setBusy(false);
+      setPendingId(null);
+    }
+  };
+
   const setScheduleOnly = async (id, scheduleOnly) => {
     setBusy(true);
     setMessage("");
@@ -162,6 +188,28 @@ export default function ClaudeCliAccountsCard() {
       setMessage(scheduleOnly
         ? "This account is reserved for scheduled pings."
         : "This account is available for provider requests again.");
+      await reload();
+    } catch (e) {
+      setMessage(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rename = async (id) => {
+    const name = draftName.trim();
+    if (!name) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMessage(data.error || `HTTP ${res.status}`); return; }
+      setRenaming(null);
       await reload();
     } catch (e) {
       setMessage(e.message);
@@ -244,6 +292,14 @@ export default function ClaudeCliAccountsCard() {
           is no terminal for the interactive login. One token per account.
         </p>
         <div className="flex gap-2 flex-wrap">
+          <div className="w-44">
+            <Input
+              value={tokenName}
+              onChange={(e) => setTokenName(e.target.value)}
+              placeholder="Name (optional)"
+              disabled={busy}
+            />
+          </div>
           <div className="flex-1 min-w-[220px]">
             <Input
               type="password"
@@ -256,7 +312,7 @@ export default function ClaudeCliAccountsCard() {
           <Button
             size="sm"
             onClick={async () => {
-              if (await post({ oauthToken: token })) setToken("");
+              if (await post({ oauthToken: token, name: tokenName.trim() || undefined })) { setToken(""); setTokenName(""); }
             }}
             disabled={busy || !token.trim()}
           >
@@ -288,7 +344,38 @@ export default function ClaudeCliAccountsCard() {
           <div key={a.id} className="flex items-start gap-3 p-3 rounded-[14px] border border-border-subtle bg-surface">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium text-text-main">{a.name}</span>
+                {renaming === a.id ? (
+                  <form
+                    className="flex items-center gap-1"
+                    onSubmit={(e) => { e.preventDefault(); rename(a.id); }}
+                  >
+                    <Input
+                      value={draftName}
+                      onChange={(e) => setDraftName(e.target.value)}
+                      maxLength={80}
+                      autoFocus
+                      disabled={busy}
+                    />
+                    <Button size="sm" type="submit" disabled={busy || !draftName.trim()}>Save</Button>
+                    <Button size="sm" variant="secondary" type="button" onClick={() => setRenaming(null)} disabled={busy}>
+                      Cancel
+                    </Button>
+                  </form>
+                ) : (
+                  <>
+                    <span className="text-sm font-medium text-text-main">{a.name}</span>
+                    <button
+                      type="button"
+                      className="text-text-muted hover:text-text-main"
+                      title="Rename"
+                      aria-label={`Rename ${a.name}`}
+                      onClick={() => { setRenaming(a.id); setDraftName(a.name); }}
+                      disabled={busy}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">edit</span>
+                    </button>
+                  </>
+                )}
                 {a.signedIn ? (
                   <Badge variant="success" size="sm" dot>Signed in</Badge>
                 ) : (
@@ -333,6 +420,9 @@ export default function ClaudeCliAccountsCard() {
               )}
               <Button size="sm" variant="secondary" onClick={() => check(a.id)} disabled={busy}>
                 {busy && pendingId === a.id ? "Checking…" : "Check"}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => testKeepalive(a.id)} disabled={busy}>
+                {busy && pendingId === a.id ? "Sending…" : "Test keepalive"}
               </Button>
               {/* Same cron keepalive the OAuth providers get. It runs `claude -p`
                   as this account, which is what keeps a 5h window open without
@@ -389,6 +479,7 @@ function KeepaliveStatus({ keepalive, schedule }) {
     <div className={`text-[11px] mt-1 ${KEEPALIVE_TONE_CLASS[status.tone]}`}>
       {status.label}
       {status.at ? ` · ${formatKeepaliveTime(status.at, status.timezone)}` : ""}
+      {status.tone === "failed" && keepalive?.lastError ? ` — ${keepalive.lastError}` : ""}
     </div>
   );
 }

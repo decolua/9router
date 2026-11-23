@@ -141,10 +141,23 @@ async function sendClaudePing(connection, providerConfig, proxyOptions, deps) {
   return res.ok;
 }
 
+// First error message out of a claude-cli SSE error frame, or of a plain body.
+// Capped and scrubbed because it is persisted and shown on the dashboard.
+export function describePingFailure(text, status) {
+  let message = "";
+  const frame = String(text || "").split("\n").find((line) => line.startsWith("data: {"));
+  if (frame) {
+    try { message = JSON.parse(frame.slice(6))?.error?.message || ""; } catch { /* not JSON */ }
+  }
+  message = (message || String(text || "")).replace(/sk-ant-[A-Za-z0-9_-]+/g, "[token]").replace(/\s+/g, " ").trim();
+  return `${status ? `HTTP ${status}: ` : ""}${message}`.slice(0, 300) || "no response from the claude binary";
+}
+
 // Sends the keepalive through the local Claude Code binary (`claude -p`) so the
 // request carries a real CLI session instead of an OAuth token replayed by this
-// server. Returns false when the executor reports an error frame.
-async function sendClaudeCliPing(connection, providerConfig, proxyOptions, deps) {
+// server. Returns true on success, or `{ ok: false, error }` so the reason can
+// be shown on the card instead of only in the server log.
+export async function sendClaudeCliPing(connection, providerConfig, proxyOptions, deps) {
   const executor = deps.getExecutor("claude-cli");
   // Bounded: the scheduler runs one tick at a time, so an unbounded drain here
   // would stall every other provider's pings for as long as the child hangs.
@@ -161,19 +174,22 @@ async function sendClaudeCliPing(connection, providerConfig, proxyOptions, deps)
     signal: timeout,
     log: console,
   });
-  if (!response.ok) {
-    try { await response.body?.cancel?.(); } catch { /* noop */ }
-    return false;
-  }
   // The CLI turn only completes once the stream drains; a mid-stream failure
   // surfaces as an SSE error frame, so the body is inspected too.
+  let body = "";
   try {
-    const body = await response.text();
-    return !body.includes("claude_cli_error");
+    body = await response.text();
   } catch (e) {
     console.warn(`[AutoPing] claude-cli ping drain failed: ${e.message}`);
-    return false;
+    return { ok: false, error: timeout.aborted ? `timed out after ${C.cliPingTimeoutMs / 1000}s` : e.message };
   }
+  // An aborted child ends its stream quietly, with no error frame: without this
+  // a hung `claude -p` was recorded as a ping that went out.
+  if (timeout.aborted) return { ok: false, error: `timed out after ${C.cliPingTimeoutMs / 1000}s` };
+  if (!response.ok || body.includes("claude_cli_error")) {
+    return { ok: false, error: describePingFailure(body, response.ok ? 0 : response.status) };
+  }
+  return true;
 }
 
 function buildCodexPingInput(text) {
@@ -314,9 +330,18 @@ export async function runCronPing(conn, provider, providerConfig, handler, cron,
 
   const pingConfig = { ...providerConfig, pingText: cron.text };
   const useCli = cron.via === "cli" && typeof handler.sendPingViaCli === "function";
-  const ok = useCli
-    ? await handler.sendPingViaCli(connection, pingConfig, proxyOptions, deps)
-    : await handler.sendPing(connection, pingConfig, proxyOptions, deps);
+  // A throw here (binary missing, spawn refused) used to escape to the tick's
+  // catch, which persists nothing — the card then said "No keepalive sent yet"
+  // forever. It is a failed attempt like any other.
+  let outcome;
+  try {
+    outcome = useCli
+      ? await handler.sendPingViaCli(connection, pingConfig, proxyOptions, deps)
+      : await handler.sendPing(connection, pingConfig, proxyOptions, deps);
+  } catch (e) {
+    outcome = { ok: false, error: describePingFailure(e?.message) };
+  }
+  const ok = outcome === true || outcome?.ok === true;
   // A local-credential provider reaches upstream through the binary whichever
   // branch ran, so reporting "api" for it would simply be false.
   const transport = useCli || providerConfig.localCredentials ? "cli" : "api";
@@ -326,13 +351,15 @@ export async function runCronPing(conn, provider, providerConfig, handler, cron,
 
   if (!ok) {
     state.failureCache[key] = Date.now();
+    const reason = outcome?.error || "";
     // Persisted so the dashboard can say the slot failed. Never as the fire
     // key: that would stop the retry the catch-up window exists to allow.
     await deps.updateProviderConnection(connection.id, {
       lastCronFailedAt: new Date().toISOString(),
       lastCronFailedFor: fireKey,
+      lastCronError: reason,
     });
-    console.warn(`[AutoPing] cron ${provider}:${connection.id}: ping failed (${expression}${lateNote})`);
+    console.warn(`[AutoPing] cron ${provider}:${connection.id}: ping failed (${expression}${lateNote})${reason ? `: ${reason}` : ""}`);
     return;
   }
 
@@ -340,6 +367,7 @@ export async function runCronPing(conn, provider, providerConfig, handler, cron,
   await deps.updateProviderConnection(connection.id, {
     lastCronFireKey: fireKey,
     lastCronPingAt: new Date().toISOString(),
+    lastCronError: null,
     lastPingAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });

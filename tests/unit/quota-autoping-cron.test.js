@@ -390,6 +390,31 @@ describe("claude-cli schedules (local credentials)", () => {
     expect(h.state.failureCache["cron:claude-cli:cli-1"]).toBeTruthy();
   });
 
+  it("persists why a ping failed, with the token scrubbed", async () => {
+    const body = "data: " + JSON.stringify({ error: { type: "claude_cli_error", message: "auth failed for sk-ant-oat01-SECRET123" } }) + "\n\n";
+    const h = cliHarness({ settings: cronOnly, body });
+    await runQuotaAutoPingTick(h.deps, h.state);
+    const patch = h.deps.updateProviderConnection.mock.calls[0][1];
+    expect(patch.lastCronError).toContain("auth failed");
+    expect(patch.lastCronError).not.toContain("SECRET123");
+  });
+
+  it("records a throwing executor as a failed attempt instead of nothing", async () => {
+    const h = cliHarness({ settings: cronOnly });
+    h.deps.getExecutor = vi.fn(() => ({ execute: async () => { throw new Error("spawn claude ENOENT"); } }));
+    await runQuotaAutoPingTick(h.deps, h.state);
+    const patch = h.deps.updateProviderConnection.mock.calls[0][1];
+    expect(patch.lastCronFailedAt).toBeTruthy();
+    expect(patch.lastCronError).toContain("ENOENT");
+    expect(patch.lastCronFireKey).toBeUndefined();
+  });
+
+  it("clears the stored reason once a ping succeeds", async () => {
+    const h = cliHarness({ settings: cronOnly });
+    await runQuotaAutoPingTick(h.deps, h.state);
+    expect(h.deps.updateProviderConnection.mock.calls[0][1].lastCronError).toBeNull();
+  });
+
   // Reactive mode reads a reset time out of a usage endpoint. claude-cli has
   // none, so the toggle must not fire a ping on every single tick.
   it("does not run reactive mode for a provider with no usage endpoint", async () => {

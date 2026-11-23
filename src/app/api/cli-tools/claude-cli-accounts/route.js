@@ -9,7 +9,7 @@ import {
   createProviderConnection,
   updateProviderConnection,
 } from "@/models";
-import { resolveClaudeBin } from "open-sse/executors/claude-cli.js";
+import { resolveClaudeBin, buildChildEnv } from "open-sse/executors/claude-cli.js";
 // One definition of "is this account signed in", shared with the boot-time
 // repair — it existed twice before, and the copy behind "Check" was wrong.
 import { accountSignedIn, credentialsFileExists, repairClaudeCliAccounts } from "@/shared/services/claudeCliAccountRepair";
@@ -57,14 +57,10 @@ function hostConfigDir() {
  * attached by directory, and the card would name the wrong subscription.
  */
 function buildProbeEnv(psd = {}) {
-  const env = {};
-  for (const key of ["PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SystemRoot", "TEMP", "TMP"]) {
-    if (process.env[key] !== undefined) env[key] = process.env[key];
-  }
-  if (psd.configDir) env.CLAUDE_CONFIG_DIR = psd.configDir;
-  else if (process.env.CLAUDE_CONFIG_DIR) env.CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
-  if (psd.oauthToken) env.CLAUDE_CODE_OAUTH_TOKEN = psd.oauthToken;
-  return env;
+  // Exactly what the routed path and the keepalive run under (proxy vars,
+  // retry cap, which of the server's own credentials are dropped). A private
+  // copy of the list drifted from it, so Check could pass where the ping failed.
+  return buildChildEnv(process.env, psd);
 }
 
 async function accountIdentity(bin, psd = {}, timeoutMs = 30_000) {
@@ -179,6 +175,7 @@ async function describe(connection) {
     keepalive: {
       lastSentAt: connection.lastCronPingAt || null,
       lastFailedAt: connection.lastCronFailedAt || null,
+      lastError: connection.lastCronError || "",
     },
   };
 }
@@ -380,6 +377,35 @@ export async function PATCH(request) {
     const target = connections.find((c) => c.id === body.id);
     if (!target) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
+    // Runs the same ping the scheduler sends, now, and records the outcome the
+    // same way, so a failing keepalive can be diagnosed without waiting for a slot.
+    if (body.ping === true) {
+      const [{ sendClaudeCliPing, describePingFailure }, { getExecutor }, { QUOTA_AUTOPING_CONFIG }] = await Promise.all([
+        import("@/shared/services/quotaAutoPing"),
+        import("open-sse/executors/index.js"),
+        import("@/shared/constants/config"),
+      ]);
+      let outcome;
+      try {
+        outcome = await sendClaudeCliPing(target, QUOTA_AUTOPING_CONFIG.providers[PROVIDER], {}, { getExecutor });
+      } catch (e) {
+        outcome = { ok: false, error: describePingFailure(e?.message) };
+      }
+      const ok = outcome === true;
+      const now = new Date().toISOString();
+      const updated = await updateProviderConnection(target.id, ok
+        ? { lastCronPingAt: now, lastCronError: null }
+        : { lastCronFailedAt: now, lastCronError: outcome?.error || "" });
+      return NextResponse.json({ account: await describe(updated), ok, error: ok ? "" : (outcome?.error || "") });
+    }
+
+    if (typeof body.name === "string") {
+      const name = body.name.trim().slice(0, 80);
+      if (!name) return NextResponse.json({ error: "Name cannot be empty" }, { status: 400 });
+      const updated = await updateProviderConnection(target.id, { name, displayName: name });
+      return NextResponse.json({ account: await describe(updated) });
+    }
+
     if (typeof body.scheduleOnly === "boolean") {
       const updated = await updateProviderConnection(target.id, {
         providerSpecificData: {
@@ -415,7 +441,7 @@ export async function PATCH(request) {
       ...(signedIn ? { isActive: true } : {}),
       testStatus: signedIn ? "active" : "pending",
       ...(identity?.email ? { email: identity.email } : {}),
-      existingProviderSpecificData: {
+      providerSpecificData: {
         ...target.providerSpecificData,
         ...(identity ? { identity } : {}),
       },

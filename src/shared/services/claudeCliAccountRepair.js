@@ -94,13 +94,18 @@ async function runRepair(connections) {
 
   const repaired = [];
   for (const connection of rows) {
+    // Check once wrote the account's providerSpecificData (token included) under
+    // this key, which the repo stores as a stray copy and /api/providers returns.
+    // `undefined` drops the key when the row is serialised.
+    if (connection.existingProviderSpecificData !== undefined) {
+      await updateProviderConnection(connection.id, { existingProviderSpecificData: undefined });
+    }
     if (connection.isActive !== false) continue;
     if (connection.testStatus !== "pending") continue;
     if (!await accountSignedIn(connection.providerSpecificData)) continue;
     await updateProviderConnection(connection.id, {
       isActive: true,
       testStatus: "active",
-      existingProviderSpecificData: connection.providerSpecificData,
     });
     repaired.push(connection.id);
   }

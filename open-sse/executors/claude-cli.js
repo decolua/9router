@@ -395,7 +395,7 @@ export function buildClaudeCliArgs({
  * stored provider key; the CLAUDE_CODE* nesting markers are excluded by omission,
  * which is also what stops Claude Code refusing to run inside another session.
  */
-function buildChildEnv(env = process.env, account = {}) {
+export function buildChildEnv(env = process.env, account = {}) {
   const child = {};
   for (const key of CLAUDE_CLI_ENV_ALLOWLIST) {
     if (env[key] !== undefined) child[key] = env[key];

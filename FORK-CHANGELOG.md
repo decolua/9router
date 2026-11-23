@@ -10,10 +10,10 @@ See [UPGRADE.md](UPGRADE.md) for how the fork is carried forward.
 
 ### Features
 
-#### Claude Code CLI 2.1.325, and a Jenkins job
+#### Claude Code CLI 2.1.330, and a Jenkins job
 
-The image's `CLAUDE_CODE_VERSION` moves from 2.1.281 to 2.1.325 (npm `latest`; the
-`stable` tag is 2.1.311). It was first moved to 2.1.301, then to 2.1.325 without
+The image's `CLAUDE_CODE_VERSION` moves from 2.1.281 to 2.1.330 (npm `latest`; the
+`stable` tag is 2.1.323). The image must be rebuilt for it to take effect. It was first moved to 2.1.301, then to 2.1.325 and 2.1.330 without
 re-measuring anything below. `Jenkinsfile` builds and pushes through the shared
 library with `deployToK8s: false`; the Kubernetes-Application tag stays manual.
 Not changed: `CLAUDE_CLI_VERSION` in `open-sse/providers/shared.js` (the plain
@@ -23,6 +23,25 @@ behaviour measured on 2.1.281 — neither re-checked against 2.1.301, except
 against, the 2.1.301 binary (the rate-limit schema is the same as on 2.1.295).
 
 ### Fixes
+
+#### Claude Code accounts: keepalive, rename, Infisical seed
+
+- A keepalive that threw (binary missing, spawn refused) was only logged, so the card
+  said "No keepalive sent yet" forever. It is now recorded as a failed attempt, and the
+  reason (capped, token-scrubbed) is stored in `lastCronError` and shown on the card.
+- Check ran the binary under its own copy of the environment. It now uses
+  `buildChildEnv`, the same one routed requests and keepalives use.
+- Check wrote the account's identity under `existingProviderSpecificData`, a key the
+  repo does not know: identity was never saved, and the token was stored a second time
+  in a stray field that `/api/providers` returned. It writes `providerSpecificData`
+  now, and the repair pass removes the stray key from existing rows.
+- Accounts can be renamed (pencil on the card, `PATCH {id, name}`), and a name can be
+  given when adding a token account.
+- The Infisical/env seed replaced `providerSpecificData` on every boot (dropping
+  `scheduleOnly`, `identity`) and forced the account active again. It now merges, leaves
+  `isActive`/name alone, and does not recreate an account that was deleted from the
+  dashboard (a hash of the credential is kept in the `kv` table, scope `claudeCliSeed`).
+  To seed the same credential again, add it from the card, or change the secret.
 
 #### The image's lazy runtime deps are held to their package.json ranges
 

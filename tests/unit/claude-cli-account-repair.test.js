@@ -25,6 +25,19 @@ beforeEach(() => {
   getProviderConnections.mockClear();
 });
 
+describe("stray existingProviderSpecificData", () => {
+  it("is scrubbed from a row, even an active one", async () => {
+    const row = broken({ isActive: true, testStatus: "active", existingProviderSpecificData: { oauthToken: "sk-ant-oat01-x" } });
+    expect(await repairClaudeCliAccounts([row])).toBe(false);
+    expect(updateProviderConnection).toHaveBeenCalledWith("cli-1", { existingProviderSpecificData: undefined });
+  });
+
+  it("leaves a clean row alone", async () => {
+    await repairClaudeCliAccounts([broken({ isActive: true, testStatus: "active" })]);
+    expect(updateProviderConnection).not.toHaveBeenCalled();
+  });
+});
+
 describe("accountSignedIn", () => {
   it("counts a token as signed in, with no file to look for", async () => {
     expect(await accountSignedIn({ oauthToken: "sk-ant-oat01-x" })).toBe(true);
