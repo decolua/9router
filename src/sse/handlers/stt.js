@@ -86,7 +86,7 @@ export async function handleStt(request) {
   let lastStatus = null;
 
   while (true) {
-    let credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    let credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { serviceKind: "stt" });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
