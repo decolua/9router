@@ -6,6 +6,7 @@ const fs = require("fs");
 const https = require("https");
 const net = require("net");
 const os = require("os");
+const { processRunsFrom } = require("./src/cli/utils/ownedProcess");
 
 // Poll until the server accepts TCP connections on port, or timeout — avoids blind fixed waits.
 function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
@@ -138,6 +139,8 @@ const MAX_PORT_ATTEMPTS = 10;
 // return as soon as the condition holds, so the common case costs nothing.
 const PROCESS_EXIT_WAIT_MS = 1000;
 const PORT_RELEASE_WAIT_MS = 3000;
+// This install's app directory (standalone Next server). Only a next-server running from it is ours.
+const APP_DIR = path.join(__dirname, "app");
 // Identifiers for killAllAppProcesses - only kill 9router specifically
 const PROCESS_IDENTIFIERS = [
   '9router'  // Only package name - avoid killing other apps
@@ -299,14 +302,15 @@ function killAllAppProcesses() {
           });
           const lines = output.split("\n").slice(1).filter(l => l.trim());
           lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing editors/grep/strace/cursor that just have "9router" in cmdline.
+            // Whitelist: real node process running 9router/cli.js, or OUR next-server.
+            // Avoids killing editors/grep/strace/cursor that just have "9router" in cmdline,
+            // and other Next.js apps (every Next server is titled "next-server").
             const cmd = line.toLowerCase();
+            const match = line.match(/^"(\d+)"/);
             const isAppProcess =
               (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              || (cmd.includes("next-server") && !!match && processRunsFrom(match[1], APP_DIR, { commandLine: line }));
             if (isAppProcess) {
-              const match = line.match(/^"(\d+)"/);
               if (match && match[1] && match[1] !== process.pid.toString()) {
                 pids.push(match[1]);
               }
@@ -325,15 +329,17 @@ function killAllAppProcesses() {
           const lines = output.split('\n');
 
           lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing grep/strace/editors/cursor that incidentally match "9router".
+            // Whitelist: real node process running 9router/cli.js, or OUR next-server.
+            // Avoids killing grep/strace/editors/cursor that incidentally match "9router",
+            // and other Next.js apps: every Next server is titled "next-server", so only one
+            // running from this install's app directory is ours.
             const cmd = line.toLowerCase();
+            const parts = line.trim().split(/\s+/);
+            const pid = parts[1];
             const isAppProcess =
               (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              || (cmd.includes("next-server") && processRunsFrom(pid, APP_DIR));
             if (isAppProcess) {
-              const parts = line.trim().split(/\s+/);
-              const pid = parts[1];
               if (pid && !isNaN(pid) && pid !== process.pid.toString()) {
                 pids.push(pid);
               }
