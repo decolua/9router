@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
-import { getModelsByProviderId } from "../../open-sse/config/providerModels.js";
+import { getModelUpstreamId, getModelsByProviderId } from "../../open-sse/config/providerModels.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getPricingForModel } from "../../open-sse/providers/pricing.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
@@ -23,6 +23,19 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     });
     expect(getThinkingLevels("codex", model)).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(getThinkingLevels("codex", `${model}(high)`)).toEqual(entry.thinkingLevels);
+  });
+
+  it("lists GPT 6.2 Sol and Astra with extended-context aliases", () => {
+    const models = getModelsByProviderId("codex");
+    const sol = models.find((item) => item.id === "gpt-6.2-sol");
+    const astra = models.find((item) => item.id === "gpt-6.2-astra");
+
+    expect(sol?.responsesLite).toBe(true);
+    expect(sol?.thinkingLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(astra).toMatchObject({ id: "gpt-6.2-astra", name: "GPT 6.2 Astra" });
+    expect(getModelUpstreamId("cx", "gpt-6.2-sol[1m]")).toBe("gpt-6.2-sol");
+    expect(getModelUpstreamId("cx", "gpt-6.2-astra[1m]")).toBe("gpt-6.2-astra");
+    expect(CODEX_CLI_VERSION).toBe("0.167.1");
   });
 
   it("lists gpt-6.1-terra as a Lite model with its 500k Codex window", () => {

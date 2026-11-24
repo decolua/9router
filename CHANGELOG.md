@@ -4,6 +4,10 @@
 - Made the heading reflect a required password change and exposed the password/API-key selector as an accessible control group.
 - Reworked the API-key model picker into readable, selectable model rows and widened the dialog so long model IDs and selected states remain visible.
 
+## WHAT'S ADDED?
+- Added Gemini 4 Hydrogen and its explicit thinking tiers to the Antigravity catalog, with matching capabilities, thinking-level handling, and pricing.
+- Added GPT 6.2 Sol and Astra to the Codex catalog, including extended-context aliases and a compatible Codex client identity.
+
 ## WHAT'S FIXED?
 - Allowed API-key sessions to read only the provider list, provider-node list, and per-connection model catalogs needed by the key editor; provider settings and all write routes remain restricted to provider managers.
 - Added clearer refresh, loading, empty, and search-no-match states to the model picker, with a retry action when the provider list cannot refresh.
