@@ -37,6 +37,12 @@ vi.mock("../../open-sse/handlers/chatCore/nonStreamingHandler.js", () => ({
   handleNonStreamingResponse: handleNonStreamingResponseMock,
 }));
 
+// chatCore reaches the web-search intercept (via sseToJsonHandler); stub it so this
+// routing test does not pull the intercept's credential/search service graph.
+vi.mock("../../open-sse/handlers/chatCore/webSearchIntercept.js", () => ({
+  applyWebSearchFallback: vi.fn(async ({ translatedResponse }) => translatedResponse),
+}));
+
 vi.mock("../../open-sse/utils/requestLogger.js", () => ({
   createRequestLogger: vi.fn(async () => ({
     logClientRawRequest: vi.fn(),
