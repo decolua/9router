@@ -1,3 +1,5 @@
+import { parseJsonCookiesToHeader } from "./webCookieAuth.js";
+
 function cookiePairsFromJson(raw) {
   if (!raw.startsWith("{")) return [];
   try {
@@ -18,6 +20,12 @@ function cookiePairsFromJson(raw) {
 export function normalizeGeminiCookieInput(raw, cookieName = "__Secure-1PSID") {
   const trimmed = raw.trim();
   if (!trimmed) return "";
+  try {
+    const headerFromArray = parseJsonCookiesToHeader(trimmed);
+    if (headerFromArray !== null) return headerFromArray;
+  } catch {
+    // Fall through to object-map / raw cookie parsing
+  }
   const jsonPairs = cookiePairsFromJson(trimmed);
   if (jsonPairs.length > 0) return jsonPairs.join("; ");
   return trimmed.includes("=") ? trimmed : `${cookieName}=${trimmed}`;
