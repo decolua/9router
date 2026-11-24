@@ -1,4 +1,4 @@
-// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, tinyfish
+// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, tinyfish, keenable
 // Returns normalized shape across all providers
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 
@@ -46,7 +46,10 @@ async function tryFetch(url, init, timeoutMs) {
 function truncate(text, max) {
   if (!text || typeof text !== "string") return text || "";
   if (!max || max <= 0) return text;
-  return text.length > max ? text.slice(0, max) : text;
+  // Count Unicode code points, not UTF-16 units, so a truncated emoji
+  // does not leave a lone surrogate in the result.
+  const chars = Array.from(text);
+  return chars.length > max ? chars.slice(0, max).join("") : text;
 }
 
 function parseJinaTitle(text) {
@@ -142,6 +145,9 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
     if (provider === "tinyfish") {
       return await runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, baseUrl: providerConfig?.baseUrl });
     }
+    if (provider === "keenable") {
+      return await runKeenable({ url, fmt, timeoutMs, maxCharacters, costPerQuery, startedAt, baseUrl: providerConfig?.baseUrl });
+    }
     return { success: false, status: 400, error: `Unsupported provider: ${provider}` };
   } catch (err) {
     log?.("fetch handler error:", err?.message || err);
@@ -172,6 +178,45 @@ async function runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPer
       ...buildData({ provider: "tinyfish", url, title: page.title, format: fmt, text, links: page.links,
         costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs }),
       metadata: { author: page.author || null, published_at: page.published_date || null, language: page.language || null },
+    },
+  };
+}
+
+// Keenable keyless public fetch: POST /v1/fetch/public with {urls, content.max_chars}
+// Response: { results: [{ url, title, content, truncated, total_chars, author?, published_at? }] }
+// GET /v1/fetch is deprecated and sunsets 1 Mar 2027.
+async function runKeenable({ url, fmt, timeoutMs, maxCharacters, costPerQuery, startedAt, baseUrl }) {
+  if (fmt !== "markdown") return { success: false, status: 400, error: `Unsupported Keenable format: ${fmt}` };
+  const body = { urls: [url] };
+  if (Number.isInteger(maxCharacters) && maxCharacters > 0) body.content = { max_chars: maxCharacters };
+  const upstreamStart = Date.now();
+  const r = await tryFetch(baseUrl || "https://api.keenable.ai/v1/fetch/public", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", "X-Keenable-Title": "9router" },
+    body: JSON.stringify(body),
+  }, timeoutMs);
+  if (!r.ok) return { success: false, status: r.timeout ? 504 : 502, error: r.error };
+  const upstreamMs = Date.now() - upstreamStart;
+  const { json, text: responseText } = await readJsonOrText(r.res);
+  if (!r.res.ok) {
+    const error = json?.message || json?.error || responseText?.slice(0, 500) || `Keenable error: ${r.res.status}`;
+    return { success: false, status: r.res.status, error };
+  }
+  const page = Array.isArray(json?.results) ? json.results[0] : null;
+  if (page?.error) {
+    const err = page.error;
+    return { success: false, status: err.status || 502, error: err.message || err.error || "Keenable fetch failed" };
+  }
+  if (!page || typeof page.content !== "string") {
+    return { success: false, status: 502, error: "Keenable returned no extractable content" };
+  }
+  const text = truncate(page.content, maxCharacters);
+  return {
+    success: true,
+    data: {
+      ...buildData({ provider: "keenable", url, title: page.title, format: fmt, text,
+        costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs }),
+      metadata: { author: page.author || null, published_at: page.published_at || null, language: null },
     },
   };
 }
