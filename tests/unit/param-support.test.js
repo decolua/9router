@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import { stripUnsupportedParams } from "../../open-sse/translator/concerns/paramSupport.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
+import { getExecutor } from "../../open-sse/executors/index.js";
 
 describe("stripUnsupportedParams", () => {
   it("flattens Cloudflare AI OpenAI content-part arrays", () => {
@@ -183,5 +184,40 @@ describe("stripUnsupportedParams", () => {
     stripUnsupportedParams("groq", "qwen/qwen3.6-27b", body);
 
     expect(body).toEqual({ max_tokens: 50 });
+  });
+
+  it("renames max_tokens for azure reasoning deployments", () => {
+    for (const model of [
+      "gpt-5", "gpt-5-mini", "gpt-5.6-luna", "GPT-5.6-SOL",
+      "gpt-6", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol", "my-gpt-6.1-deploy",
+      "o1", "o1-preview", "o3", "o3-mini", "o4-mini",
+    ]) {
+      const body = { max_tokens: 50 };
+      stripUnsupportedParams("azure", model, body);
+      expect(body, model).toEqual({ max_completion_tokens: 50 });
+    }
+  });
+
+  it("keeps an explicit max_completion_tokens when both are sent to azure", () => {
+    const body = { max_tokens: 50, max_completion_tokens: 80 };
+
+    stripUnsupportedParams("azure", "gpt-6.1-sol", body);
+
+    expect(body).toEqual({ max_completion_tokens: 80 });
+  });
+
+  it("leaves max_tokens untouched for non-reasoning azure deployments", () => {
+    for (const model of ["gpt-4o", "gpt-4o-mini", "gpt-4.1-nano", "gpt-oss-120b", "o2-something", "demo3-chat", "Nemotron-3-Super-120B-A12B-BF16"]) {
+      const body = { max_tokens: 50 };
+      stripUnsupportedParams("azure", model, body);
+      expect(body, model).toEqual({ max_tokens: 50 });
+    }
+  });
+
+  it("applies param rules in the azure executor", () => {
+    const executor = getExecutor("azure");
+
+    expect(executor.transformRequest("gpt-6-luna", { max_tokens: 50 }, false, {})).toEqual({ max_completion_tokens: 50 });
+    expect(executor.transformRequest("gpt-4o", { max_tokens: 50 }, false, {})).toEqual({ max_tokens: 50 });
   });
 });
