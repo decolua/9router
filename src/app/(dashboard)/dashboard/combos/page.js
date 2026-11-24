@@ -262,6 +262,21 @@ export default function CombosPage() {
     }
   };
 
+  const handleRefreshIntelligenceCombo = async (id) => {
+    try {
+      const res = await fetch(`/api/combos/${id}/refresh`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to refresh intelligence combo");
+        return;
+      }
+      await fetchData();
+    } catch (error) {
+      console.log("Error refreshing intelligence combo:", error);
+      alert("Failed to refresh intelligence combo");
+    }
+  };
+
   const pruneStrategiesForNames = (names, base = comboStrategies) => {
     const updated = { ...base };
     for (const name of names) delete updated[name];
@@ -568,6 +583,7 @@ export default function CombosPage() {
                   onCopy={copy}
                   onEdit={() => setEditingCombo(combo)}
                   onDelete={() => handleDelete(combo.id)}
+                  onRefreshIntelligence={() => handleRefreshIntelligenceCombo(combo.id)}
                   strategy={comboStrategies[combo.name] || {}}
                   onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
                   selected={selectedIds.includes(combo.id)}
@@ -633,33 +649,11 @@ const fmtK = (n) => {
   return `${Math.round(n / 1000)}k`;
 };
 
-function getRouterModelStatus(routerModel, activeProviders) {
-  const effectiveModel = (typeof routerModel === "string" && routerModel.trim())
-    ? routerModel.trim()
-    : "oc/jev-1.13-free";
-  const slashIdx = effectiveModel.indexOf("/");
-  const prefix = slashIdx !== -1 ? effectiveModel.slice(0, slashIdx) : effectiveModel;
-  const providerId = resolveProviderId(prefix);
-  const providerDef = AI_PROVIDERS[providerId];
-  const isNoAuth = !!providerDef?.noAuth;
-
-  if (isNoAuth) {
-    return { ready: true, label: "Ready (Free)", providerId };
-  }
-
-  const isConnected = (activeProviders || []).some((c) => c.provider === providerId && c.isActive !== false);
-  if (isConnected) {
-    return { ready: true, label: "Connected", providerId };
-  }
-
-  return { ready: false, label: "Not configured", providerId };
-}
-
-function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
+function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, onRefreshIntelligence, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
-  const [showRouterSelect, setShowRouterSelect] = useState(false);
-  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
+  const intelligence = combo.config?.type === "intelligence" ? combo.config : null;
   const judge = strategy.judgeModel || "";
   const routerModel = strategy.routerModel || "";
   const isFusion = current === "fusion";
@@ -712,6 +706,16 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                 <span>ctx {fmtK(comboCaps.contextWindow)}</span>
                 <span className="opacity-40">·</span>
                 <span>max {fmtK(comboCaps.maxOutput)}</span>
+              </div>
+            )}
+            {intelligence && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-text-muted">
+                <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
+                  <span className="material-symbols-outlined text-[12px]">psychology</span>
+                  Intelligence {intelligence.minScore}–{intelligence.maxScore}
+                </span>
+                <span>{intelligence.refreshSchedule === "manual" ? "Manual refresh" : `Refresh: ${intelligence.refreshSchedule}`}</span>
+                {intelligence.lastRefreshedAt && <span>· {new Date(intelligence.lastRefreshedAt).toLocaleString()}</span>}
               </div>
             )}
             {/* Fusion: judge picker (Auto = first model) */}
@@ -802,6 +806,20 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           </div>
 
           <div className="grid grid-cols-3 gap-1 sm:flex">
+            {intelligence && (
+              <button
+                onClick={async () => {
+                  setRefreshing(true);
+                  try { await onRefreshIntelligence?.(); } finally { setRefreshing(false); }
+                }}
+                disabled={refreshing}
+                className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary disabled:opacity-50 dark:hover:bg-white/5"
+                title="Refresh models from Artificial Analysis"
+              >
+                <span className="material-symbols-outlined text-[18px]">{refreshing ? "progress_activity" : "refresh"}</span>
+                <span className="text-[10px] leading-tight">Refresh</span>
+              </button>
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
@@ -1181,6 +1199,13 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
+  const initialIntelligenceConfig = combo?.config?.type === "intelligence" ? combo.config : null;
+  const [comboType, setComboType] = useState(initialIntelligenceConfig ? "intelligence" : "manual");
+  const [minScore, setMinScore] = useState(initialIntelligenceConfig?.minScore ?? "");
+  const [maxScore, setMaxScore] = useState(initialIntelligenceConfig?.maxScore ?? "");
+  const [modelLimit, setModelLimit] = useState(initialIntelligenceConfig?.limit ?? "");
+  const [refreshSchedule, setRefreshSchedule] = useState(initialIntelligenceConfig?.refreshSchedule || "daily");
+  const [excludeKeywords, setExcludeKeywords] = useState((initialIntelligenceConfig?.excludeKeywords || []).join(", "));
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -1270,8 +1295,29 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
   const handleSave = async () => {
     if (!validateName(name)) return;
+    if (comboType === "intelligence") {
+      const minBlank = minScore === "" || minScore == null;
+      const maxBlank = maxScore === "" || maxScore == null;
+      const min = Number(minScore);
+      const max = Number(maxScore);
+      const limit = modelLimit === "" ? null : Number(modelLimit);
+      if (minBlank || maxBlank || !Number.isFinite(min) || !Number.isFinite(max) || min > max || (limit != null && (!Number.isInteger(limit) || limit < 1 || limit > 50))) {
+        setNameError("Set a valid score range and a model limit from 1 to 50");
+        return;
+      }
+    }
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    const config = comboType === "intelligence"
+      ? {
+          type: "intelligence",
+          minScore: Number(minScore),
+          maxScore: Number(maxScore),
+          limit: modelLimit === "" ? null : Number(modelLimit),
+          excludeKeywords: excludeKeywords.split(",").map((k) => k.trim()).filter(Boolean),
+          refreshSchedule,
+        }
+      : null;
+    await onSave({ name: name.trim(), models, config });
     setSaving(false);
   };
 
@@ -1299,7 +1345,51 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             </p>
           </div>
 
+          <div className="rounded-lg border border-black/10 p-3 dark:border-white/10">
+            <label className="text-sm font-medium mb-1.5 block">Combo Type</label>
+            <select
+              value={comboType}
+              onChange={(e) => setComboType(e.target.value)}
+              className="w-full rounded border border-black/10 bg-white px-2 py-1.5 text-sm text-text-main outline-none focus:border-primary dark:border-white/10 dark:bg-black/20"
+            >
+              <option value="manual">Manual model list</option>
+              <option value="intelligence">Intelligence range — Artificial Analysis</option>
+            </select>
+            {comboType === "intelligence" && (
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Input label="From score" type="number" min="0" step="0.01" value={minScore} onChange={(e) => setMinScore(e.target.value)} placeholder="e.g. 60" />
+                <Input label="To score" type="number" min="0" step="0.01" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} placeholder="e.g. 75" />
+                <Input label="Maximum models" type="number" min="1" max="50" step="1" value={modelLimit} onChange={(e) => setModelLimit(e.target.value)} placeholder="No limit" />
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-text-main">Refresh</label>
+                  <select value={refreshSchedule} onChange={(e) => setRefreshSchedule(e.target.value)}
+                    className="w-full rounded border border-black/10 bg-white px-2 py-2.5 text-sm text-text-main outline-none focus:border-primary dark:border-white/10 dark:bg-black/20">
+                    <option value="manual">Manual only</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="6hours">Every 6 hours</option>
+                    <option value="12hours">Every 12 hours</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <label className="text-sm font-medium text-text-main">Exclude keywords</label>
+                  <input
+                    type="text"
+                    value={excludeKeywords}
+                    onChange={(e) => setExcludeKeywords(e.target.value)}
+                    placeholder="e.g. [1m], agentic, thinking"
+                    className="w-full rounded border border-black/10 bg-white px-2 py-2.5 text-sm text-text-main outline-none focus:border-primary dark:border-white/10 dark:bg-black/20"
+                  />
+                  <p className="text-[11px] text-text-muted">Comma-separated. Provider models whose name contains any of these are skipped (case-insensitive).</p>
+                </div>
+                <p className="sm:col-span-2 text-[11px] text-text-muted">Uses the current Artificial Analysis intelligence index and only keeps models currently available through your configured providers. Saving refreshes the list immediately.</p>
+              </div>
+            )}
+          </div>
+
           {/* Models */}
+          {comboType === "manual" ? (
           <div>
             <label className="text-sm font-medium mb-1.5 block">Models</label>
 
@@ -1344,6 +1434,12 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               Add Model
             </button>
           </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-primary/30 bg-primary/[0.03] px-3 py-2.5 text-xs text-text-muted">
+              <span className="font-medium text-text-main">Selected models</span> are calculated from the leaderboard when you save or refresh this combo.
+              {models.length > 0 && <span className="block mt-1 font-mono">Current: {models.join(", ")}</span>}
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex flex-col gap-2 pt-1 sm:flex-row">
