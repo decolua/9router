@@ -201,7 +201,8 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
   // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
-  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") },
+  // ponytail: boundary guard regex; upgrade if prompts require structured markdown/code-block tokenizer
+  { from: /(?<![\/\\\w.~@:-])opencode(?![\/\\:\-@\w]|(?:\.[a-zA-Z0-9_\-]))/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") },
   // OpenClaw system-prompt header triggers a fake 429 RESOURCE_EXHAUSTED upstream
   { from: /You are a personal assistant running inside OpenClaw\./gi, to: "You are a personal assistant running inside Antigravity." }
 ];
