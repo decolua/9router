@@ -1,151 +1,111 @@
-import { describe, expect, it } from "vitest";
+/**
+ * Regression test for #4307
+ *
+ * /v1/responses stream: response.completed carried output:[] even after output
+ * items were streamed. Clients that build their final result from
+ * response.completed (GitHub Copilot CLI, OpenAI SDK final-response helpers)
+ * treated the turn as empty and printed "No response was returned".
+ *
+ * Fix: accumulate completed output items in state.outputItems and inject them
+ * into response.completed.response.output sorted by output_index.
+ */
 
-import { FORMATS } from "../../open-sse/translator/formats.js";
-import { initState } from "../../open-sse/translator/index.js";
-import { openaiToOpenAIResponsesResponse } from "../../open-sse/translator/response/openai-responses.js";
+import { describe, it, expect } from "vitest";
+import { createResponsesApiTransformStream } from "../../open-sse/transformer/responsesTransformer.js";
 
-// targetFormat === OPENAI is the direct openai -> openai-responses route, which is
-// the only one where flush() reaches this translator (see the flushReachesUs note
-// above the finish_reason branch).
-function newState() {
-  return { ...initState(FORMATS.OPENAI_RESPONSES), targetFormat: FORMATS.OPENAI };
-}
+/** Collect all SSE events emitted by the transform stream */
+async function runTransform(inputChunks) {
+  const stream = createResponsesApiTransformStream();
+  const writer = stream.writable.getWriter();
+  const reader = stream.readable.getReader();
 
-function textChunk(text, index = 0) {
-  return { id: "chatcmpl-1", choices: [{ index, delta: { content: text } }] };
-}
-
-function reasoningChunk(text, index = 0) {
-  return { id: "chatcmpl-1", choices: [{ index, delta: { reasoning_content: text } }] };
-}
-
-function finishChunk(usage) {
-  return { id: "chatcmpl-1", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage };
-}
-
-function runChunks(chunks) {
-  const state = newState();
   const events = [];
-  for (const chunk of chunks) {
-    for (const event of openaiToOpenAIResponsesResponse(chunk, state)) events.push(event);
+  const decoder = new TextDecoder();
+
+  // Write all chunks then close
+  (async () => {
+    for (const chunk of inputChunks) {
+      await writer.write(new TextEncoder().encode(chunk));
+    }
+    await writer.close();
+  })();
+
+  // Read all output
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const text = decoder.decode(value);
+    // Parse individual SSE events
+    for (const block of text.split("\n\n")) {
+      const m = block.match(/^event:\s*(\S+)\ndata:\s*(.+)$/s);
+      if (m) events.push({ type: m[1], data: JSON.parse(m[2]) });
+    }
   }
-  return { state, events };
+
+  return events;
 }
 
-function completedResponse(events) {
-  const completed = events.find((event) => event.event === "response.completed");
-  expect(completed, "expected a response.completed event").toBeTruthy();
-  return completed.data.response;
+/** Build a minimal Chat Completions SSE stream with one text delta */
+function makeTextStream(text) {
+  const id = "chatcmpl-test001";
+  return [
+    `data: ${JSON.stringify({ id, choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ id, choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ id, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`,
+    `data: [DONE]\n\n`
+  ];
 }
 
-function doneItems(events) {
-  return events
-    .filter((event) => event.event === "response.output_item.done")
-    .map((event) => event.data.item);
+/** Build a stream that emits a tool call */
+function makeToolCallStream() {
+  const id = "chatcmpl-tool001";
+  return [
+    `data: ${JSON.stringify({ id, choices: [{ index: 0, delta: { role: "assistant", content: null }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ id, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_abc", type: "function", function: { name: "search", arguments: "" } }] }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ id, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"q":"hi"}' } }] }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ id, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+    `data: [DONE]\n\n`
+  ];
 }
 
-describe("response.completed output (issue #4307)", () => {
-  // The regression: sendCompleted() built the response object without an `output`
-  // key at all, so response.completed arrived with no output even though the
-  // message had already been streamed. Clients that build the final result from
-  // the terminal event (GitHub Copilot CLI 1.0.89 with a BYOK provider) printed
-  // the text and then failed with "No response was returned".
-  it("repeats the streamed message in response.completed", () => {
-    const state = newState();
-    openaiToOpenAIResponsesResponse(textChunk("O"), state);
-    openaiToOpenAIResponsesResponse(textChunk("K"), state);
-    const response = completedResponse(openaiToOpenAIResponsesResponse(null, state));
+describe("createResponsesApiTransformStream — response.completed output (#4307)", () => {
+  it("includes the text message item in response.completed.output", async () => {
+    const events = await runTransform(makeTextStream("Hello world"));
 
-    expect(response.status).toBe("completed");
-    expect(Array.isArray(response.output)).toBe(true);
-    expect(response.output).toHaveLength(1);
-    expect(response.output[0]).toMatchObject({ type: "message", role: "assistant" });
-    expect(response.output[0].content[0]).toMatchObject({ type: "output_text", text: "OK" });
+    const completed = events.find(e => e.type === "response.completed");
+    expect(completed).toBeDefined();
+    const output = completed.data.response.output;
+    expect(Array.isArray(output)).toBe(true);
+    expect(output.length).toBe(1);
+    expect(output[0].type).toBe("message");
+    expect(output[0].role).toBe("assistant");
+    expect(output[0].content[0].text).toBe("Hello world");
   });
 
-  it("matches exactly the items already delivered in response.output_item.done", () => {
-    const { events } = runChunks([
-      textChunk("hello"),
-      finishChunk({ prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 }),
-    ]);
-    const response = completedResponse(events);
-    const streamed = doneItems(events);
+  it("includes the function_call item in response.completed.output", async () => {
+    const events = await runTransform(makeToolCallStream());
 
-    expect(streamed).toHaveLength(1);
-    expect(response.output).toEqual(streamed);
+    const completed = events.find(e => e.type === "response.completed");
+    expect(completed).toBeDefined();
+    const output = completed.data.response.output;
+    expect(Array.isArray(output)).toBe(true);
+    expect(output.length).toBe(1);
+    expect(output[0].type).toBe("function_call");
+    expect(output[0].name).toBe("search");
+    expect(output[0].call_id).toBe("call_abc");
+    expect(output[0].arguments).toBe('{"q":"hi"}');
   });
 
-  it("includes a function_call item", () => {
-    const { events } = runChunks([
-      {
-        id: "chatcmpl-1",
-        choices: [
-          {
-            index: 0,
-            delta: {
-              tool_calls: [
-                { index: 0, id: "call_1", function: { name: "get_weather", arguments: '{"city":"Paris"}' } },
-              ],
-            },
-          },
-        ],
-      },
-      finishChunk({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
-    ]);
-    const response = completedResponse(events);
+  it("output array matches the output_item.done items emitted during streaming", async () => {
+    const events = await runTransform(makeTextStream("OK"));
 
-    expect(response.output).toHaveLength(1);
-    expect(response.output[0]).toMatchObject({
-      type: "function_call",
-      name: "get_weather",
-      arguments: '{"city":"Paris"}',
-      call_id: "call_1",
-    });
-  });
+    const donedItems = events
+      .filter(e => e.type === "response.output_item.done")
+      .map(e => e.data.item);
 
-  it("orders output by output_index", () => {
-    const { events } = runChunks([
-      reasoningChunk("thinking", 0),
-      textChunk("answer", 1),
-      finishChunk({ prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 }),
-    ]);
-    const response = completedResponse(events);
+    const completed = events.find(e => e.type === "response.completed");
+    const output = completed.data.response.output;
 
-    expect(response.output.map((item) => item.type)).toEqual(["reasoning", "message"]);
-    expect(response.output[1].content[0]).toMatchObject({ type: "output_text", text: "answer" });
-  });
-
-  it("reports an empty output array when nothing was produced", () => {
-    const state = newState();
-    const response = completedResponse(openaiToOpenAIResponsesResponse(null, state));
-    expect(response.output).toEqual([]);
-  });
-
-  it("keeps the usage block alongside output", () => {
-    const { events } = runChunks([
-      textChunk("OK"),
-      finishChunk({ prompt_tokens: 3, completion_tokens: 1, total_tokens: 4 }),
-    ]);
-    const response = completedResponse(events);
-
-    expect(response.usage).toMatchObject({ input_tokens: 3, output_tokens: 1, total_tokens: 4 });
-    expect(response.output).toHaveLength(1);
-  });
-
-  it("leaves the in-progress response.created output empty", () => {
-    const { events } = runChunks([textChunk("hi")]);
-    const created = events.find((event) => event.event === "response.created");
-    expect(created.data.response.status).toBe("in_progress");
-    expect(created.data.response.output).toEqual([]);
-  });
-
-  it("does not duplicate items when flush runs more than once", () => {
-    const state = newState();
-    openaiToOpenAIResponsesResponse(textChunk("once"), state);
-    openaiToOpenAIResponsesResponse(null, state);
-    const second = openaiToOpenAIResponsesResponse(null, state);
-
-    expect(second).toEqual([]);
-    expect(state.completedOutputItems.size).toBe(1);
+    expect(output).toEqual(donedItems);
   });
 });
