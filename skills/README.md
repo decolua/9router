@@ -17,6 +17,7 @@ Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **co
 | Embeddings | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-embeddings/SKILL.md |
 | Web search | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-search/SKILL.md |
 | Web fetch (URL → markdown) | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-fetch/SKILL.md |
+| Usage & quota (spend, tokens, quota left) | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-usage/SKILL.md |
 
 ## How to use
 
