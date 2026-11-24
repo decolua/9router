@@ -47,6 +47,7 @@ const PROVIDERS = {
   qoder,
   "qoder-cn": qoderCn,
   "qwenwork": qwenwork,
+  "qwenwork-enterprise": qwenworkEnterprise,
   github,
   kiro,
   cursor,

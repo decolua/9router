@@ -608,6 +608,7 @@ export function parseQuotaData(provider, data) {
 
       case "qoder":
       case "qwenwork":
+      case "qwenwork-enterprise":
         // Qoder ships a `user` quota, an optional `organization` quota and —
         // when the account has redeemed a free-credit promo — an `addOn`
         // bucket. All share the shape {total, used, remaining, unit, resetAt}.
