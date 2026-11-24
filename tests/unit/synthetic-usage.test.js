@@ -43,8 +43,8 @@ describe("getUsageForProvider(synthetic)", () => {
     expect(url).toBe(QUOTAS_URL);
     expect(opts.headers.Authorization).toBe("Bearer syn_key");
     expect(out.plan).toBe("Synthetic");
-    expect(out.quotas.Requests).toMatchObject({
-      used: 35, total: 135, remaining: 100, percentage: 26, resetAt: "2026-12-01T00:00:00.000Z",
+    expect(out.quotas.Subscription).toMatchObject({
+      used: 35, total: 135, remainingPercentage: 74, resetAt: "2026-12-01T00:00:00.000Z",
     });
   });
 
@@ -61,20 +61,20 @@ describe("getUsageForProvider(synthetic)", () => {
     expect(out.message).toMatch(/\(500\)/);
   });
 
-  it("does not report unlimited when the limit is missing or zero", async () => {
+  it("reports no quota rows when the limit is missing or zero", async () => {
     for (const body of [{ subscription: {} }, { subscription: { limit: 0, requests: 0 } }]) {
       vi.mocked(proxyAwareFetch).mockResolvedValue(jsonResponse(body));
       const out = await getUsageForProvider({ provider: "synthetic", apiKey: "k" });
-      expect(out.quotas).toBeUndefined();
-      expect(out.message).toMatch(/no synthetic subscription quota/i);
+      expect(out.quotas).toEqual({});
+      expect(out.message).toMatch(/no quota data/i);
     }
   });
 
   it("handles a body without a subscription object", async () => {
     vi.mocked(proxyAwareFetch).mockResolvedValue(jsonResponse({ unexpected: true }));
     const out = await getUsageForProvider({ provider: "synthetic", apiKey: "k" });
-    expect(out.quotas).toBeUndefined();
-    expect(out.message).toMatch(/no subscription quota/i);
+    expect(out.quotas).toEqual({});
+    expect(out.message).toMatch(/no quota data/i);
   });
 
   it("returns a plan-tagged message when the fetch throws", async () => {

@@ -5,6 +5,7 @@ import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
@@ -15,7 +16,38 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
+
+/**
+ * Fill in what the provider omitted, in the field names the pickers already read.
+ *
+ * Live catalogs are inconsistent: commandcode reports isVL / isReasoning /
+ * contextLength, cursor and zed report almost nothing. Consumers that seed a
+ * model's capabilities (CLI-tool cards) otherwise fall back to a text-only,
+ * non-reasoning default for every live model. The local registry already knows
+ * most of it, so only fill gaps and never overwrite what the provider said.
+ */
+const withModelCapabilities = (provider, models) => {
+  if (!Array.isArray(models)) return [];
+
+  return models.map((model) => {
+    const id = model?.id || model?.slug || model?.model;
+    if (!id) return model;
+
+    const caps = getCapabilitiesForModel(provider, id);
+    const levels = getThinkingLevels(provider, id);
+
+    return {
+      ...model,
+      contextLength: model.contextLength ?? caps.contextWindow,
+      isVL: model.isVL ?? caps.vision,
+      isReasoning: model.isReasoning ?? caps.reasoning,
+      ...(Array.isArray(levels) && levels.length > 0 ? { thinking_levels: levels } : {}),
+    };
+  });
+};
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -226,13 +258,30 @@ const PROVIDER_MODELS_CONFIG = {
     })
   },
   antigravity: {
-    url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
+    // Live per-account catalog. fetchAvailableModels returns an object map
+    // { models: { "<id>": { displayName, maxTokens, ... } } }.
+    // Requires the Hub client fingerprint headers, otherwise Google returns 403.
+    url: `${ANTIGRAVITY_IDE_BASE_URL}/v1internal:fetchAvailableModels`,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+      "X-Client-Name": "antigravity",
+      "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
+    },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     body: {},
-    parseResponse: (data) => data.models || []
+    parseResponse: (data) => Object.entries(data?.models || {})
+      .filter(([id, info]) => !info?.isInternal && !id.includes("-disabled") && !id.startsWith("tab_"))
+      .map(([id, info]) => ({
+        id,
+        name: info?.displayName || id,
+        contextLength: info?.maxTokens,
+        maxOutputTokens: info?.maxOutputTokens,
+        isVL: !!info?.supportsImages,
+        isReasoning: !!info?.supportsThinking,
+      }))
   },
   github: {
     url: "https://api.githubcopilot.com/models",
@@ -600,7 +649,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models
+        models: withModelCapabilities(connection.provider, models)
       });
     }
 
@@ -641,7 +690,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models
+        models: withModelCapabilities(connection.provider, models)
       });
     }
 
@@ -662,7 +711,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models: result.models,
+        models: withModelCapabilities(connection.provider, result.models),
         ...(result.warning ? { warning: result.warning } : {})
       });
     }
@@ -712,7 +761,7 @@ export async function GET(request, { params }) {
     return NextResponse.json({
       provider: connection.provider,
       connectionId: connection.id,
-      models
+      models: withModelCapabilities(connection.provider, models)
     });
   } catch (error) {
     console.log("Error fetching provider models:", error);

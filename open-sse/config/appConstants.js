@@ -11,11 +11,11 @@ export const NOUS_ATTRIBUTION = {
   tags: ["product=9router", "client=9router", "user=9router"],
 };
 
-// === Gemini CLI === derive từ registry gemini-cli.transport
+// === Gemini CLI === derived from registry gemini-cli.transport
 export const GEMINI_CLI_VERSION = PROVIDERS["gemini-cli"]?.cliVersion;
 export const GEMINI_CLI_API_CLIENT = PROVIDERS["gemini-cli"]?.apiClient;
 
-// === Codex CLI === derive từ registry codex.transport
+// === Codex CLI === derived from registry codex.transport
 export const CODEX_CLI_VERSION = PROVIDERS["codex"]?.cliVersion;
 
 // Map Node arch to Gemini CLI arch string (x64/x86/arm64/...)
@@ -30,7 +30,7 @@ export function geminiCLIUserAgent(model = "unknown") {
 }
 
 // === GitHub Copilot ===
-// Derive từ registry github.transport.copilot
+// Derived from registry github.transport.copilot
 const _ghCopilot = PROVIDERS.github?.copilot || {};
 export const GITHUB_COPILOT = {
   VSCODE_VERSION: _ghCopilot.vscodeVersion,
@@ -186,17 +186,30 @@ export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official C
 // makes the backend flag the request and answer 429 Quota Exhausted.
 export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: "You are a Claude agent, built on Anthropic's Claude Agent SDK.", to: "" },
+  // Hermes Agent lines that each get a fake 429 RESOURCE_EXHAUSTED from Antigravity (found by
+  // bisecting a real Hermes system prompt, 2026-11-18). Whole lines go; the default SOUL line
+  // keeps a neutral identity. Must run before the generic Hermes identity rule below.
+  { from: /^[ \t]*You are Hermes Agent, built by Nous Research\. Be direct:[^\n]*/gm, to: "You are an AI assistant." },
+  { from: /^[ \t]*<!-- End Hermes runtime environment -->[^\n]*(?:\r?\n)?/gm, to: "" },
+  { from: /^[ \t]*# Google model operational directives[^\n]*(?:\r?\n)?/gm, to: "" },
+  { from: /^[ \t]*If a tool, install, or network call fails and blocks the real path[^\n]*(?:\r?\n)?/gm, to: "" },
+  { from: /^[ \t]*When the user asks you to build, run, or verify something, the deliverable is a working artifact[^\n]*(?:\r?\n)?/gm, to: "" },
+  { from: /^[ \t]*For help with Hermes Agent itself[^\n]*(?:\r?\n)?/gm, to: "" },
+  { from: /^[ \t]*Mid-turn, the user can steer you: Hermes delivers their message[^\n]*(?:\r?\n)?/gm, to: "" },
   { from: /You are Hermes(?: Agent)?(?:,\s*(?:an intelligent AI assistant|an AI assistant|an AI agent))?(?:,?\s*(?:built|created)\s+by\s+Nous Research)?\./gi, to: "You are an AI assistant." },
   // Claude Code prepends this line to its system prompt. The Claude-format translator strips it,
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
   // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
-  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") }
+  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") },
+  // OpenClaw system-prompt header triggers a fake 429 RESOURCE_EXHAUSTED upstream
+  { from: /You are a personal assistant running inside OpenClaw\./gi, to: "You are a personal assistant running inside Antigravity." }
 ];
 
-export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
+// Official Antigravity 2.33.0 identity, sent ahead of every generation request.
+export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity Agent, a powerful agentic AI coding assistant designed by the Google engineering team.\nYou are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\nThe USER will send you requests, which you must always prioritize addressing. User requests are enclosed within <USER_REQUEST> tags.";
 
-// Derive từ registry oauth.refreshLeadMs
+// Derived from registry oauth.refreshLeadMs
 export const REFRESH_LEAD_MS = Object.fromEntries(
   Object.entries(PROVIDER_OAUTH).filter(([, o]) => o.refreshLeadMs).map(([id, o]) => [id, o.refreshLeadMs])
 );

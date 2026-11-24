@@ -96,6 +96,10 @@ async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions
     name: credentials.displayName || "",
     email: credentials.email || "",
     machineId: psd.machineId || "",
+  }, {
+    // Qoder's upload signer expects the ASCII decimal multipart length, while
+    // the request body and integrity headers must continue to describe `body`.
+    signatureBody: Buffer.from(String(body.length), "ascii"),
   });
   const headers = {
     ...cosyHeaders,
