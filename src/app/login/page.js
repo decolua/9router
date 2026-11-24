@@ -18,6 +18,8 @@ export default function LoginPage() {
   const [samlLoginLabel, setSamlLoginLabel] = useState("Sign in with SAML SSO");
   const [mustChange, setMustChange] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -82,6 +84,12 @@ export default function LoginPage() {
           setMustChange(true);
           return;
         }
+        // Password accepted but a second factor is still owed — no session yet.
+        if (data.mfaRequired) {
+          setMfaRequired(true);
+          setPassword("");
+          return;
+        }
         window.location.assign("/dashboard");
       } else {
         const data = await res.json();
@@ -112,6 +120,39 @@ export default function LoginPage() {
       } else {
         const data = await res.json();
         setError(data.error || "Failed to set password");
+      }
+    } catch (err) {
+      setError("An error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Login step 2: exchange a TOTP or backup code for the real session.
+  const handleMfaSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/auth/mfa/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: mfaCode }),
+      });
+
+      if (res.ok) {
+        window.location.assign("/dashboard");
+        return;
+      }
+
+      const data = await res.json();
+      setError(data.error || "Invalid code");
+      setMfaCode("");
+      if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
+      // Pending window expired — fall back to step 1 rather than stranding the user.
+      if (res.status === 401 && /expired/i.test(data.error || "")) {
+        setMfaRequired(false);
       }
     } catch (err) {
       setError("An error occurred. Please try again.");
@@ -157,7 +198,9 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
           <p className="text-text-muted">
-            {samlAvailable
+            {mfaRequired
+              ? "Enter the code from your authenticator app"
+              : samlAvailable
               ? "Sign in with SAML 2.0 Single Sign-On"
               : oidcAvailable
               ? "Sign in with your OIDC provider to access the dashboard"
@@ -166,7 +209,52 @@ export default function LoginPage() {
         </div>
 
         <Card>
-          {mustChange ? (
+          {mfaRequired ? (
+            <form onSubmit={handleMfaSubmit} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">Authentication code</label>
+                <Input
+                  type="text"
+                  inputMode="text"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  required
+                  autoFocus
+                />
+                <p className="text-xs text-text-muted">
+                  Lost your device? Enter one of your backup codes instead.
+                </p>
+                {error && <p className="text-xs text-red-500">{error}</p>}
+                {retryAfter > 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                  </p>
+                )}
+              </div>
+              <Button
+                type="submit"
+                variant="primary"
+                className="w-full"
+                loading={loading}
+                disabled={!mfaCode || retryAfter > 0}
+              >
+                {retryAfter > 0 ? `Wait ${retryAfter}s` : "Verify"}
+              </Button>
+              <button
+                type="button"
+                className="text-xs text-text-muted hover:text-text underline"
+                onClick={() => {
+                  setMfaRequired(false);
+                  setMfaCode("");
+                  setError("");
+                }}
+              >
+                Back to sign in
+              </button>
+            </form>
+          ) : mustChange ? (
             <form onSubmit={handleSetNewPassword} className="flex flex-col gap-4">
               <p className="text-sm text-amber-600 dark:text-amber-400 text-center">
                 Set a new password before accessing the dashboard remotely.
