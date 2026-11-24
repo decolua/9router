@@ -13,8 +13,17 @@ import { PROVIDERS, PROVIDER_OAUTH, PROVIDER_MODELS } from "../../open-sse/provi
 import { getModelUpstreamId } from "../../open-sse/config/providerModels.js";
 import { getModelInfoCore, resolveProviderAlias } from "../../open-sse/services/model.js";
 import { OAUTH_PROVIDERS } from "../../src/shared/constants/providers.js";
+import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 
 describe("grok-cli registry", () => {
+  it("publishes Grok Build subscription limits rather than generic Grok limits", () => {
+    const capabilities = getCapabilitiesForModel("grok-cli", "grok-build");
+    expect(capabilities.contextWindow).toBe(500000);
+    expect(capabilities.maxOutput).toBe(64000);
+    expect(capabilities.vision).toBe(true);
+    expect(capabilities.reasoning).toBe(true);
+  });
+
   it("registers transport + oauth + models", () => {
     const cfg = PROVIDERS["grok-cli"];
     expect(cfg).toBeTruthy();
