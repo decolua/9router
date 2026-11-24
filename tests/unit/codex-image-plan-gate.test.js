@@ -52,6 +52,7 @@ vi.mock("../../src/sse/utils/logger.js", () => ({
 }));
 
 vi.mock("@/lib/usageDb.js", () => ({
+  trackPendingRequest: vi.fn(),
   saveRequestUsage: vi.fn(),
 }));
 

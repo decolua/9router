@@ -292,6 +292,50 @@ Model: ag/gemini-3-pro-high
 
 ---
 
+## Qoder
+
+### Setup
+
+Connect Qoder under **Dashboard → Providers → Qoder** in one of two ways:
+
+- **Login** (device authorization in the browser), or
+- **API key**: a Personal Access Token (`pt-...`) from https://qoder.com/account/integrations
+
+Chat models are available as `qd/<model>`, for example `qd/auto` or `qd/qmodel_latest`.
+
+### Image Generation
+
+`qd/imagegen` generates and edits images through Qoder's Cloud Agents `ImageGen` tool. Each image is one short agent session, which 9Router creates and archives for you.
+
+**Requires a Personal Access Token connection.** The Cloud Agents API only accepts the raw `pt-...` token. Login connections remain usable for chat but are skipped for images. If there is no PAT connection, the request fails with `403` and a message saying so. When you use both, add the PAT connection below the login connection so chat keeps using the login first.
+
+```bash
+curl http://localhost:20128/v1/images/generations \
+  -H "Authorization: Bearer $NINE_ROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qd/imagegen","prompt":"A red vintage car on a rainy Tokyo street","aspect_ratio":"16:9"}'
+```
+
+For an **edit**, pass up to 3 reference images in `image` (or `images`). Each image can be a data URI, raw base64, or a public `http(s)` URL. Inputs must be PNG, JPEG or WebP and at most 5 MB each.
+
+```bash
+-d '{"model":"qd/imagegen","prompt":"Make the cat black, keep everything else","image":"data:image/png;base64,..."}'
+```
+
+| Parameter | Notes |
+|-----------|-------|
+| `size` / `aspect_ratio` | Mapped to the closest ImageGen size: `1024x1024`, `1536x1024`, `1024x1536`, `768x1024`, `1024x768`, `1024x1280`, `1280x1024`, `1024x1792`, `1792x1024`, `2560x1080` (e.g. `1920x1080` → `1792x1024`, `3:4` → `768x1024`). Output is about 1 megapixel. |
+| `n` | 1–4. Each image is its own session, so `n` multiplies time and credits. |
+| `response_format` | `url` (default) or `b64_json`. URLs are presigned and **expire after about an hour**, so download them promptly. |
+| `prompt` | Up to 4000 characters, passed to ImageGen verbatim. |
+
+- One image takes about 15–50 s and costs Qoder credits, roughly 0.06–0.1 per image.
+- Requests appear in **Usage** with 0 tokens, because Qoder bills in credits. The credits used are stored with each request as `qoder_credits`.
+- Throttling from Qoder's image queue returns `429`. Retry after a short wait.
+- Only the international site (qoder.com) is supported. `qoder-cn` connections cannot generate images yet.
+
+---
+
 ## Pricing Comparison
 
 | Provider | Monthly Cost | Quota Reset | Value |

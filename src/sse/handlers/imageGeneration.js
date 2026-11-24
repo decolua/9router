@@ -15,7 +15,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
-import { saveRequestUsage } from "@/lib/usageDb.js";
+import { saveRequestUsage, trackPendingRequest } from "@/lib/usageDb.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui", "veoaifree-web"]);
@@ -134,50 +134,57 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    // Skip accounts the adapter knows cannot generate images (e.g. ChatGPT Free on codex)
-    // without locking them: they stay usable for chat.
+    // Skip accounts the adapter knows cannot generate images (e.g. ChatGPT Free on codex,
+    // non-PAT connections on qoder) without locking them: they stay usable for chat.
     const adapter = getImageAdapter(provider);
     if (adapter?.canUseCredentials && !adapter.canUseCredentials(refreshedCredentials)) {
-      log.info("IMAGE", `[${provider}/${model}] skip connection ${credentials.connectionId.slice(0, 8)}: plan not entitled to image generation`);
+      log.info("IMAGE", `[${provider}/${model}] skip connection ${credentials.connectionId.slice(0, 8)}: ${adapter.unusableCredentialsReason || "plan not entitled to image generation"}`);
       excludeConnectionIds.add(credentials.connectionId);
-      lastError = lastError || "No account entitled to image generation (ChatGPT Free plans are not supported)";
+      lastError = lastError || adapter.unusableCredentialsMessage || "No account entitled to image generation (ChatGPT Free plans are not supported)";
       lastStatus = lastStatus || HTTP_STATUS.FORBIDDEN;
       continue;
     }
 
-    const result = await handleImageGenerationCore({
-      body,
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      streamToClient: wantsStream,
-      binaryOutput,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          accessToken: newCreds.accessToken,
-          refreshToken: newCreds.refreshToken,
-          providerSpecificData: newCreds.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onUsage: (usage) => {
-        recordImageRequestUsage({
-          provider,
-          model,
-          connectionId: credentials.connectionId,
-          apiKey,
-          endpoint,
-          usage,
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-        // Cookies that rotate on use (Clerk `__client`) are mutated in place by
-        // the executor — persist the new value so the chain does not drift.
-        if (refreshedCredentials.apiKey && refreshedCredentials.apiKey !== credentials.apiKey) {
-          await updateProviderCredentials(credentials.connectionId, { apiKey: refreshedCredentials.apiKey });
+    // Show the request as in-flight on the dashboard topology, like chat requests.
+    trackPendingRequest(model, provider, credentials.connectionId, true);
+    let result;
+    try {
+      result = await handleImageGenerationCore({
+        body,
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        streamToClient: wantsStream,
+        binaryOutput,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            accessToken: newCreds.accessToken,
+            refreshToken: newCreds.refreshToken,
+            providerSpecificData: newCreds.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onUsage: (usage) => {
+          recordImageRequestUsage({
+            provider,
+            model,
+            connectionId: credentials.connectionId,
+            apiKey,
+            endpoint,
+            usage,
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+          // Cookies that rotate on use (Clerk `__client`) are mutated in place by
+          // the executor — persist the new value so the chain does not drift.
+          if (refreshedCredentials.apiKey && refreshedCredentials.apiKey !== credentials.apiKey) {
+            await updateProviderCredentials(credentials.connectionId, { apiKey: refreshedCredentials.apiKey });
+          }
         }
-      }
-    });
+      });
+    } finally {
+      trackPendingRequest(model, provider, credentials.connectionId, false, !result?.success);
+    }
 
     if (result.success) return result.response;
 

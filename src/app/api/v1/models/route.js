@@ -13,6 +13,7 @@ import { getKeyAccessContext, filterModelsListForKey } from "@/sse/services/keyA
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels, routableQoderModels } from "open-sse/services/qoderModels.js";
+import { qoderPatOf } from "open-sse/shared/qoder/cloudAgents.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels, resolveClineModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
@@ -42,7 +43,17 @@ async function resolveQoderLiveModels(conn, provider) {
   // Visible + hidden (enable:false) catalog keys — chat routes all of them.
   const models = routableQoderModels(result);
   if (!models.length) return null;
-  return { models: models.map((m) => ({ id: m.id, name: m.name })) };
+  // The live catalog only lists chat models. Keep the static image models
+  // (Cloud Agents ImageGen) for PAT connections, the only ones that can use them.
+  const imageModels = qoderPatOf(conn)
+    ? (PROVIDER_MODELS[PROVIDER_ID_TO_ALIAS[provider] || provider] || []).filter((m) => getModelKind(m) === "image")
+    : [];
+  return {
+    models: [
+      ...models.map((m) => ({ id: m.id, name: m.name })),
+      ...imageModels.map((m) => ({ id: m.id, name: m.name, kind: "image" })),
+    ],
+  };
 }
 
 // Combo seats use UI aliases; the model registry also has transport aliases.
