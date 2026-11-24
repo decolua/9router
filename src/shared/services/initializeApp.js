@@ -113,6 +113,17 @@ async function runHeavyStartup() {
       .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
   }
 
+  // Daily auto check-in (opt-in). NOTE: this is a REDUNDANT second entry point —
+  // the primary one is src/instrumentation.js register(), because this bootstrap
+  // is only reached when a PAGE renders (layout.js), so an API-only deployment
+  // would otherwise never start the scheduler. configureCheckinScheduler() is
+  // idempotent (guards on an existing timer), so both firing is harmless.
+  if (settings.autoCheckin?.enabled === true) {
+    import("@/shared/services/checkinScheduler")
+      .then(({ configureCheckinScheduler }) => configureCheckinScheduler(settings))
+      .catch((e) => console.log("[Checkin] scheduler start failed:", e.message));
+  }
+
   // Proactive OAuth token refresh (e.g. grok-cli ~6h TTL). Module is idempotent
   // and also started from custom-server.js when that entry is used.
   import("@/sse/services/backgroundTokenRefresh.js")
@@ -120,13 +131,9 @@ async function runHeavyStartup() {
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
 }
 
-// Cheap local check: keeps the scheduler module (and its provider graph) unloaded
-// when nothing opted in. An enabled schedule counts on its own.
 function hasQuotaAutoPingEnabled(settings) {
-  return [settings?.claudeAutoPing, settings?.codexAutoPing].some((config) => (
-    Object.values(config?.connections || {}).some(Boolean)
-    || Object.values(config?.schedules || {}).some((schedule) => schedule?.enabled === true)
-  ));
+  return [settings?.claudeAutoPing, settings?.codexAutoPing]
+    .some((config) => Object.values(config?.connections || {}).some(Boolean));
 }
 
 async function autoStartMitm(settings) {
