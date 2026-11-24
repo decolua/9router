@@ -73,7 +73,7 @@ export function antigravityToOpenAIRequest(model, body, stream) {
             function: {
               name: func.name,
               description: func.description || "",
-              parameters: normalizeSchemaTypes(func.parameters) || { type: "object", properties: {} }
+              parameters: normalizeSchemaTypes(func.parameters || func.parametersJsonSchema) || { type: "object", properties: {} }
             }
           });
         }
