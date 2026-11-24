@@ -2,7 +2,7 @@ import crypto from "crypto";
 import open from "open";
 import { IFLOW_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
-import { startLocalServer } from "../utils/server.js";
+import { startLocalServer, waitForCallbackParams } from "../utils/server.js";
 import { spinner as createSpinner } from "../utils/ui.js";
 
 /**
@@ -125,6 +125,7 @@ export class IFlowService {
   async connect() {
     const spinner = createSpinner("Starting iFlow OAuth...").start();
 
+    let closeServer = null;
     try {
       spinner.text = "Starting local server...";
 
@@ -133,6 +134,7 @@ export class IFlowService {
       const { port, close } = await startLocalServer((params) => {
         callbackParams = params;
       });
+      closeServer = close;
 
       const redirectUri = `http://localhost:${port}/callback`;
       spinner.succeed(`Local server started on port ${port}`);
@@ -152,19 +154,7 @@ export class IFlowService {
       // Wait for callback
       spinner.start("Waiting for iFlow authorization...");
 
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Authentication timeout (5 minutes)"));
-        }, 300000);
-
-        const checkInterval = setInterval(() => {
-          if (callbackParams) {
-            clearInterval(checkInterval);
-            clearTimeout(timeout);
-            resolve();
-          }
-        }, 100);
-      });
+      await waitForCallbackParams(() => callbackParams);
 
       close();
 
@@ -196,6 +186,11 @@ export class IFlowService {
     } catch (error) {
       spinner.fail(`Failed: ${error.message}`);
       throw error;
+    } finally {
+      // Every failure between here and the inline close() used to leak the
+      // callback server: the timeout, a callback carrying an error, a failed
+      // token exchange. Closing twice is a no-op.
+      closeServer?.();
     }
   }
 }
