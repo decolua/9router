@@ -32,3 +32,15 @@ export function adjustMaxTokens(body, ceiling = DEFAULT_MAX_TOKENS) {
   return maxTokens;
 }
 
+/**
+ * Newer OpenAI models (gpt-5+, o1, o3, o4) reject `max_tokens` on Chat
+ * Completions with 400 unsupported_parameter ("Use 'max_completion_tokens'
+ * instead"). Same match the GitHub executor applies in its transformRequest
+ * (open-sse/executors/github.js).
+ * @param {string} model - Outbound provider model id
+ * @returns {boolean} true when the request must carry max_completion_tokens
+ */
+export function requiresMaxCompletionTokens(model) {
+  return /gpt-5|o[134]-/i.test(model);
+}
+
