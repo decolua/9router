@@ -51,7 +51,13 @@ export function createResponsesLogger(model, logsDir = null) {
  * @param {Object} logger - Optional logger instance
  * @returns {TransformStream}
  */
-export function createResponsesApiTransformStream(logger = null) {
+/**
+ * @param {object|null} logger - Optional logger instance
+ * @param {Set<string>} customToolNames - Set of tool names declared as type:"custom" in the
+ *   original Responses API request. Calls to these names are emitted as custom_tool_call
+ *   items instead of function_call, matching the Codex client expectation (#4276).
+ */
+export function createResponsesApiTransformStream(logger = null, customToolNames = new Set()) {
   const state = {
     seq: 0,
     responseId: `resp_${Date.now()}`,
@@ -73,7 +79,10 @@ export function createResponsesApiTransformStream(logger = null) {
     funcArgsDone: {},
     funcItemDone: {},
     buffer: "",
-    completedSent: false
+    completedSent: false,
+    // Accumulate completed output items so response.completed carries a full output array.
+    // Each entry is { output_index, item } from the response.output_item.done events.
+    outputItems: []
   };
 
   const encoder = new TextEncoder();
@@ -145,15 +154,17 @@ export function createResponsesApiTransformStream(logger = null) {
         part: { type: "summary_text", text: state.reasoningBuf }
       });
 
-      emit(controller, "response.output_item.done", {
-        type: "response.output_item.done",
-        output_index: state.reasoningIndex,
-        item: {
+      const reasoningItem = {
           id: state.reasoningId,
           type: "reasoning",
           summary: [{ type: "summary_text", text: state.reasoningBuf }]
-        }
+        };
+      emit(controller, "response.output_item.done", {
+        type: "response.output_item.done",
+        output_index: state.reasoningIndex,
+        item: reasoningItem
       });
+      state.outputItems.push({ output_index: state.reasoningIndex, item: reasoningItem });
     }
   };
 
@@ -180,16 +191,18 @@ export function createResponsesApiTransformStream(logger = null) {
         part: { type: "output_text", annotations: [], logprobs: [], text: fullText }
       });
 
+      const msgItem = {
+        id: msgId,
+        type: "message",
+        content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
+        role: "assistant"
+      };
       emit(controller, "response.output_item.done", {
         type: "response.output_item.done",
         output_index: parseInt(idx),
-        item: {
-          id: msgId,
-          type: "message",
-          content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
-          role: "assistant"
-        }
+        item: msgItem
       });
+      state.outputItems.push({ output_index: parseInt(idx), item: msgItem });
     }
   };
 
@@ -197,25 +210,57 @@ export function createResponsesApiTransformStream(logger = null) {
     const callId = state.funcCallIds[idx];
     if (callId && !state.funcItemDone[idx]) {
       const args = state.funcArgsBuf[idx] || "{}";
-      
-      emit(controller, "response.function_call_arguments.done", {
-        type: "response.function_call_arguments.done",
-        item_id: `fc_${callId}`,
-        output_index: parseInt(idx),
-        arguments: args
-      });
+      const toolName = state.funcNames[idx] || "";
+      const isCustom = customToolNames.has(toolName);
 
-      emit(controller, "response.output_item.done", {
-        type: "response.output_item.done",
-        output_index: parseInt(idx),
-        item: {
+      if (isCustom) {
+        // Custom tool (#4276): emit custom_tool_call instead of function_call.
+        // Codex declares exec/shell tools as type:"custom" with freeform input.
+        // The inbound side already wrapped the raw input string as JSON.stringify({input});
+        // unwrap it here so codex receives the original string in .input.
+        let inputStr = args;
+        try {
+          const parsed = JSON.parse(args);
+          if (typeof parsed === "object" && parsed !== null && "input" in parsed) {
+            inputStr = parsed.input;
+          }
+        } catch { /* keep args as-is */ }
+
+        const customItem = {
+          id: `fc_${callId}`,
+          type: "custom_tool_call",
+          call_id: callId,
+          name: toolName,
+          input: inputStr
+        };
+        emit(controller, "response.output_item.done", {
+          type: "response.output_item.done",
+          output_index: parseInt(idx),
+          item: customItem
+        });
+        state.outputItems.push({ output_index: parseInt(idx), item: customItem });
+      } else {
+        emit(controller, "response.function_call_arguments.done", {
+          type: "response.function_call_arguments.done",
+          item_id: `fc_${callId}`,
+          output_index: parseInt(idx),
+          arguments: args
+        });
+
+        const fcItem = {
           id: `fc_${callId}`,
           type: "function_call",
           arguments: args,
           call_id: callId,
-          name: state.funcNames[idx] || ""
-        }
-      });
+          name: toolName
+        };
+        emit(controller, "response.output_item.done", {
+          type: "response.output_item.done",
+          output_index: parseInt(idx),
+          item: fcItem
+        });
+        state.outputItems.push({ output_index: parseInt(idx), item: fcItem });
+      }
 
       state.funcItemDone[idx] = true;
       state.funcArgsDone[idx] = true;
@@ -225,6 +270,10 @@ export function createResponsesApiTransformStream(logger = null) {
   const sendCompleted = (controller) => {
     if (!state.completedSent) {
       state.completedSent = true;
+      const output = state.outputItems
+        .slice()
+        .sort((a, b) => a.output_index - b.output_index)
+        .map(e => e.item);
       emit(controller, "response.completed", {
         type: "response.completed",
         response: {
@@ -233,7 +282,8 @@ export function createResponsesApiTransformStream(logger = null) {
           created_at: state.created,
           status: "completed",
           background: false,
-          error: null
+          error: null,
+          output
         }
       });
     }
