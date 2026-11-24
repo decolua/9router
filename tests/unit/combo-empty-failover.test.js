@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   deltaHasClientContent,
+  inspectJsonBody,
   inspectSSELine,
   scanSSEBuffer,
   isNoRetryFinish,
@@ -393,5 +394,61 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
       expect(tried).toEqual(["openai/m0"]);
       expect(out).toContain('"reason":"content_filter"');
     });
+  });
+});
+
+// A forced-streaming member answering a client that did not ask to stream can hand the combo a
+// whole JSON document labelled text/event-stream, with "data: [DONE]" glued to its last brace.
+// Seen with OpenCode Go deepseek-v4.1-flash: every such answer was judged empty and skipped.
+describe("JSON document behind an event-stream body", () => {
+  const CHAT_DOC = `{"id":"x","object":"chat.completion","model":"deepseek-v4.1-flash","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"ok","reasoning_content":""}}],"usage":{"prompt_tokens":404,"completion_tokens":2}}data: [DONE]\n\n`;
+
+  it("reads a chat.completion with a glued [DONE] as content", async () => {
+    const r = await peekStreamForContent(sseStream([CHAT_DOC]));
+    expect(r.outcome).toBe("content");
+    expect(r.finishReason).toBe("stop");
+  });
+
+  it("reads it across chunk boundaries", async () => {
+    const r = await peekStreamForContent(sseStream([CHAT_DOC.slice(0, 40), CHAT_DOC.slice(40, 120), CHAT_DOC.slice(120)]));
+    expect(r.outcome).toBe("content");
+  });
+
+  it("still treats an empty or reasoning-only document as empty", async () => {
+    const empty = `{"object":"chat.completion","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"","reasoning_content":"thinking"}}]}`;
+    const r = await peekStreamForContent(sseStream([empty]));
+    expect(r.outcome).toBe("empty");
+    expect(r.finishReason).toBe("stop");
+  });
+
+  it("keeps a content_filter document as a no-retry finish", () => {
+    const blocked = `{"choices":[{"finish_reason":"content_filter","message":{"role":"assistant","content":""}}]}`;
+    const info = inspectJsonBody(blocked);
+    expect(info).toEqual({ content: false, finishReason: "content_filter" });
+    expect(isNoRetryFinish(info.finishReason)).toBe(true);
+  });
+
+  it("counts tool calls in a chat document", () => {
+    const doc = `{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}}]}}]}`;
+    expect(inspectJsonBody(doc).content).toBe(true);
+  });
+
+  it("reads an OpenAI Responses response object", () => {
+    const ok = `{"object":"response","status":"completed","output":[{"type":"reasoning","summary":[]},{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`;
+    expect(inspectJsonBody(ok)).toEqual({ content: true, finishReason: "stop" });
+    const tool = `{"object":"response","status":"completed","output":[{"type":"function_call","name":"f","arguments":"{}"}]}`;
+    expect(inspectJsonBody(tool).content).toBe(true);
+    const empty = `{"object":"response","status":"completed","output":[{"type":"reasoning","summary":[{"type":"summary_text","text":"hm"}]}]}`;
+    expect(inspectJsonBody(empty)).toEqual({ content: false, finishReason: "stop" });
+  });
+
+  it("reads an Anthropic message", () => {
+    expect(inspectJsonBody(`{"type":"message","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`).content).toBe(true);
+    expect(inspectJsonBody(`{"type":"message","content":[{"type":"thinking","thinking":"hm"}],"stop_reason":"end_turn"}`).content).toBe(false);
+  });
+
+  it("ignores bodies that are not JSON documents", () => {
+    expect(inspectJsonBody("data: [DONE]")).toEqual({ content: false, finishReason: null });
+    expect(inspectJsonBody("{not json")).toEqual({ content: false, finishReason: null });
   });
 });
