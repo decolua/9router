@@ -1,36 +1,18 @@
 "use client";
 
 import { cn } from "@/shared/utils/cn";
-import { formatResetTime } from "./utils";
+import { formatResetTime, quotaStatusLevel } from "./utils";
 
-// Calculate color based on remaining percentage
-const getColorClasses = (remainingPercentage) => {
-  if (remainingPercentage > 70) {
-    return {
-      text: "text-green-500",
-      bg: "bg-green-500",
-      bgLight: "bg-green-500/10",
-      emoji: "🟢"
-    };
-  }
-  
-  if (remainingPercentage >= 30) {
-    return {
-      text: "text-yellow-500",
-      bg: "bg-yellow-500",
-      bgLight: "bg-yellow-500/10",
-      emoji: "🟡"
-    };
-  }
-  
+// Presentation for each level. The thresholds themselves live in ./utils --
+// this file used to restate them, and so did QuotaTable and getStatusColor.
+const COLOR_CLASSES = {
+  green: { text: "text-green-500", bg: "bg-green-500", bgLight: "bg-green-500/10", emoji: "🟢" },
+  yellow: { text: "text-yellow-500", bg: "bg-yellow-500", bgLight: "bg-yellow-500/10", emoji: "🟡" },
   // 0-29% including 0% (out of quota) - show red
-  return {
-    text: "text-red-500",
-    bg: "bg-red-500",
-    bgLight: "bg-red-500/10",
-    emoji: "🔴"
-  };
+  red: { text: "text-red-500", bg: "bg-red-500", bgLight: "bg-red-500/10", emoji: "🔴" },
 };
+
+const getColorClasses = (remainingPercentage) => COLOR_CLASSES[quotaStatusLevel(remainingPercentage)];
 
 // Format reset time display
 const formatResetTimeDisplay = (resetTime) => {
