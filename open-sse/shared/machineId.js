@@ -1,5 +1,8 @@
-import { machineIdSync } from "node-machine-id";
+import { createRequire } from "module";
 import crypto from "node:crypto";
+
+const require = createRequire(import.meta.url);
+const { machineIdSync } = require("node-machine-id");
 
 let cachedRawId = null;
 
