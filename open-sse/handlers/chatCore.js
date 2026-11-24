@@ -400,7 +400,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let providerResponseFormat = targetFormat;
   try {
     const result = await executor.execute({
-      model,
+      model: stripThinkingSuffix(upstreamModel),
       body: translatedBody,
       stream,
       credentials,
