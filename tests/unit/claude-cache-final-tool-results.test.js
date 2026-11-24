@@ -36,7 +36,14 @@ describe("prepareClaudeRequest: a tool loop's final tool results", () => {
   it("get the 4th breakpoint, after the last assistant turn's", () => {
     const out = prepareClaudeRequest(loop(), "claude");
     expect(markers(out)).toEqual(["system[0]", "tools[1]", "messages[3].1", "messages[4].1"]);
-    expect(out.messages[4].content[1].cache_control).toEqual({ type: "ephemeral" });
+    expect(out.messages[4].content[1].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+  });
+
+  it("give the assistant tail the same 1h TTL as the head anchors", () => {
+    const out = prepareClaudeRequest(loop(), "claude");
+    expect(out.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+    expect(out.tools[1].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+    expect(out.messages[3].content[1].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
   });
 
   it("leave a request that ends with a typed message as it was", () => {
@@ -68,6 +75,8 @@ describe("anchorClaudeCache: a passthrough tool loop's final tool results", () =
   it("are re-anchored with the last assistant turn", () => {
     const out = anchorClaudeCache(loop());
     expect(markers(out)).toEqual(["system[0]", "tools[1]", "messages[3].1", "messages[4].1"]);
+    expect(out.messages[3].content[1].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+    expect(out.messages[4].content[1].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
   });
 
   it("keep a client's own full budget as it is", () => {
