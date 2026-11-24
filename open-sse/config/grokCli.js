@@ -8,6 +8,8 @@ export const GROK_CLI_USER_AGENT = `grok-shell/${GROK_CLI_VERSION} (linux; x86_6
 export const GROK_CLI_PAGER_USER_AGENT = `grok-pager/${GROK_CLI_VERSION} grok-shell/${GROK_CLI_VERSION} (linux; x86_64)`;
 
 export function supportsGrokCliReasoningEffort(model) {
-  // ponytail: unknown models omit effort until live metadata reaches dispatch.
-  return /^grok-4\.5(?:$|-)/.test(String(model || ""));
+  // Grok 4.5, 4.6 and 4.7 (including grok-4.7-build-fast) accept reasoning.effort on cli-chat-proxy;
+  // verified against a Grok Build subscription. grok-build and Composer still reject it, and other
+  // unknown models omit effort until live metadata reaches dispatch.
+  return /^grok-4\.[5-7](?:$|-)/.test(String(model || ""));
 }
