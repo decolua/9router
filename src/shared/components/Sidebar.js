@@ -61,9 +61,9 @@ export default function Sidebar({ onClose }) {
   // Lazy check for new npm version in background after initial render
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetch("/api/version")
+      fetch("/api/version", { cache: "no-store" })
         .then(res => res.json())
-        .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
+        .then(data => setUpdateInfo(data))
         .catch(() => {});
     }, 2500);
     return () => clearTimeout(timer);
@@ -128,10 +128,10 @@ export default function Sidebar({ onClose }) {
               <h1 className="text-lg font-semibold tracking-tight text-text-main">
                 {APP_CONFIG.name}
               </h1>
-              <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
+              <span className="text-xs text-text-muted">v{updateInfo?.currentVersion || APP_CONFIG.version}</span>
             </div>
           </Link>
-          {updateInfo && (
+          {updateInfo?.hasUpdate && (
             <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
