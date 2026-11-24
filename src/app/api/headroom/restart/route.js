@@ -25,7 +25,7 @@ export async function POST() {
     const result = await restartHeadroomProxy({
       port,
       codeAware: settings.headroomCodeAware === true,
-      kompress: settings.headroomKompress !== false,
+      kompress: settings.headroomKompress === true,
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
