@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
+import { getApiKeyPeriodSpend } from "@/lib/db/index.js";
+import { validateKeyLimitsInput } from "@/shared/utils/keyQuota.js";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +10,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const keys = await getApiKeys();
+    // Current day / week / month spend + reset times (dashboard budget meters).
+    for (const k of keys) k.spend = await getApiKeyPeriodSpend(k.key);
     return NextResponse.json({ keys });
   } catch (error) {
     console.log("Error fetching keys:", error);
@@ -25,9 +29,12 @@ export async function POST(request) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
+    const limits = validateKeyLimitsInput(body);
+    if (!limits.ok) return NextResponse.json({ error: limits.error }, { status: 400 });
+
     // Always get machineId from server
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId);
+    const apiKey = await createApiKey(name, machineId, limits.value);
 
     return NextResponse.json({
       key: apiKey.key,

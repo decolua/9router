@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
+import { validateKeyLimitsInput } from "@/shared/utils/keyQuota.js";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -36,6 +37,9 @@ export async function PUT(request, { params }) {
       if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
       updateData.access = checked.value;
     }
+    const limits = validateKeyLimitsInput(body);
+    if (!limits.ok) return NextResponse.json({ error: limits.error }, { status: 400 });
+    Object.assign(updateData, limits.value);
 
     const updated = await updateApiKey(id, updateData);
 
