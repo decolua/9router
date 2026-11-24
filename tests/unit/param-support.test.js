@@ -137,6 +137,28 @@ describe("stripUnsupportedParams", () => {
     }
   });
 
+  it("drops temperature for OpenCode Go's GPT family", () => {
+    for (const model of ["gpt-6-luna", "gpt-5.6-luna"]) {
+      const body = { messages: [{ role: "user", content: "hi" }], temperature: 0.2, top_p: 1 };
+      stripUnsupportedParams("opencode-go", model, body);
+      expect(body.temperature).toBeUndefined();
+      expect(body.top_p).toBe(1);
+    }
+  });
+
+  it("keeps temperature for other OpenCode Go models and other providers' GPTs", () => {
+    for (const [provider, model] of [
+      ["opencode-go", "glm-5.3-flash"],
+      ["opencode-go", "deepseek-v4.1-flash"],
+      ["opencode-go", "qwen3.8-flash"],
+      ["openrouter", "openai/gpt-6-luna"],
+    ]) {
+      const body = { messages: [{ role: "user", content: "hi" }], temperature: 0.2 };
+      stripUnsupportedParams(provider, model, body);
+      expect(body.temperature).toBe(0.2);
+    }
+  });
+
   it("keeps response_format for OpenCode Go models that serve it", () => {
     const response_format = { type: "json_schema", json_schema: { name: "t", schema: { type: "object" } } };
 
