@@ -28,8 +28,16 @@ const DEEPSEEK_V4_PRO_ALIASES = {
 
 function shouldInject(message, scope) {
   if (message?.role !== "assistant") return false;
+  // Idempotence (#4803): skip when ANY reasoning carrier already present.
+  // Non-empty reasoning_content — direct; reasoning — alias that the upstream
+  // treats as the same field, injecting a second one makes serde upstreams
+  // reject the body with "duplicate field `reasoning_content`".
   const rc = message.reasoning_content;
   if (typeof rc === "string" && rc.length > 0) return false;
+  if (Array.isArray(rc) && rc.length > 0) return false;
+  const rg = message.reasoning;
+  if (typeof rg === "string" && rg.length > 0) return false;
+  if (Array.isArray(rg) && rg.length > 0) return false;
   if (scope === "toolCalls") return Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
   return true;
 }
