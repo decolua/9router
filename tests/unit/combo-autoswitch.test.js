@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { detectRequiredCapabilities, reorderByCapabilities } from "../../open-sse/services/combo.js";
+import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 
 describe("detectRequiredCapabilities", () => {
   it("text-only -> empty", () => {
@@ -42,6 +43,43 @@ describe("detectRequiredCapabilities", () => {
     expect(r.has("search")).toBe(true);
   });
 
+  it("missing tools -> no search", () => {
+    const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "q" }] });
+    expect(r.has("search")).toBe(false);
+    expect(r.size).toBe(0);
+  });
+
+  it("malformed tools -> no search", () => {
+    const malformed = [
+      null,
+      "web_search",
+      { type: "web_search" },
+      [null, "web_search", 42, { type: "function" }, { function: { name: "web_search" } }],
+    ];
+    for (const tools of malformed) {
+      const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "q" }], tools });
+      expect(r.has("search")).toBe(false);
+      expect(r.size).toBe(0);
+    }
+  });
+
+  it("unrelated tool -> no search", () => {
+    const r = detectRequiredCapabilities({
+      messages: [{ role: "user", content: "q" }],
+      tools: [{ type: "function", function: { name: "get_weather", parameters: { type: "object" } } }],
+    });
+    expect(r.has("search")).toBe(false);
+    expect(r.size).toBe(0);
+  });
+
+  it("web_search variants are not search (exact type only)", () => {
+    for (const type of ["web_search_preview", "web_search_20250305"]) {
+      const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "q" }], tools: [{ type }] });
+      expect(r.has("search")).toBe(false);
+      expect(r.size).toBe(0);
+    }
+  });
+
   it("responses input_image -> vision", () => {
     const r = detectRequiredCapabilities({ input: [{ role: "user", content: [
       { type: "input_image", image_url: "x" },
@@ -67,8 +105,27 @@ describe("reorderByCapabilities", () => {
 
   it("keeps order when no model matches", () => {
     const models = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"];
+    expect(getCapabilitiesForModel("deepseek", "deepseek-chat").vision).toBe(false);
+    expect(getCapabilitiesForModel("deepseek", "deepseek-reasoner").vision).toBe(false);
     const out = reorderByCapabilities(models, new Set(["vision"]));
-    expect(out).toBe(models);
+    expect(out).toStrictEqual(models);
+  });
+
+  it("floats search-capable model to front, keeps fallback order", () => {
+    const models = ["deepseek/deepseek-chat", "anthropic/claude-sonnet-4.6", "deepseek/deepseek-reasoner"];
+    expect(getCapabilitiesForModel("deepseek", "deepseek-chat").search).toBe(false);
+    expect(getCapabilitiesForModel("anthropic", "claude-sonnet-4.6").search).toBe(true);
+    expect(getCapabilitiesForModel("deepseek", "deepseek-reasoner").search).toBe(false);
+    const out = reorderByCapabilities(models, new Set(["search"]));
+    expect(out).toStrictEqual(["anthropic/claude-sonnet-4.6", "deepseek/deepseek-chat", "deepseek/deepseek-reasoner"]);
+  });
+
+  it("keeps every fallback when no model satisfies search", () => {
+    const models = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"];
+    expect(getCapabilitiesForModel("deepseek", "deepseek-chat").search).toBe(false);
+    expect(getCapabilitiesForModel("deepseek", "deepseek-reasoner").search).toBe(false);
+    const out = reorderByCapabilities(models, new Set(["search"]));
+    expect(out).toStrictEqual(models);
   });
 
   it("single model -> unchanged", () => {
