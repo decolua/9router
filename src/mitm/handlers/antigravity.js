@@ -7,25 +7,32 @@ const { fetchRouter, pipeSSE } = require("./base");
  * Router auto-detects format via body.userAgent==="antigravity" + body.request.contents,
  * runs antigravity→openai→provider→openai→antigravity translators internally.
  */
-async function intercept(req, res, bodyBuffer, mappedModel) {
-  const dumper = IS_DEV ? createResponseDumper(req, "intercept-antigravity") : null;
-  const isStream = req.url.includes(":streamGenerateContent");
+async function intercept(req, res, bodyBuffer, mappedModel, options) {
+  const dumper = IS_DEV && !options?.disableRawDump && !process.env.ANTIGRAVITY_BYOK_AUDIT_FILE ? createResponseDumper(req, "intercept-antigravity") : null;
+  const isStream = /:(?:cascade)?streamGenerateContent/i.test(req.url || "");
   try {
     const body = JSON.parse(bodyBuffer.toString());
-    if (body.model) body.model = mappedModel;
+    body.model = mappedModel;
 
-    const routerRes = await fetchRouter(body, "/v1/chat/completions", req.headers);
+    // Only forward protocol hints in BYOK mode. The IDE's authorization,
+    // cookies, and other client headers are unrelated to the target provider.
+    const clientHeaders = options?.disableRawDump
+      ? Object.fromEntries(Object.entries(req.headers || {}).filter(([key]) => ["user-agent", "accept"].includes(key.toLowerCase())))
+      : req.headers;
+    const routerRes = await fetchRouter(body, "/v1/chat/completions", clientHeaders);
+    if (typeof options?.onResponse === "function") options.onResponse(routerRes.status);
     await pipeSSE(routerRes, res, dumper);
   } catch (error) {
-    err(`[antigravity] ${error.message}`);
+    if (options?.disableRawDump) err("[antigravity] BYOK router request failed");
+    else err(`[antigravity] ${error.message}`);
     if (dumper) { dumper.writeChunk(`\n[ERROR] ${error.message}\n`); dumper.end(); }
     // For stream endpoint, send SSE error chunk so SDK doesn't hang waiting
     if (isStream) {
-      if (!res.headersSent) res.writeHead(200, { "Content-Type": "text/event-stream" });
-      res.end(`data: ${JSON.stringify({ error: { message: error.message } })}\r\n\r\n`);
+      if (!res.headersSent) res.writeHead(options?.disableRawDump ? 502 : 200, { "Content-Type": "text/event-stream" });
+      res.end(`data: ${JSON.stringify({ error: { message: options?.disableRawDump ? "BYOK router request failed" : error.message } })}\r\n\r\n`);
     } else {
       if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: { message: error.message, type: "mitm_error" } }));
+      res.end(JSON.stringify({ error: { message: options?.disableRawDump ? "BYOK router request failed" : error.message, type: "mitm_error" } }));
     }
   }
 }

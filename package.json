@@ -7,6 +7,7 @@
     "node": ">=20.18.1"
   },
   "scripts": {
+    "test:antigravity-byok": "node --test tests/mitm/*.test.cjs scripts/antigravity-byok/tests/*.test.cjs",
     "dev": "next dev --port 20127",
     "dev:webpack": "next dev --webpack --port 20127",
     "build": "next build --webpack",

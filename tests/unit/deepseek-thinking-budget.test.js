@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyThinking, captureThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { PROVIDERS } from "../../open-sse/providers/index.js";
 
 const customProvider = "openai-compatible-chat-budget-test";
 const model = "deepseek-v4-flash";
@@ -57,5 +58,23 @@ describe("DeepSeek thinking budgets (#5108)", () => {
     applyThinking(FORMATS.OPENAI_RESPONSES, "deepseek-v4.1-flash", body, "opencode-go");
     expect(body.thinking).toBeUndefined();
     expect(body.reasoning).toEqual({ effort: "low", summary: "auto" });
+  });
+
+  it("uses the Responses wire shape for a custom compatible provider", () => {
+    const body = { reasoning_effort: "high" };
+    applyThinking(FORMATS.OPENAI_RESPONSES, model, body, "openai-compatible-responses-test");
+    expect(body).toEqual({ reasoning: { effort: "high", summary: "auto" } });
+  });
+
+  it("honors an explicitly configured Responses transport thinking format", () => {
+    const provider = "openai-compatible-responses-test-explicit";
+    PROVIDERS[provider] = { transports: [{ format: FORMATS.OPENAI_RESPONSES, thinkingFormat: "deepseek" }] };
+    try {
+      const body = { reasoning_effort: "high" };
+      applyThinking(FORMATS.OPENAI_RESPONSES, model, body, provider);
+      expect(body).toEqual({ thinking: { type: "enabled" }, reasoning_effort: "high" });
+    } finally {
+      delete PROVIDERS[provider];
+    }
   });
 });

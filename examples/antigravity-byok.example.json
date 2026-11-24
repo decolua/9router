@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "mappings": {
+    "replace-with-an-ide-model-id": {
+      "target": "my-responses/replace-with-provider-model-id",
+      "label": "My API model [BYOK]"
+    }
+  },
+  "auxiliaryMappings": {
+    "replace-with-an-internal-helper-id": "my-chat/replace-with-helper-model-id"
+  }
+}

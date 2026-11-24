@@ -1516,6 +1516,17 @@ Authorization: Bearer your-api-key
 → Returns all models + combos in OpenAI format
 ```
 
+## Antigravity desktop: opt-in BYOK bridge
+
+An experimental, configurable bridge can route explicitly selected Antigravity
+desktop model slots to providers already configured in 9Router. It includes
+Windows setup and reversible subscription switching. Provider credentials remain
+in the local 9Router store. See the [setup and compatibility guide](docs/ANTIGRAVITY-BYOK.md).
+
+The bridge uses your API provider's billing and limits; it does not add Google
+credits or change your subscription tier. This feature requires a build containing
+the BYOK changes and is disabled until you supply an enabled policy.
+
 ## 📧 Support
 
 - **Website**: [9router.com](https://9router.com)

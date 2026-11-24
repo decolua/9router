@@ -1,0 +1,25 @@
+{
+  "enabled": true,
+  "mappings": {
+    "gemini-4-argon-medium": {
+      "target": "my-chat/deepseek-v4.1-flash-economy",
+      "label": "DeepSeek V4.1 Flash Economy [BYOK]"
+    },
+    "gemini-4-argon-high": {
+      "target": "my-responses/gpt-6.1-sol",
+      "label": "GPT-6.1 Sol [BYOK]"
+    },
+    "gemini-4-argon-low": {
+      "target": "my-responses/gpt-6.1-terra",
+      "label": "GPT-6.1 Terra [BYOK]"
+    },
+    "gemini-4-hydrogen-high": {
+      "target": "my-responses/gpt-6-astra",
+      "label": "GPT-6 Astra [BYOK]"
+    }
+  },
+  "auxiliaryMappings": {
+    "gemini-3.5-flash-lite": "my-chat/deepseek-v4.1-flash-economy",
+    "gemini-3.8-flash-low": "my-chat/deepseek-v4.1-flash-economy"
+  }
+}

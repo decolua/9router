@@ -18,7 +18,9 @@ const cliMitmDir = path.join(cliAppDir, "src", "mitm");
 // it can be copied to DATA_DIR/runtime/ and spawned from there (escapes
 // node_modules file locks that block `npm i -g 9router@latest` on Windows).
 const EXTERNALS = [];
-const ENTRIES = ["server.js"];
+// Keep the side-effect-free policy loader available to setup helpers so they
+// validate the exact runtime schema before changing services or hosts.
+const ENTRIES = ["server.js", "antigravityByok.js"];
 
 async function buildEntry(entry) {
   const mitmSrc = path.join(appDir, "src", "mitm");
