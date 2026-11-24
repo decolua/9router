@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { buildUsage, toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
+import { claudeToOpenAIResponse } from "../../open-sse/translator/response/claude-to-openai.js";
 
 // Canonical convention (single source of truth for storage + cost):
 //   prompt_tokens             = total input INCLUDING cache read + cache creation
@@ -99,6 +100,37 @@ describe("canonicalizeUsage", () => {
     expect(out.prompt_tokens).toBe(600); // 100 + 0 (no read) + 500
     expect(out.cached_tokens).toBe(0);
     expect(out.cache_creation_input_tokens).toBe(500);
+  });
+
+  it("does not fold again when prompt_tokens already includes cache (claude-to-openai state.usage)", () => {
+    const out = canonicalizeUsage({
+      prompt_tokens: 330,
+      completion_tokens: 50,
+      total_tokens: 380,
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_input_tokens: 200,
+      cache_creation_input_tokens: 30,
+    });
+    expect(out.prompt_tokens).toBe(330);
+    expect(out.cached_tokens).toBe(200);
+    expect(out.cache_creation_input_tokens).toBe(30);
+  });
+});
+
+describe("claude-to-openai stream usage persisted once", () => {
+  it("stores a cache-inclusive prompt equal to input + cache", () => {
+    const state = {};
+    claudeToOpenAIResponse({
+      type: "message_start",
+      message: { id: "m", model: "claude", role: "assistant", content: [],
+        usage: { input_tokens: 100, output_tokens: 1, cache_read_input_tokens: 200, cache_creation_input_tokens: 30 } },
+    }, state);
+    claudeToOpenAIResponse({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 50 } }, state);
+    const out = canonicalizeUsage(state.usage);
+    expect(out.prompt_tokens).toBe(330);
+    expect(out.cached_tokens).toBe(200);
+    expect(out.completion_tokens).toBe(50);
   });
 });
 
