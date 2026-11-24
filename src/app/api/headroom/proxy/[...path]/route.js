@@ -49,10 +49,14 @@ function forwardedHeaders(request, target) {
   return headers;
 }
 
+// Headroom's dashboard hardcodes absolute paths in its HTML, so proxying it
+// under DASHBOARD_PREFIX breaks both its data fetches and its own assets: the
+// browser resolves them against 9Router's root, where they 404 or redirect to
+// /login (leaving the page unstyled and empty).
 function rewriteDashboardHtml(html) {
   return html.replace(
-    /fetch\('(?=\/(?:stats|health|stats-history|transformations\/feed))/g,
-    `fetch('${DASHBOARD_PREFIX}`,
+    /(fetch\('|src="|href=")(?=\/(?:stats|health|stats-history|stats-lifetime|transformations\/feed|dashboard))/g,
+    `$1${DASHBOARD_PREFIX}`,
   );
 }
 
