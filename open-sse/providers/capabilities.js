@@ -86,6 +86,11 @@ export function capabilitiesFromServiceKind(kind) {
  * otherwise mis-match. Only declare deltas vs DEFAULT.
  */
 export const MODEL_CAPABILITIES = {
+  "sensenova-6.8-flash": {
+    vision: true,
+    reasoning: true,
+    thinkingFormat: "openai",
+  },
   "sensenova-6.8-flash-lite": {
     vision: true,
     reasoning: true,

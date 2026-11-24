@@ -9,7 +9,7 @@ export default {
     website: "https://token.sensenova.cn",
     notice: {
       text: "For China accounts (token.sensenova.cn). International accounts (platform.sensenova.ai) use SenseNova (Intl).",
-      apiKeyUrl: "https://token.sensenova.cn",
+      apiKeyUrl: "https://platform.sensenova.cn/console/keys",
     },
   },
   category: "apikey",
