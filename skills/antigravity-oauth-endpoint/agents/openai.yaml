@@ -1,0 +1,4 @@
+interface:
+  display_name: "Antigravity OAuth Endpoint"
+  short_description: "Consent-based Antigravity endpoint workflow"
+  default_prompt: "Use $antigravity-oauth-endpoint to connect my Antigravity account with consent and expose it through 9Router."
