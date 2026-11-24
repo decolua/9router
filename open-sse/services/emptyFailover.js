@@ -23,22 +23,17 @@ import { FORMATS } from "../translator/formats.js";
 import { EMPTY_PEEK_DEADLINE_MS } from "../config/runtimeConfig.js";
 import { parseSSELine } from "../utils/streamHelpers.js";
 
-// OpenAI chat content test. A chunk counts as content only if it carries
-// assistant output the caller can consume:
-//   * delta.content (non-empty string, or non-empty array of parts)
-//   * delta.tool_calls (a real tool call)
-// It deliberately does NOT count:
-//   * delta.role — 9router emits {role:"assistant"} on the first frame regardless of
-//     content; treating it as content would defeat the whole check (and A0's own retry,
-//     which is gated on "no chunk received yet").
-//   * reasoning_content / delta.reasoning — a think-then-abort produces reasoning only,
-//     which A0 treats as an unusable-but-non-empty turn; it must still fall through.
+// OpenAI chat content test. A chunk counts as content when it carries assistant output
+// the caller can consume: visible content, reasoning/thinking, or a real tool call.
+// delta.role alone still does not count because 9router emits {role:"assistant"} on the
+// first frame regardless of whether the model produced any output.
 export function deltaHasClientContent(delta) {
   if (!delta || typeof delta !== "object") return false;
   const c = delta.content;
   if (typeof c === "string" && c.length > 0) return true;
   if (Array.isArray(c) && c.length > 0) return true;
   if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) return true;
+  if (nonEmptyString(delta.reasoning_content) || nonEmptyString(delta.reasoning)) return true;
   // OpenAI "Responses" style / non-chat deltas occasionally use output_text
   if (typeof delta.output_text === "string" && delta.output_text.length > 0) return true;
   return false;
@@ -47,9 +42,9 @@ export function deltaHasClientContent(delta) {
 // The peek reads the CLIENT-format stream, which is OpenAI chat (/v1/chat/completions),
 // Anthropic Messages (/v1/messages) or OpenAI Responses (/v1/responses). A format the peek
 // cannot read never shows content: every combo member would be judged "empty" and called in
-// turn, and the LAST one returned. Every format gets the same rule: answer text and tool calls
-// are content; reasoning / thinking is not (as reasoning_content is not). Finish reasons are
-// reported in the hub (OpenAI) vocabulary so isNoRetryFinish applies to every format.
+// turn, and the LAST one returned. Every format gets the same rule: answer text, reasoning /
+// thinking, and tool calls are content. Finish reasons are reported in the hub (OpenAI)
+// vocabulary so isNoRetryFinish applies to every format.
 const nonEmptyString = (s) => typeof s === "string" && s.length > 0;
 
 // Anthropic Messages event.
@@ -58,6 +53,7 @@ function inspectClaudeEvent(obj) {
   if (obj.type === CLAUDE_EVENT.CONTENT_BLOCK_DELTA) {
     const d = obj.delta || {};
     if (d.type === CLAUDE_DELTA.TEXT && nonEmptyString(d.text)) content = true;
+    if (d.type === CLAUDE_DELTA.THINKING && nonEmptyString(d.thinking)) content = true;
     if (d.type === CLAUDE_DELTA.INPUT_JSON && nonEmptyString(d.partial_json)) content = true;
   } else if (obj.type === CLAUDE_EVENT.CONTENT_BLOCK_START) {
     const b = obj.content_block || {};
@@ -82,16 +78,22 @@ function inspectResponsesEvent(obj) {
   let content = false, finishReason = null;
   switch (obj.type) {
     case RESPONSES_EVENT.OUTPUT_TEXT_DELTA:
+    case RESPONSES_EVENT.REASONING_SUMMARY_TEXT_DELTA:
+    case RESPONSES_EVENT.REASONING_TEXT_DELTA:
     case RESPONSES_EVENT.FUNCTION_CALL_ARGUMENTS_DELTA:
     case RESPONSES_EVENT.CUSTOM_TOOL_CALL_INPUT_DELTA:
       content = nonEmptyString(obj.delta);
       break;
     case RESPONSES_EVENT.OUTPUT_TEXT_DONE:
+    case RESPONSES_EVENT.REASONING_SUMMARY_TEXT_DONE:
       content = nonEmptyString(obj.text);
       break;
     case RESPONSES_EVENT.OUTPUT_ITEM_ADDED:
     case RESPONSES_EVENT.OUTPUT_ITEM_DONE:
-      content = RESPONSES_TOOL_ITEMS.has(obj.item?.type);
+      content = RESPONSES_TOOL_ITEMS.has(obj.item?.type) ||
+        (obj.item?.type === RESPONSES_ITEM.REASONING &&
+          Array.isArray(obj.item.summary) &&
+          obj.item.summary.some((part) => nonEmptyString(part?.text)));
       break;
     case RESPONSES_EVENT.COMPLETED:
       finishReason = OPENAI_FINISH.STOP;

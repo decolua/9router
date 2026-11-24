@@ -10,6 +10,7 @@ export const CLAUDE_EVENT = {
 // Anthropic content_block_delta delta types.
 export const CLAUDE_DELTA = {
   TEXT: "text_delta",
+  THINKING: "thinking_delta",
   INPUT_JSON: "input_json_delta",
 };
 
@@ -21,6 +22,9 @@ export const RESPONSES_EVENT = {
   OUTPUT_ITEM_DONE: "response.output_item.done",
   OUTPUT_TEXT_DELTA: "response.output_text.delta",
   OUTPUT_TEXT_DONE: "response.output_text.done",
+  REASONING_SUMMARY_TEXT_DELTA: "response.reasoning_summary_text.delta",
+  REASONING_SUMMARY_TEXT_DONE: "response.reasoning_summary_text.done",
+  REASONING_TEXT_DELTA: "response.reasoning_text.delta",
   FUNCTION_CALL_ARGUMENTS_DELTA: "response.function_call_arguments.delta",
   CUSTOM_TOOL_CALL_INPUT_DELTA: "response.custom_tool_call_input.delta",
   COMPLETED: "response.completed",
