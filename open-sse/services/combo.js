@@ -105,8 +105,11 @@ export function reorderByCapabilities(models, required) {
 }
 
 /**
- * Track rotation state per combo (for round-robin strategy)
- * @type {Map<string, { index: number, consecutiveUseCount: number }>}
+ * Rotation state per combo. Two shapes share this map: the unweighted path
+ * stores `{ index, consecutiveUseCount }`, the weighted path stores
+ * `{ sig, current, lastSeat, consecutiveUseCount }`. Each reader validates the
+ * shape it expects before using it.
+ * @type {Map<string, Object>}
  */
 const comboRotationState = new Map();
 
@@ -211,6 +214,28 @@ function normalizeStickyLimit(stickyLimit) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
+export function normalizeComboWeights(models, rawWeights) {
+  if (!rawWeights || typeof rawWeights !== "object" || Array.isArray(rawWeights)) return null;
+  if (!Array.isArray(models) || models.length === 0) return null;
+
+  const weights = {};
+  let hasPositive = false;
+  let allOne = true;
+  for (const m of models) {
+    const n = Number(rawWeights[m]);
+    const w = Number.isFinite(n) ? Math.min(1000, Math.max(0, Math.floor(n))) : 1;
+    weights[m] = w;
+    if (w > 0) hasPositive = true;
+    if (w !== 1) allOne = false;
+  }
+  if (!hasPositive || allOne) return null;
+  return weights;
+}
+
+export function getComboWeights(comboStrategies, comboName) {
+  return comboStrategies?.[comboName]?.weights || null;
+}
+
 function rotateModelsFromIndex(models, currentIndex) {
   const rotatedModels = [...models];
   for (let i = 0; i < currentIndex; i++) {
@@ -228,17 +253,24 @@ function rotateModelsFromIndex(models, currentIndex) {
  * @param {number|string} [stickyLimit=1] - Requests per combo model before switching
  * @returns {string[]} Rotated models array
  */
-export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
+export function getRotatedModels(models, comboName, strategy, stickyLimit = 1, comboWeights = null, comboModels = null) {
   if (!models || models.length <= 1 || strategy !== "round-robin") {
     return models;
+  }
+
+  const weights = normalizeComboWeights(models, comboWeights);
+  if (weights) {
+    return advanceWeightedRotation(models, comboName, weights, normalizeStickyLimit(stickyLimit), comboModels);
   }
 
   const rotationKey = comboName || "__default__";
   const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
   const existingState = comboRotationState.get(rotationKey);
+  // The weighted branch stores an object keyed by signature. Reading that as a
+  // positional index yields NaN, which freezes the list on one model forever.
   const state = typeof existingState === "number"
     ? { index: existingState, consecutiveUseCount: 0 }
-    : (existingState || { index: 0, consecutiveUseCount: 0 });
+    : (existingState && Number.isInteger(existingState.index) ? existingState : { index: 0, consecutiveUseCount: 0 });
 
   const currentIndex = state.index % models.length;
   const rotatedModels = rotateModelsFromIndex(models, currentIndex);
@@ -257,6 +289,53 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
   }
 
   return rotatedModels;
+}
+
+function advanceWeightedRotation(models, comboName, weights, stickyLimit, comboModels) {
+  const rotationKey = comboName || "__default__";
+  // Seats come from the combo's own model list, not from the list handed in:
+  // the capacity adapter prepends its models per request, and a seat for those
+  // would shift the cycle on every adapter-bearing request and starve the
+  // configured models. A combo model absent from the weight map counts as a
+  // weight of one, so the seat pool cannot be derived from that map alone.
+  const seatPool = Array.isArray(comboModels) && comboModels.length > 0 ? comboModels : models;
+  const seats = seatPool.filter((m) => weights[m] > 0);
+  const sig = seats.join("|") + "::" + seats.map((m) => weights[m]).join(",");
+  const existing = comboRotationState.get(rotationKey);
+  const usable = existing && typeof existing === "object" && existing.sig === sig && existing.current && !Array.isArray(existing.current);
+
+  // Keyed by model name, because the adapter shifts both list length and offset.
+  const state = usable ? existing : { sig, current: {}, lastSeat: null, consecutiveUseCount: 0 };
+  const total = seats.reduce((sum, m) => sum + weights[m], 0);
+
+  let head;
+  if (state.lastSeat && state.consecutiveUseCount < stickyLimit && seats.includes(state.lastSeat)) {
+    head = state.lastSeat;
+    state.consecutiveUseCount += 1;
+  } else {
+    for (const m of seats) state.current[m] = (state.current[m] || 0) + weights[m];
+    head = seats[0];
+    for (const m of seats) if (state.current[m] > state.current[head]) head = m;
+    state.current[head] -= total;
+    state.lastSeat = head;
+    state.consecutiveUseCount = 1;
+  }
+
+  comboRotationState.set(rotationKey, state);
+  return orderSeatsByWeights(models, weights, state.current, head);
+}
+
+function orderSeatsByWeights(models, weights, current, head) {
+  const score = (m) => (current[m] || 0) + weights[m];
+  const ranked = models.filter((m) => weights[m] > 0);
+  const excluded = models.filter((m) => !(weights[m] > 0));
+  ranked.sort((a, b) => {
+    if (a === head) return b === head ? 0 : -1;
+    if (b === head) return 1;
+    const diff = score(b) - score(a);
+    return diff || models.indexOf(a) - models.indexOf(b);
+  });
+  return [...ranked, ...excluded];
 }
 
 /**
@@ -349,6 +428,8 @@ export function isZeroContentResponse(data) {
  * @param {boolean} [options.sessionSticky=true] - Keep chosen model across session requests to retain prompt cache
  * @param {number} [options.confidenceThreshold=0.8] - Minimum confidence required for model switch (0-1)
  * @param {Function|null} [options.resolveSmartChoice=null] - Smart router resolver callback: (body, models) => Promise<{ choice, probabilities, confidence } | null>
+ * @param {Object|null} [options.comboWeights=null] - Per-model weight map for round-robin
+ * @param {string[]|null} [options.comboModels=null] - The combo's own model list, before adapter models were prepended
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({
@@ -365,6 +446,8 @@ export async function handleComboChat({
   sessionSticky = true,
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
+  comboWeights = null,
+  comboModels = null,
 }) {
   let rotatedModels = models;
   let activeStickyModel = null;
@@ -448,7 +531,7 @@ export async function handleComboChat({
     }
   } else {
     // Apply rotation strategy if enabled
-    rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+    rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit, comboWeights, comboModels);
   }
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
