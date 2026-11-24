@@ -9,13 +9,14 @@
 // The profile persists, so a repeat login usually finds the session still
 // alive and resolves in one poll — and a warm profile keeps cf_clearance.
 
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { join } from "node:path";
 import { loadRuntimeDep } from "./lazyRuntime.js";
 import { getWebLoginConfig } from "./webLoginConfig.js";
 import { getWritableDataDir } from "../utils/writableDataDir.js";
 import { pruneProfileCaches, formatBytes } from "./browserProfileCache.js";
+import { ensureVirtualDisplay } from "./virtualDisplay.js";
 import { resolveSystemChromeExecutable } from "../executors/browserExecutableCheck.js";
 
 const POLL_INTERVAL_MS = 1500;
@@ -169,22 +170,25 @@ function clearStaleSingletonLocks(dir) {
 }
 
 async function launchLoginBrowser(chromium, dir, executablePath) {
+  const args = ["--disable-blink-features=AutomationControlled"];
+  if (process.platform === "linux" && existsSync("/.dockerenv")) {
+    // Container sandboxes and default 64MB /dev/shm crash Chromium tabs without these flags.
+    args.push("--no-sandbox", "--disable-dev-shm-usage");
+  }
+  const display = await ensureVirtualDisplay();
+  const launchOpts = {
+    headless: false,
+    executablePath,
+    viewport: null,
+    args,
+    ...(display ? { env: { ...process.env, DISPLAY: display } } : {}),
+  };
   try {
-    return await chromium.launchPersistentContext(dir, {
-      headless: false,
-      executablePath,
-      viewport: null,
-      args: ["--disable-blink-features=AutomationControlled"],
-    });
+    return await chromium.launchPersistentContext(dir, launchOpts);
   } catch (error) {
     if (!/ProcessSingleton|SingletonLock/i.test(String(error?.message || ""))) throw error;
     clearStaleSingletonLocks(dir);
-    return await chromium.launchPersistentContext(dir, {
-      headless: false,
-      executablePath,
-      viewport: null,
-      args: ["--disable-blink-features=AutomationControlled"],
-    });
+    return await chromium.launchPersistentContext(dir, launchOpts);
   }
 }
 
