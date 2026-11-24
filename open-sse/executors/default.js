@@ -11,6 +11,7 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { extractClaudeSessionIdFromUserId } from "../utils/claudeCloaking.js";
 import { wantsGeminiLongDecode, withGeminiLongDecode } from "../utils/geminiLongDecode.js";
+import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -190,7 +191,8 @@ export class DefaultExecutor extends BaseExecutor {
     }
     // gemini-format: build :streamGenerateContent / :generateContent path
     if (this.config.format === "gemini") {
-      return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+      const cleanModel = stripThinkingSuffix(model);
+      return `${this.config.baseUrl}/${cleanModel}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
     }
     // urlSuffix (e.g. ?beta=true) declared per-provider in registry
     if (this.config.urlSuffix) {
