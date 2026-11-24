@@ -1,3 +1,5 @@
+import { PRICING_SOURCE } from "../config/pricingSources.js";
+
 // Pricing rates for AI models — all rates in $/1M tokens
 //
 // Fallback order (first match wins):
@@ -428,29 +430,41 @@ export function matchPattern(pattern, model) {
  * @returns {object|null}
  */
 export function getPricingForModel(provider, model) {
-  if (!model) return null;
+  return resolvePricing(provider, model).pricing;
+}
+
+/**
+ * Same chain as getPricingForModel, but also says which step matched.
+ * source: one of PRICING_SOURCE (provider, free, model, pattern, none)
+ *
+ * @param {string} provider
+ * @param {string} model
+ * @returns {{ pricing: object|null, source: string }}
+ */
+export function resolvePricing(provider, model) {
+  if (!model) return { pricing: null, source: PRICING_SOURCE.NONE };
 
   // 1. Provider-specific override
   if (provider && PROVIDER_PRICING[provider]?.[model]) {
-    return PROVIDER_PRICING[provider][model];
+    return { pricing: PROVIDER_PRICING[provider][model], source: PRICING_SOURCE.PROVIDER };
   }
 
   // 2. Free namespaces bill $0 regardless of the model name behind them.
-  if (isFreeModel(model)) return ZERO_PRICING;
+  if (isFreeModel(model)) return { pricing: ZERO_PRICING, source: PRICING_SOURCE.FREE };
 
   // 3. Canonical model pricing (strip vendor prefix if needed: "deepseek/deepseek-chat" → "deepseek-chat")
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
-  if (MODEL_PRICING[baseModel]) return MODEL_PRICING[baseModel];
-  if (MODEL_PRICING[model]) return MODEL_PRICING[model];
+  if (MODEL_PRICING[baseModel]) return { pricing: MODEL_PRICING[baseModel], source: PRICING_SOURCE.MODEL };
+  if (MODEL_PRICING[model]) return { pricing: MODEL_PRICING[model], source: PRICING_SOURCE.MODEL };
 
   // 4. Pattern match
   for (const { pattern, pricing } of PATTERN_PRICING) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return pricing;
+      return { pricing, source: PRICING_SOURCE.PATTERN };
     }
   }
 
-  return null;
+  return { pricing: null, source: PRICING_SOURCE.NONE };
 }
 
 /**

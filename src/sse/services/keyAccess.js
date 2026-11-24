@@ -34,6 +34,7 @@ import {
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
+import { checkSpendLimit } from "./keySpendLimit.js";
 
 const lower = (s) => String(s).toLowerCase();
 const canonicalModel = (provider, model) => lower(`${provider}/${model}`);
@@ -76,8 +77,21 @@ export async function getKeyAccessContext(request) {
     keyId: record.id,
     keyName: record.name || record.id,
     allow: record.access.allow || [],
+    endpoint: requestPathname(request),
+    // Per-key spend limit: checked by the gates after the allowlist passes (keySpendLimit.js).
+    limits: record.limit
+      ? [{ keyValue: apiKey, name: record.name || record.id, access: record.access, limit: record.limit }]
+      : [],
     _sets: null,
   };
+}
+
+function requestPathname(request) {
+  try {
+    return request?.nextUrl?.pathname || new URL(request.url).pathname;
+  } catch {
+    return null;
+  }
 }
 
 // Resolve the allow list once per request: combo names, resolved model ids,
@@ -128,7 +142,7 @@ export async function enforceKeyAccess(ctx, requested) {
   const allowed = comboModels
     ? sets.combos.has(lower(requested))
     : await isModelStringAllowed(ctx, requested);
-  return allowed ? null : keyAccessDeniedResponse(ctx, requested);
+  return allowed ? await checkSpendLimit(ctx) : keyAccessDeniedResponse(ctx, requested);
 }
 
 /**
@@ -142,7 +156,7 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
-  return sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
+  return sets.models.has(canonicalModel(provider, model)) ? await checkSpendLimit(ctx) : keyAccessDeniedResponse(ctx, label);
 }
 
 /**
@@ -156,7 +170,7 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
   const allowed = comboModels
     ? sets.combos.has(lower(requested))
     : sets.providers.has(lower(resolveProviderId(requested)));
-  return allowed ? null : keyAccessDeniedResponse(ctx, requested);
+  return allowed ? await checkSpendLimit(ctx) : keyAccessDeniedResponse(ctx, requested);
 }
 
 /**

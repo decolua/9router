@@ -19,6 +19,7 @@ import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
 import KeyAccessControls from "./components/KeyAccessControls";
+import KeyLimitControls from "./components/KeyLimitControls";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -685,12 +686,32 @@ export default function APIPageClient({ machineId }) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.key) {
-        setKeys(prev => prev.map(k => k.id === id ? { ...k, access: data.key.access } : k));
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, access: data.key.access, limit: data.key.limit, limitStatus: data.key.limitStatus } : k));
       } else {
         console.log("Error updating key access:", data.error || res.status);
       }
     } catch (error) {
       console.log("Error updating key access:", error);
+    }
+  };
+
+  // Per-key cost limit. A refused value (400, e.g. a reachable model is unpriced)
+  // is shown under the field instead of being silently kept.
+  const handleUpdateKeyLimit = async (id, limit) => {
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.key) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, limit: data.key.limit, limitStatus: data.key.limitStatus, limitError: null } : k));
+      } else {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, limitError: data.error || `Request failed (${res.status})` } : k));
+      }
+    } catch (error) {
+      console.log("Error updating key limit:", error);
     }
   };
 
@@ -1067,6 +1088,10 @@ export default function APIPageClient({ machineId }) {
                         handleUpdateKeyAccess(key.id, { restricted: true, allow: key.access?.allow || [] });
                       }
                     })}
+                  />
+                  <KeyLimitControls
+                    apiKey={key}
+                    onChange={(limit) => handleUpdateKeyLimit(key.id, limit)}
                   />
                 </div>
                 <div className="flex items-center gap-2 shrink-0 pt-0.5">

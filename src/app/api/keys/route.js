@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { getLimitStatus } from "@/sse/services/keySpendLimit.js";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const keys = await getApiKeys();
-    return NextResponse.json({ keys });
+    // Per-key spend limit status (eligible / effective / spend this window).
+    const withStatus = await Promise.all(keys.map(async (k) => ({ ...k, limitStatus: await getLimitStatus(k) })));
+    return NextResponse.json({ keys: withStatus });
   } catch (error) {
     console.log("Error fetching keys:", error);
     return NextResponse.json({ error: "Failed to fetch keys" }, { status: 500 });
