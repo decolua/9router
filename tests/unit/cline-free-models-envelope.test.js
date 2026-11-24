@@ -228,7 +228,7 @@ describe("cline /api/v1/models aggregation (resolveClineModels vs resolveClinepa
     vi.unstubAllGlobals();
   });
 
-  it("resolveClineModels returns all models (including free-tier)", async () => {
+  it("resolveClineModels returns regular/free models without ClinePass duplicates", async () => {
     const { resolveClineModels } = await import("../../open-sse/services/clinepassModels.js");
     fetchMock.mockResolvedValue({
       ok: true,
@@ -236,9 +236,9 @@ describe("cline /api/v1/models aggregation (resolveClineModels vs resolveClinepa
     });
     const result = await resolveClineModels({ accessToken: "test-token" });
     expect(result).not.toBeNull();
-    expect(result.models).toHaveLength(4);
+    expect(result.models).toHaveLength(2);
     const ids = result.models.map((m) => m.id);
-    expect(ids).toContain("cline-pass/deepseek-v4-flash");
+    expect(ids).not.toContain("cline-pass/deepseek-v4-flash");
     expect(ids).toContain("z-ai/glm-5.3-flash");
     expect(ids).toContain("z-ai/deepseek-v4-flash");
   });
@@ -266,7 +266,7 @@ describe("cline /api/v1/models aggregation (resolveClineModels vs resolveClinepa
     });
     const result = await resolveClineModels({ accessToken: "test-token" });
     expect(result).not.toBeNull();
-    expect(result.models).toHaveLength(4);
+    expect(result.models).toHaveLength(2);
   });
 
   it("resolveClineModels returns null when no token", async () => {
