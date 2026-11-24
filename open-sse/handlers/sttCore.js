@@ -248,6 +248,30 @@ async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
     const v = formData.get(k);
     if (v !== null && v !== undefined && v !== "") fd.append(k, v);
   }
+  // Forward timestamp granularities (fix for decolua/9router#5663).
+  // Groq/OpenAI only honour these with response_format=verbose_json, so
+  // they are forwarded only then — forwarding them with plain `json`
+  // would make the upstream reject the request. Accepts both the
+  // multipart-array spelling `timestamp_granularities[]` and the plain
+  // `timestamp_granularities` spelling, deduplicates, and drops any
+  // value other than `word` / `segment`.
+  const responseFormat = String(formData.get("response_format") ?? "").trim().toLowerCase();
+  if (responseFormat === "verbose_json") {
+    const seen = new Set();
+    const raw = [
+      ...(typeof formData.getAll === "function" ? formData.getAll("timestamp_granularities[]") : []),
+      ...(typeof formData.getAll === "function" ? formData.getAll("timestamp_granularities") : []),
+    ];
+    for (const item of raw) {
+      for (const part of String(item).split(",")) {
+        const g = part.trim().toLowerCase();
+        if ((g === "word" || g === "segment") && !seen.has(g)) {
+          seen.add(g);
+          fd.append("timestamp_granularities[]", g);
+        }
+      }
+    }
+  }
   const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
   if (!res.ok) return upstreamError(res);
   const ct = res.headers.get("content-type") || "application/json";
