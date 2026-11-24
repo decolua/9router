@@ -316,6 +316,33 @@ function buildReasoningInputItem(msg) {
 }
 
 /**
+ * Map an OpenAI Chat Completions tool_choice to the Responses equivalent.
+ * Responses accepts the same "auto" | "required" | "none" strings plus flat
+ * named choices ({ type: "function", name }) and host-tool objects
+ * ({ type: "allowed_tools", ... }). The Chat nested forced shape
+ * ({ type: "function", function: { name } }) is flattened; object shorthands
+ * ({ type: "auto" | "required" | "none" }) become the bare string. Anything
+ * else passes through faithfully — never invent or drop a client choice here.
+ */
+function convertChatToolChoice(choice) {
+  if (typeof choice === "string") return choice;
+  if (choice && typeof choice === "object" && !Array.isArray(choice)) {
+    const fn = choice.function;
+    if (fn && typeof fn === "object" && !Array.isArray(fn)
+      && typeof fn.name === "string" && fn.name.trim() !== "") {
+      const { function: _nested, ...rest } = choice;
+      return { ...rest, type: OPENAI_BLOCK.FUNCTION, name: fn.name.trim().slice(0, MAX_TOOL_NAME_LEN) };
+    }
+    if ((choice.type === "auto" || choice.type === "required" || choice.type === "none")
+      && choice.name === undefined && fn === undefined) {
+      return choice.type;
+    }
+    return choice;
+  }
+  return choice;
+}
+
+/**
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
@@ -458,6 +485,14 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
+
+  // Preserve an explicit client tool_choice (required/none/named function):
+  // without it the choice degrades to the upstream default and the model
+  // narrates ("I will do X") instead of calling.
+  if (body.tool_choice !== undefined) {
+    const mappedChoice = convertChatToolChoice(body.tool_choice);
+    if (mappedChoice !== undefined) result.tool_choice = mappedChoice;
+  }
 
   return result;
 }
