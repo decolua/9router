@@ -2263,6 +2263,7 @@ const scopedModelPatterns =
           activeProviders={activeProviders}
           modelAliases={modelAliases}
           title="Select Allowed Models"
+          size="full"
           addedModelValues={parseAllowedModelsList(pickerTarget === "create" ? newKeyAllowedModels : editAllowedModels)}
           allowedModelPatterns={scopedModelPatterns}
           closeOnSelect={false}

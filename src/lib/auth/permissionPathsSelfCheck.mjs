@@ -126,6 +126,30 @@ run("existing API rules still gate the same paths", () => {
   ok(requiredPermissionsForApiPath("/api/models", "POST").includes("manageModels"), "model write still manageModels");
 });
 
+run("API key model picker reads only the provider catalog routes", () => {
+  const readPaths = [
+    ["/api/providers", "GET"],
+    ["/api/provider-nodes", "HEAD"],
+    ["/api/providers/connection-1/models", "GET"],
+  ];
+  for (const [path, method] of readPaths) {
+    const need = requiredPermissionsForApiPath(path, method);
+    ok(need.includes("manageApiKeys"), `${method} ${path} should be readable by a key session`);
+    ok(need.includes("manageProviders"), `${method} ${path} should remain readable by provider managers`);
+  }
+  for (const [path, method] of [
+    ["/api/providers", "POST"],
+    ["/api/provider-nodes", "PATCH"],
+    ["/api/providers/connection-1/models", "POST"],
+    ["/api/providers/connection-1", "GET"],
+    ["/api/providers/connection-1/overrides", "GET"],
+  ]) {
+    const need = requiredPermissionsForApiPath(path, method);
+    ok(need.includes("manageProviders"), `${method} ${path} remains provider-managed`);
+    ok(!need.includes("manageApiKeys"), `${method} ${path} is not exposed to key sessions`);
+  }
+});
+
 run("firstAllowedPage lands somewhere real for every single permission", () => {
   for (const k of PERMISSION_KEYS) {
     const page = firstAllowedPage(Object.fromEntries(PERMISSION_KEYS.map((x) => [x, x === k])));

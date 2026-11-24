@@ -5,47 +5,64 @@ import Image from "next/image";
 import { Card, Button, Input, Spinner } from "@/shared/components";
 
 function AuthBrandPanel() {
-  const steps = [
-    ["01", "Choose a credential", "Instance password or a scoped API key."],
-    ["02", "Verify access", "SSO options appear when configured."],
-    ["03", "Route requests", "Manage providers and model access."],
+  const checkpoints = [
+    ["01", "Credential", "Password, API key, or configured SSO."],
+    ["02", "Permission check", "The key's assigned scope is enforced."],
+    ["03", "Dashboard", "Open the areas this account may use."],
   ];
 
   return (
-    <aside className="relative hidden min-h-screen flex-col justify-between overflow-hidden border-r-2 border-[#191817] bg-[#eee4d2] p-8 lg:flex xl:p-12">
+    <aside className="relative hidden min-h-screen flex-col justify-between overflow-hidden border-r-2 border-[#191817] bg-[#191817] p-8 text-[#fffdf8] lg:flex xl:p-12">
       <div className="flex items-center gap-3">
-        <span className="flex size-11 shrink-0 items-center justify-center border-2 border-[#191817] bg-[#ff7657] p-1 shadow-[3px_3px_0_#191817]">
+        <span className="flex size-12 shrink-0 items-center justify-center border-2 border-[#fffdf8] bg-[#ff7657] p-1 shadow-[3px_3px_0_#fffdf8]">
           <Image src="/providers/9router-logo.png" alt="9Router" width={36} height={36} className="size-full object-contain" priority unoptimized />
         </span>
         <span>
-          <span className="block text-lg font-black tracking-tight text-[#191817]">9Router</span>
-          <span className="block font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-[#514c43]">Gateway control plane</span>
+          <span className="block text-lg font-black tracking-tight">9Router</span>
+          <span className="block font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-[#c8ee68]">Gateway control plane</span>
         </span>
       </div>
 
       <div className="relative z-10 max-w-xl py-10">
-        <span className="inline-flex border-2 border-[#191817] bg-[#c8ee68] px-3 py-1 font-mono text-[11px] font-black uppercase tracking-[0.14em] shadow-[3px_3px_0_#191817]">
-          Instance access / 01
-        </span>
-        <h2 className="mt-6 max-w-xl text-4xl font-black leading-[0.98] tracking-[-0.05em] text-[#191817] xl:text-6xl">
-          One doorway.<br />Every model route.
-        </h2>
-        <p className="mt-5 max-w-lg text-base font-medium leading-relaxed text-[#514c43]">
-          Sign in to manage provider connections, API keys, and the routes your clients use.
+        <p className="font-mono text-xs font-black uppercase tracking-[0.14em] text-[#c8ee68]">Instance access</p>
+        <p className="mt-5 max-w-xl text-4xl font-black leading-[0.96] tracking-[-0.05em] text-[#fffdf8] xl:text-6xl">
+          One gate.<br /><span className="text-[#ff7657]">Your routes.</span>
+        </p>
+        <p className="mt-5 max-w-lg text-base font-medium leading-relaxed text-[#eee4d2]">
+          Sign in to manage provider connections, API keys, and the model routes this instance serves.
         </p>
       </div>
 
-      <ol className="relative z-10 grid gap-2 xl:grid-cols-3">
-        {steps.map(([number, title, detail], index) => (
-          <li key={number} className={`min-h-28 border-2 border-[#191817] p-3 shadow-[3px_3px_0_#191817] ${index === 0 ? "bg-[#ff7657]" : index === 1 ? "bg-[#fff1bf]" : "bg-[#83d8e8]"}`}>
-            <span className="font-mono text-[10px] font-black tracking-[0.14em]">{number}</span>
-            <strong className="mt-2 block text-sm font-black leading-tight">{title}</strong>
-            <span className="mt-1 block text-xs leading-snug text-[#39352f]">{detail}</span>
-          </li>
-        ))}
-      </ol>
-      <div aria-hidden="true" className="absolute -bottom-20 -right-16 size-56 rotate-12 border-2 border-[#191817] bg-[#c6b5ff] opacity-70" />
+      <div className="relative z-10 border-2 border-[#191817] bg-[#eee4d2] p-4 text-[#191817] shadow-[5px_5px_0_#ff7657]">
+        <p className="mb-3 border-b-2 border-[#191817] pb-2 font-mono text-[10px] font-black uppercase tracking-[0.14em]">Access sequence</p>
+        <ol className="grid gap-2 sm:grid-cols-3">
+          {checkpoints.map(([number, title, detail]) => (
+            <li key={number} className="min-h-24 border-2 border-[#191817] bg-[#fffdf8] p-3">
+              <span className="font-mono text-[10px] font-black">{number}</span>
+              <strong className="mt-2 block text-sm font-black leading-tight">{title}</strong>
+              <span className="mt-1 block text-xs leading-snug text-[#514c43]">{detail}</span>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3 text-xs font-semibold leading-relaxed text-[#39352f]">Only sign-in methods enabled for this instance are shown.</p>
+      </div>
+
+      <div aria-hidden="true" className="absolute -right-10 top-1/3 size-28 rotate-45 border-2 border-[#ff7657]" />
     </aside>
+  );
+}
+
+function AuthMobileBrand() {
+  return (
+    <div className="mb-8 flex items-center gap-3 lg:hidden">
+      <span className="flex size-11 shrink-0 items-center justify-center border-2 border-[#191817] bg-[#ff7657] p-1 shadow-[3px_3px_0_#191817]">
+        <Image src="/providers/9router-logo.png" alt="9Router" width={36} height={36} className="size-full object-contain" priority unoptimized />
+      </span>
+      <span>
+        <span className="block text-lg font-black tracking-tight text-[#191817]">9Router</span>
+        <span className="block font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#514c43]">Gateway control plane</span>
+      </span>
+    </div>
   );
 }
 
@@ -229,22 +246,22 @@ export default function LoginPage() {
 
   if (noAccess) {
     return (
-      <div className="min-h-screen grid overflow-hidden bg-bg lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-        <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
+      <div className="min-h-screen grid overflow-hidden bg-[#f7f1e4] lg:grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)]">
         <AuthBrandPanel />
-        <main className="relative z-10 flex min-h-screen items-center justify-center p-4 sm:p-8">
-        <div className="relative z-10 w-full max-w-lg">
-          <div className="mb-6">
-            <p className="font-mono text-[11px] font-black uppercase tracking-[0.14em] text-primary">Access scope / limited</p>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-text-main">Dashboard access is not enabled</h2>
-            <p className="mt-2 text-sm leading-relaxed text-text-muted">This key authenticated successfully, but it does not include dashboard permissions.</p>
-          </div>
-          <Card padding="md" className="sm:p-8">
-            <div className="flex flex-col gap-4">
-              <p className="text-sm leading-relaxed text-text-muted">
-                Ask the instance owner to grant the required permission to this key, or switch to an administrator credential.
-              </p>
-              <Button type="button" variant="primary" className="w-full" loading={loading} onClick={handleSignOut}>
+        <main className="relative z-10 flex min-h-screen items-center justify-center bg-[#f7f1e4] p-5 sm:p-8 xl:p-12">
+        <div className="w-full max-w-xl">
+          <AuthMobileBrand />
+          <header className="mb-6">
+            <p className="font-mono text-[11px] font-black uppercase tracking-[0.14em] text-[#a73725]">Access / limited</p>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-[#191817] sm:text-4xl">This key stops here.</h1>
+            <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#514c43]">The credential is valid, but it does not include permission to open a dashboard page.</p>
+          </header>
+          <Card padding="md" className="border-2 border-[#191817] bg-[#fffdf8] text-[#191817] shadow-[6px_6px_0_#191817] sm:p-8">
+            <div className="flex flex-col gap-5">
+              <div className="border-2 border-[#191817] bg-[#fff1bf] p-4 text-sm leading-relaxed text-[#191817]">
+                Ask the instance owner to grant a dashboard permission to this key, or sign out and use an administrator credential.
+              </div>
+              <Button type="button" variant="primary" size="lg" className="min-h-12 w-full border-2 border-[#191817] bg-[#ff7657] text-[#191817] shadow-[4px_4px_0_#191817] hover:bg-[#ff8867] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]" loading={loading} onClick={handleSignOut}>
                 Sign out and switch account
               </Button>
             </div>
@@ -256,33 +273,35 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen grid overflow-hidden bg-bg lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-      {/* Faint grid background */}
-      <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
+    <div className="min-h-screen grid overflow-hidden bg-[#f7f1e4] lg:grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)]">
       <AuthBrandPanel />
-      <main className="relative z-10 flex min-h-screen items-center justify-center p-4 sm:p-8">
-      <div className="relative z-10 w-full max-w-xl">
-        <div className="mb-6">
-          <p className="font-mono text-[11px] font-black uppercase tracking-[0.14em] text-primary">9Router / access portal</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-text-main">Sign in to this instance</h2>
-          <p className="mt-2 text-sm leading-relaxed text-text-muted">
-            {samlAvailable
+      <main className="relative z-10 flex min-h-screen items-center justify-center bg-[#f7f1e4] p-5 sm:p-8 xl:p-12">
+      <div className="w-full max-w-xl">
+        <AuthMobileBrand />
+        <header className="mb-6">
+          <p className="font-mono text-[11px] font-black uppercase tracking-[0.14em] text-[#a73725]">Credential checkpoint</p>
+          <h1 className="mt-3 text-3xl font-black tracking-tight text-[#191817] sm:text-4xl">{mustChange ? "Set a new password." : "Sign in to this instance."}</h1>
+          <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#514c43]">
+            {mustChange
+              ? "Update the instance password before entering the dashboard."
+              : samlAvailable
               ? "Continue with the configured SAML identity provider."
               : oidcAvailable
               ? "Continue with the configured OIDC identity provider."
               : "Choose a credential to open the dashboard and manage your routes."}
           </p>
-        </div>
+        </header>
 
-        <Card padding="md" className="sm:p-8">
+        <Card padding="md" className="border-2 border-[#191817] bg-[#fffdf8] text-[#191817] shadow-[6px_6px_0_#191817] sm:p-8">
           {mustChange ? (
             <form onSubmit={handleSetNewPassword} className="flex flex-col gap-4">
-              <p className="text-sm text-warning text-center">
+              <p className="border-2 border-[#191817] bg-[#fff1bf] px-3 py-2 text-sm font-semibold leading-relaxed text-[#191817]">
                 Set a new password before accessing the dashboard remotely.
               </p>
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">New password</label>
+                <label htmlFor="new-password" className="text-sm font-bold">New password</label>
                 <Input
+                  id="new-password"
                   type="password"
                   placeholder="Enter new password"
                   value={newPassword}
@@ -290,55 +309,63 @@ export default function LoginPage() {
                   required
                   autoFocus
                 />
-                {error && <p className="text-xs text-red-500">{error}</p>}
+                {error && <p role="alert" className="border-2 border-[#191817] bg-[#ffe0e1] px-3 py-2 text-xs font-semibold text-[#8e1621]">{error}</p>}
               </div>
-              <Button type="submit" variant="primary" className="w-full" loading={loading} disabled={!newPassword}>
+              <Button type="submit" variant="primary" size="lg" className="min-h-12 w-full border-2 border-[#191817] bg-[#ff7657] text-[#191817] shadow-[4px_4px_0_#191817] hover:bg-[#ff8867] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]" loading={loading} disabled={!newPassword}>
                 Set password
               </Button>
             </form>
           ) : (
           <div className="flex flex-col gap-4">
             {samlAvailable && (
-              <Button type="button" variant="primary" className="w-full" onClick={handleSamlLogin}>
+              <Button type="button" variant="secondary" size="lg" className="min-h-12 w-full border-2 border-[#191817] text-[#191817] shadow-[3px_3px_0_#191817] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]" onClick={handleSamlLogin}>
                 {samlLoginLabel}
               </Button>
             )}
 
             {oidcAvailable && (
-              <Button type="button" variant="primary" className="w-full" onClick={handleOidcLogin}>
+              <Button type="button" variant="secondary" size="lg" className="min-h-12 w-full border-2 border-[#191817] text-[#191817] shadow-[3px_3px_0_#191817] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]" onClick={handleOidcLogin}>
                 {oidcLoginLabel}
               </Button>
             )}
 
-            {ssoAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
+            {ssoAvailable && passwordAvailable && (
+              <div className="flex items-center gap-3 py-1" aria-hidden="true">
+                <span className="h-0 flex-1 border-t-2 border-[#191817]" />
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[#514c43]">Or use a password</span>
+                <span className="h-0 flex-1 border-t-2 border-[#191817]" />
+              </div>
+            )}
 
             {passwordAvailable ? (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
                 {isSsoEnabled && !ssoAvailable && (
-                  <p className="text-xs text-warning text-center">
+                  <p role="status" className="border-2 border-[#191817] bg-[#fff1bf] px-3 py-2 text-xs font-semibold leading-relaxed text-[#191817]">
                     {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login is enabled, but configuration is incomplete. Password login is still available for recovery.
                   </p>
                 )}
 
                 {authMode === "both" && ssoAvailable && (
-                  <p className="text-xs text-text-muted text-center">
+                  <p className="text-xs font-medium leading-relaxed text-[#514c43]">
                     Password and {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login are both enabled.
                   </p>
                 )}
 
                 {/* Login Method Toggle */}
-                <div className="flex rounded-lg border border-border bg-bg-subtle p-1 mb-1">
+                <div role="group" aria-label="Sign-in method" className="mb-1 grid grid-cols-2 gap-1 border-2 border-[#191817] bg-[#eee4d2] p-1">
                   <button
                     type="button"
+                    aria-pressed={loginMethod === "password"}
                     onClick={() => { setLoginMethod("password"); setError(""); }}
-                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${loginMethod === "password" ? "bg-primary text-white shadow-xs" : "text-text-muted hover:text-text-main"}`}
+                    className={`min-h-11 border-2 border-[#191817] px-3 text-sm font-bold transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817] ${loginMethod === "password" ? "bg-[#191817] text-[#fffdf8] shadow-[2px_2px_0_#ff7657]" : "bg-[#fffdf8] text-[#191817] hover:bg-[#fff1bf]"}`}
                   >
                     Password
                   </button>
                   <button
                     type="button"
+                    aria-pressed={loginMethod === "apikey"}
                     onClick={() => { setLoginMethod("apikey"); setError(""); }}
-                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${loginMethod === "apikey" ? "bg-primary text-white shadow-xs" : "text-text-muted hover:text-text-main"}`}
+                    className={`min-h-11 border-2 border-[#191817] px-3 text-sm font-bold transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817] ${loginMethod === "apikey" ? "bg-[#191817] text-[#fffdf8] shadow-[2px_2px_0_#ff7657]" : "bg-[#fffdf8] text-[#191817] hover:bg-[#fff1bf]"}`}
                   >
                     API key
                   </button>
@@ -346,8 +373,9 @@ export default function LoginPage() {
 
                 {loginMethod === "password" ? (
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-bold">Instance password</label>
+                    <label htmlFor="instance-password" className="text-sm font-bold text-[#191817]">Instance password</label>
                     <Input
+                      id="instance-password"
                       type="password"
                       placeholder="Enter the instance password"
                       value={password}
@@ -355,22 +383,23 @@ export default function LoginPage() {
                       required
                       autoFocus={!oidcAvailable}
                     />
-                    {error && <p className="text-xs text-red-500">{error}</p>}
+                    {error && <p role="alert" className="border-2 border-[#191817] bg-[#ffe0e1] px-3 py-2 text-xs font-semibold text-[#8e1621]">{error}</p>}
                     {retryAfter > 0 && (
-                      <p className="text-xs text-warning">
+                      <p role="status" className="border-2 border-[#191817] bg-[#fff1bf] px-3 py-2 text-xs font-semibold text-[#191817]">
                         Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
                       </p>
                     )}
                     {resetHint && (
-                      <p className="text-xs text-text-muted">
-                        Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                      <p className="border-t-2 border-[#191817] pt-3 text-xs leading-relaxed text-[#514c43]">
+                        Forgot password? Open the <code className="border border-[#191817] bg-[#fff1bf] px-1 font-bold text-[#191817]">9router</code> CLI on the host, then choose <b>Settings</b> and <b>Reset Password to Default</b>.
                       </p>
                     )}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-bold">Access key</label>
+                    <label htmlFor="api-access-key" className="text-sm font-bold text-[#191817]">Access key</label>
                     <Input
+                      id="api-access-key"
                       type="password"
                       placeholder="Paste an assigned API key"
                       value={apiKey}
@@ -378,8 +407,8 @@ export default function LoginPage() {
                       required
                       autoFocus
                     />
-                    {error && <p className="text-xs text-red-500">{error}</p>}
-                    <p className="text-xs text-text-muted">
+                    {error && <p role="alert" className="border-2 border-[#191817] bg-[#ffe0e1] px-3 py-2 text-xs font-semibold text-[#8e1621]">{error}</p>}
+                    <p className="text-xs leading-relaxed text-[#514c43]">
                       This key opens only the dashboard areas its permissions allow.
                     </p>
                   </div>
@@ -388,7 +417,8 @@ export default function LoginPage() {
                 <Button
                   type="submit"
                   variant="primary"
-                  className="w-full"
+                  size="lg"
+                  className="min-h-12 w-full border-2 border-[#191817] bg-[#ff7657] text-[#191817] shadow-[4px_4px_0_#191817] hover:bg-[#ff8867] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]"
                   loading={loading}
                   disabled={retryAfter > 0}
                 >
@@ -396,13 +426,13 @@ export default function LoginPage() {
                 </Button>
 
                 {loginMethod === "password" && (
-                  <p className="mt-2 border-t-2 border-border-subtle pt-3 text-xs leading-relaxed text-text-muted">
+                  <p className="mt-2 border-t-2 border-[#191817] pt-3 text-xs leading-relaxed text-[#514c43]">
                     Use the password configured for this instance. If you have lost access, an administrator can reset it on the host.
                   </p>
                 )}
               </form>
             ) : (
-              error && <p className="text-xs text-red-500">{error}</p>
+              error && <p role="alert" className="border-2 border-[#191817] bg-[#ffe0e1] px-3 py-2 text-xs font-semibold text-[#8e1621]">{error}</p>
             )}
           </div>
           )}

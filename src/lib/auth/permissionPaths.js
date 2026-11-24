@@ -70,9 +70,12 @@ const READ_METHODS = ["GET", "HEAD"];
 
 const API_PERMISSION_RULES = [
   { prefix: "/api/keys", permissions: ["manageApiKeys"] },
-  // The provider page needs the model catalog to render a connection, so reading it
-  // is shared with manageProviders while every write stays on manageModels. Reading is
-  // also shared with manageApiKeys because the key forms pick allowed models from it.
+  // Key forms need a safe provider list, provider-node labels, and live model catalogs.
+  // Only these read routes are shared with manageApiKeys; provider settings and writes
+  // remain restricted to manageProviders.
+  { prefix: "/api/providers", exact: true, permissions: ["manageProviders", "manageApiKeys"], methods: READ_METHODS },
+  { prefix: "/api/provider-nodes", exact: true, permissions: ["manageProviders", "manageApiKeys"], methods: READ_METHODS },
+  { pattern: /^\/api\/providers\/[^/]+\/models$/, permissions: ["manageProviders", "manageApiKeys"], methods: READ_METHODS },
   { prefix: "/api/models/test", permissions: ["manageModels", "manageProviders", "manageApiKeys"] },
   { prefix: "/api/models/alias", permissions: ["manageModels", "manageProviders", "manageApiKeys"], methods: READ_METHODS },
   { prefix: "/api/models/disabled", permissions: ["manageModels", "manageProviders", "manageApiKeys"], methods: READ_METHODS },
@@ -111,10 +114,17 @@ export function requiredPermissionsForApiPath(pathname, method = "GET") {
   let best = null;
   let bestScore = -1;
   for (const rule of API_PERMISSION_RULES) {
-    if (pathname !== rule.prefix && !pathname.startsWith(`${rule.prefix}/`)) continue;
+    const matches = rule.pattern
+      ? rule.pattern.test(pathname)
+      : rule.exact
+        ? pathname === rule.prefix
+        : pathname === rule.prefix || pathname.startsWith(`${rule.prefix}/`);
+    if (!matches) continue;
     const verb = String(method || "GET").toUpperCase();
     if (rule.methods && !rule.methods.includes(verb)) continue;
-    const score = rule.prefix.length * 2 + (rule.methods ? 1 : 0);
+    const score = rule.pattern
+      ? 10000 + rule.pattern.source.length
+      : rule.prefix.length * 2 + (rule.methods ? 1 : 0) + (rule.exact ? 2 : 0);
     if (score <= bestScore) continue;
     best = rule.permissions;
     bestScore = score;

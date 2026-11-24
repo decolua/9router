@@ -6,6 +6,7 @@ import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
 import CapacityBadges from "./CapacityBadges";
 import ModelTierBadge from "./ModelTierBadge";
+import { Spinner } from "./Loading";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
@@ -53,6 +54,31 @@ function ContextTag({ caps }) {
     </span>
   );
 }
+
+function ModelChoiceRow({ checked, onClick, title, children }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={checked}
+      title={title}
+      onClick={onClick}
+      className={`group flex min-h-11 w-full min-w-0 items-center gap-2 border-2 px-3 py-2 text-left text-xs font-semibold transition-[transform,box-shadow,background-color] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817] ${
+        checked
+          ? "border-[#191817] bg-[#c8ee68] text-[#191817] shadow-[3px_3px_0_#191817]"
+          : "border-[#191817] bg-[#fffdf8] text-[#191817] shadow-[2px_2px_0_#191817] hover:-translate-y-px hover:bg-[#fff1bf] hover:shadow-[3px_3px_0_#191817]"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`flex size-5 shrink-0 items-center justify-center border-2 border-[#191817] ${checked ? "bg-[#191817] text-[#c8ee68]" : "bg-[#fffdf8] text-transparent"}`}
+      >
+        <span className="material-symbols-outlined text-[15px] leading-none">check</span>
+      </span>
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 break-words leading-snug">{children}</span>
+    </button>
+  );
+}
+
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
 import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
 
@@ -141,16 +167,23 @@ export default function ModelSelectModal({
 }) {
   // Live-fetched connections on modal open, fallback to activeProviders prop
   const [fetchedConnections, setFetchedConnections] = useState(null);
+  const [connectionsLoading, setConnectionsLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
 
   const fetchConnections = async () => {
+    setConnectionsLoading(true);
+    setCatalogError("");
     try {
-      const res = await fetch("/api/providers");
+      const res = await fetch("/api/providers", { cache: "no-store" });
       if (!res.ok) throw new Error(`Failed to fetch providers: ${res.status}`);
       const data = await res.json();
       setFetchedConnections(data.connections || []);
     } catch (error) {
       console.error("Error fetching providers in ModelSelectModal:", error);
-      setFetchedConnections([]);
+      setFetchedConnections(activeProviders || []);
+      setCatalogError("Connected providers could not be refreshed. Showing the available fallback list.");
+    } finally {
+      setConnectionsLoading(false);
     }
   };
 
@@ -520,8 +553,21 @@ export default function ModelSelectModal({
         };
       } else {
         const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : [];
-        // Only show user-added models; cursor/cline/clinepass show account models from their live APIs
-        const hardcodedModels = liveModels.length > 0 ? liveModels.map((m) => ({ id: m.id, name: m.name || m.id })) : [];
+        // Cursor/Cline account catalogs are the actual selectable models. Keep a
+        // registry fallback so a slow or unavailable live endpoint never empties
+        // the group; custom aliases are still merged below.
+        const providerCatalog = LIVE_CATALOG_PROVIDERS.includes(providerId)
+          ? (liveModels.length > 0 ? liveModels : getModelsByProviderId(providerId))
+          : [];
+        const hardcodedModels = providerCatalog
+          .filter((m) => m?.id)
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            value: `${alias}/${m.id}`,
+            kind: getModelKind(m),
+            isFree: m.isFree,
+          }));
         const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
 
         // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider
@@ -545,6 +591,7 @@ export default function ModelSelectModal({
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true, isFree: m.isFree }));
 
         const merged = [
+          ...hardcodedModels,
           ...customAliasModels,
           ...customRegisteredModels,
         ];
@@ -890,7 +937,7 @@ export default function ModelSelectModal({
       footer={null}
     >
       {/* Info bar */}
-      <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
+      <div className="mb-3 flex items-start gap-2 border-2 border-[#191817] bg-[#fff1bf] px-3 py-2.5 text-xs font-medium leading-relaxed text-[#191817] shadow-[3px_3px_0_#191817]">
         <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>help_outline</span>
         <span>Click a model to add it, click again to remove it, and the change is saved automatically.{showStudioTargets ? " Rows marked combo route into a fallback group; rows marked custom call another named model." : ""}{allowProviderWildcard ? " Click a provider name for wildcard (e.g. provider/*)." : ""} Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/).</span>
       </div>
@@ -910,7 +957,7 @@ export default function ModelSelectModal({
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-20 py-1.5 bg-surface border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="min-h-11 w-full border-2 border-[#191817] bg-[#fffdf8] py-2 pl-9 pr-20 text-sm text-[#191817] placeholder:text-[#514c43] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
             {parsedQuery.isRegex && (
@@ -927,7 +974,7 @@ export default function ModelSelectModal({
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="text-text-muted hover:text-text-main cursor-pointer p-0.5 rounded"
+                className="flex size-8 items-center justify-center border border-[#191817] bg-[#fffdf8] text-[#191817] hover:bg-[#ff7657] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]"
                 title="Clear search"
               >
                 <span className="material-symbols-outlined text-[14px] leading-none">cancel</span>
@@ -937,11 +984,11 @@ export default function ModelSelectModal({
         </div>
 
         {!closeOnSelect && visibleModels.length > 0 && (
-          <div className="flex items-center justify-between px-1 text-[11px] text-text-muted">
-            <span className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-[#191817]">
+            <span className="flex flex-wrap items-center gap-2">
               <span>{visibleModels.length} models</span>
               {addedModelValues.length > 0 && (
-                <span className="text-primary font-medium">({addedModelValues.length} selected)</span>
+                <span className="font-bold">({addedModelValues.includes("*") ? "all selected" : `${addedModelValues.length} selected`})</span>
               )}
             </span>
             <div className="flex items-center gap-1.5">
@@ -949,7 +996,7 @@ export default function ModelSelectModal({
                 <button
                   type="button"
                   onClick={handleSelectAllVisible}
-                  className="px-2 py-0.5 rounded text-[11px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                  className="min-h-11 border-2 border-[#191817] bg-[#c8ee68] px-3 text-[11px] font-bold text-[#191817] shadow-[2px_2px_0_#191817] transition-transform hover:-translate-y-px active:translate-y-px focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]"
                   title="Select all filtered models"
                 >
                   Select All ({visibleUnadded.length})
@@ -959,7 +1006,7 @@ export default function ModelSelectModal({
                 <button
                   type="button"
                   onClick={handleDeselectAllVisible}
-                  className="px-2 py-0.5 rounded text-[11px] font-medium bg-border/40 text-text-muted hover:text-text-main hover:bg-border/60 transition-colors cursor-pointer"
+                  className="min-h-11 border-2 border-[#191817] bg-[#fffdf8] px-3 text-[11px] font-bold text-[#191817] shadow-[2px_2px_0_#191817] transition-transform hover:-translate-y-px active:translate-y-px focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]"
                   title="Deselect all filtered models"
                 >
                   Deselect All ({visibleAdded.length})
@@ -970,8 +1017,22 @@ export default function ModelSelectModal({
         )}
       </div>
 
-      {/* Models grouped by provider - compact */}
-      <div className="max-h-[400px] overflow-y-auto space-y-3">
+      {catalogError && (
+        <div role="status" className="mb-3 flex flex-wrap items-center justify-between gap-2 border-2 border-[#191817] bg-[#fff1bf] px-3 py-2 text-xs font-semibold text-[#191817] shadow-[2px_2px_0_#191817]">
+          <span>{catalogError}</span>
+          <button
+            type="button"
+            onClick={fetchConnections}
+            disabled={connectionsLoading}
+            className="min-h-11 border-2 border-[#191817] bg-[#fffdf8] px-3 font-bold hover:bg-[#ff7657] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817]"
+          >
+            {connectionsLoading ? "Refreshing…" : "Retry"}
+          </button>
+        </div>
+      )}
+
+        {/* Model options stay as readable rows so long IDs do not disappear into tiny chips. */}
+        <div className="max-h-[min(62vh,560px)] space-y-4 overflow-y-auto pr-1">
         {/* Combos section - always first */}
         {filteredCombos.length > 0 && (
           <div>
@@ -980,31 +1041,21 @@ export default function ModelSelectModal({
               <span className="text-xs font-medium text-primary">Combos</span>
               <span className="text-[10px] text-text-muted">({filteredCombos.length})</span>
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {filteredCombos.map((combo) => {
                 const isSelected = selectedModel === combo.name;
+                const isAdded = addedModelValues.includes(combo.name);
                 return (
-                  <button
+                  <ModelChoiceRow
                     key={combo.id}
+                    checked={isSelected || isAdded}
                     onClick={() => handleSelect({ id: combo.name, name: combo.name, value: combo.name })}
-                    className={`
-                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer flex items-center gap-1
-                      ${isSelected
-                        ? "bg-primary text-white border-primary"
-                        : addedModelValues.includes(combo.name)
-                          ? "bg-primary border-primary text-white hover:bg-primary-hover"
-                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
-                      }
-                    `}
                   >
-                    {addedModelValues.includes(combo.name) && (
-                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>done_all</span>
-                    )}
-                    {combo.name}
-                    <span className="text-[9px] opacity-60 font-normal">combo</span>
+                    <span className="min-w-0 flex-1 break-all">{combo.name}</span>
+                    <span className="border border-[#191817] px-1.5 py-0.5 text-[9px] font-bold">combo</span>
                     <ContextTag caps={getComboCaps(combo.name)} />
                     <CapacityBadges caps={getComboCaps(combo.name)} />
-                  </button>
+                  </ModelChoiceRow>
                 );
               })}
             </div>
@@ -1019,33 +1070,23 @@ export default function ModelSelectModal({
               <span className="text-xs font-medium leading-none text-primary">Custom Models</span>
               <span className="text-[10px] text-text-muted">({filteredStudioModels.length})</span>
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {filteredStudioModels.map((studio) => {
                 const isSelected = selectedModel === studio.callName;
+                const isAdded = addedModelValues.includes(studio.callName);
                 return (
-                  <button
+                  <ModelChoiceRow
                     key={studio.callName}
+                    checked={isSelected || isAdded}
                     onClick={() => handleSelect({ id: studio.callName, name: studio.displayName || studio.callName, value: studio.callName })}
                     title={`Calls ${studio.targetLabel || studio.targetModel}`}
-                    className={`
-                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer flex items-center gap-1
-                      ${isSelected
-                        ? "bg-primary text-white border-primary"
-                        : addedModelValues.includes(studio.callName)
-                          ? "bg-primary border-primary text-white hover:bg-primary-hover"
-                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
-                      }
-                    `}
                   >
-                    {addedModelValues.includes(studio.callName) && (
-                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>done_all</span>
-                    )}
-                    {studio.callName}
-                    <span className="text-[9px] opacity-60 font-normal">custom</span>
+                    <span className="min-w-0 flex-1 break-all">{studio.displayName || studio.callName}</span>
+                    <span className="border border-[#191817] px-1.5 py-0.5 text-[9px] font-bold">custom</span>
                     <ModelTierBadge model={studio.callName} />
                     <ContextTag caps={getCaps(studio.callName)} />
                     <CapacityBadges caps={getCaps(studio.callName)} />
-                  </button>
+                  </ModelChoiceRow>
                 );
               })}
             </div>
@@ -1073,17 +1114,17 @@ export default function ModelSelectModal({
                     type="button"
                     onClick={() => handleSelect({ value: wildcardValue, name: wildcardValue })}
                     title={isWildcardAdded ? `Click to remove wildcard ${wildcardValue}` : `Click to allow all models from ${group.name} (${wildcardValue})`}
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-all cursor-pointer border ${
+                    className={`inline-flex min-h-11 items-center gap-2 border-2 border-[#191817] px-3 text-xs font-bold text-[#191817] shadow-[2px_2px_0_#191817] transition-transform hover:-translate-y-px focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#191817] ${
                       isWildcardAdded
-                        ? "bg-primary text-white border-primary shadow-2xs hover:bg-primary-hover"
-                        : "text-primary border-transparent hover:bg-primary/10 hover:border-primary/20"
+                        ? "bg-[#c8ee68]"
+                        : "bg-[#fffdf8] hover:bg-[#fff1bf]"
                     }`}
                   >
                     {isWildcardAdded && (
                       <span className="material-symbols-outlined leading-none text-[12px]">done_all</span>
                     )}
                     <span>{group.name}</span>
-                    <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${isWildcardAdded ? "bg-white/20 text-white" : "text-text-muted bg-sidebar border border-border/50"}`}>
+                    <span className="border border-[#191817] bg-[#fff1bf] px-1.5 py-0.5 font-mono text-[10px] text-[#191817]">
                       {wildcardValue}
                     </span>
                   </button>
@@ -1108,40 +1149,27 @@ export default function ModelSelectModal({
                 )}
               </div>
 
-            <div className="flex flex-wrap gap-1.5">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {group.models.map((model) => {
                 const isSelected = selectedModel === model.value;
+                const isAdded = addedModelValues.includes(model.value);
                 const isPlaceholder = model.isPlaceholder;
                 return (
-                  <button
+                  <ModelChoiceRow
                     key={model.value}
+                    checked={!isPlaceholder && (isSelected || isAdded)}
                     onClick={() => handleSelect(model)}
                     title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : undefined}
-                    className={`
-                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                      ${isPlaceholder
-                        ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
-                        : isSelected
-                          ? "bg-primary text-white border-primary"
-                          : addedModelValues.includes(model.value)
-                            ? "bg-primary border-primary text-white hover:bg-primary-hover"
-                            : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
-                      }
-                    `}
                   >
-                    <span className="flex items-center gap-1">
-                      {addedModelValues.includes(model.value) && !isPlaceholder && (
-                        <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>done_all</span>
-                      )}
+                    <span className={`min-w-0 flex-1 break-all ${isPlaceholder ? "italic" : ""}`}>
                       {isPlaceholder ? (
                         <>
-                          <span className="material-symbols-outlined text-[11px]">edit_note</span>
+                          <span className="material-symbols-outlined mr-1 align-middle text-[14px]">edit_note</span>
                           {model.name}
                         </>
                       ) : model.isCustom ? (
                         <>
                           {model.name}
-                          <span className="text-[9px] opacity-60 font-normal">custom</span>
                           <ModelTierBadge model={model.id || model.value} providerId={providerId} isFree={model.isFree} />
                           <ContextTag caps={getCaps(model.value)} />
                           <CapacityBadges caps={getCaps(model.value)} />
@@ -1155,7 +1183,9 @@ export default function ModelSelectModal({
                         </>
                       )}
                     </span>
-                  </button>
+                    {model.isCustom && <span className="shrink-0 border border-[#191817] px-1.5 py-0.5 text-[9px] font-bold">custom</span>}
+                    {isPlaceholder && <span className="shrink-0 border border-dashed border-[#191817] px-1.5 py-0.5 text-[9px] font-bold">edit ID</span>}
+                  </ModelChoiceRow>
                 );
               })}
             </div>
@@ -1164,11 +1194,21 @@ export default function ModelSelectModal({
       })}
 
         {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && filteredStudioModels.length === 0 && (
-          <div className="text-center py-4 text-text-muted">
-            <span className="material-symbols-outlined text-2xl mb-1 block">
-              youtube_searched_for
-            </span>
-            <p className="text-xs">No models found</p>
+          <div className="flex min-h-32 flex-col items-center justify-center gap-2 border-2 border-dashed border-[#191817] bg-[#fffdf8] px-4 py-6 text-center text-[#191817]">
+            {connectionsLoading ? (
+              <>
+                <Spinner size="sm" decorative />
+                <p className="text-xs font-semibold">Loading connected models…</p>
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true" className="material-symbols-outlined text-2xl">{catalogError ? "warning" : "manage_search"}</span>
+                <p className="text-sm font-bold">{searchQuery ? "No models match this search." : "No selectable models are available."}</p>
+                {!searchQuery && !catalogError && (
+                  <p className="max-w-md text-xs leading-relaxed text-[#514c43]">Check that a provider is connected and active, then refresh the list.</p>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
