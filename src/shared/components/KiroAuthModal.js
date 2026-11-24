@@ -72,6 +72,23 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     setError(null);
   };
 
+  // Reset credentials and return to method picker
+  const resetCredentials = () => {
+    setSelectedMethod(null);
+    setIdcStartUrl("");
+    setRefreshToken("");
+    setCliProxyJson("");
+    setApiKey("");
+    setIdcCredentials(null);
+    setAutoDetected(false);
+    setError(null);
+  };
+
+  const handleClose = () => {
+    resetCredentials();
+    onClose();
+  };
+
   const handleImportToken = async () => {
     if (!refreshToken.trim()) {
       setError("Please enter a refresh token");
@@ -98,6 +115,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       }
 
       // Success - notify parent to refresh connections
+      resetCredentials();
       onMethodSelect("import");
     } catch (err) {
       setError(err.message);
@@ -128,6 +146,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         throw new Error(data.error || "CLIProxyAPI import failed");
       }
 
+      resetCredentials();
       onMethodSelect("import-cli-proxy");
     } catch (err) {
       setError(err.message);
@@ -170,6 +189,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       }
 
       // Success - notify parent to refresh connections
+      resetCredentials();
       onMethodSelect("api-key");
     } catch (err) {
       setError(err.message);
@@ -183,7 +203,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   };
 
   return (
-    <Modal isOpen={isOpen} title="Connect Kiro" onClose={onClose} size="lg">
+    <Modal isOpen={isOpen} title="Connect Kiro" onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
         {/* Method Selection */}
         {!selectedMethod && (
