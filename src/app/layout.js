@@ -37,7 +37,7 @@ export default function RootLayout({ children }) {
             zustand-persist "theme" key and the `dark` class applyTheme() sets. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var s=localStorage.getItem('theme');var t=s?(JSON.parse(s).state||{}).theme:'system';t=t||'system';var m=window.matchMedia('(prefers-color-scheme: dark)').matches;if(t==='dark'||(t==='system'&&m)){document.documentElement.classList.add('dark')}}catch(e){}})();`,
+            __html: `(function(){try{var s=localStorage.getItem('theme');var t=s?(JSON.parse(s).state||{}).theme:'system';t=t||'system';var m=window.matchMedia('(prefers-color-scheme: dark)').matches;if(t==='dark'||(t==='system'&&m)){document.documentElement.classList.add('dark')}var c=document.cookie.split(';').find(function(x){return x.trim().indexOf('locale=')===0});var l=c?decodeURIComponent(c.split('=')[1].trim()):'en';if(['ar','fa','he','ur'].indexOf(l)!==-1){document.documentElement.setAttribute('dir','rtl');document.documentElement.setAttribute('lang',l)}else{document.documentElement.setAttribute('dir','ltr');document.documentElement.setAttribute('lang',l||'en')}}catch(e){}})();`,
           }}
         />
         <script
