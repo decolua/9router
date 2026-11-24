@@ -64,6 +64,63 @@ docker run -d \
   decolua/9router:latest
 ```
 
+## MITM proxy & `/etc/hosts`
+
+The MITM proxy feature redirects traffic from certain CLI/IDE tools (Antigravity, GitHub Copilot, Kiro, …) to 9Router by mapping their API hostnames to `127.0.0.1` in your host's `/etc/hosts`. To make this work from inside the container, you need to mount `/etc/hosts` from the host.
+
+Two modes are supported, with different security trade-offs.
+
+### Mode 1 — Manual hosts management (recommended) 🔒
+
+Mount `/etc/hosts` **read-only**. The container can read entries but cannot modify the host file.
+
+````bash
+docker run -d \
+  -p 20128:20128 \
+  -v "$HOME/.9router:/app/data" \
+  -v "/etc/hosts:/etc/hosts:ro" \
+  -e DATA_DIR=/app/data \
+  --name 9router \
+  decolua/9router:latest
+````
+
+The in-app DNS toggle on the **MITM Proxy** page cannot rewrite `/etc/hosts` in this mode. Instead, the UI displays the exact entries to add. Append them on your host manually, for example:
+
+````text
+127.0.0.1 daily-cloudcode-pa.googleapis.com
+127.0.0.1 cloudcode-pa.googleapis.com
+# … plus any other entries shown in the UI for the tools you use
+````
+
+No elevated access is granted to the container; the host's `/etc/hosts` cannot be altered unexpectedly. One-time manual edit per tool.
+
+### Mode 2 — Automatic hosts management ⚠️
+
+Mount `/etc/hosts` **read-write**. The in-app DNS toggle adds and removes entries automatically when you enable/disable a tool.
+
+````bash
+docker run -d \
+  -p 20128:20128 \
+  -v "$HOME/.9router:/app/data" \
+  -v "/etc/hosts:/etc/hosts" \
+  -e DATA_DIR=/app/data \
+  --name 9router \
+  decolua/9router:latest
+````
+
+> ⚠️ **Security note:** this gives the container write access to your host's `/etc/hosts`. Only use it if you trust the image and accept the trade-off. Not recommended for shared or multi-user machines.
+
+### Which mode should I pick?
+
+| Use case                                  | Recommended mode |
+| ----------------------------------------- | ---------------- |
+| Personal dev machine, security-conscious  | Mode 1 (`:ro`)   |
+| Quick local experimentation               | Mode 2 (rw)      |
+| Shared / production-ish host              | Mode 1 (`:ro`)   |
+| CI / ephemeral environments               | Mode 1 (`:ro`)   |
+
+If you don't need the MITM feature at all, simply omit the `/etc/hosts` mount — 9Router still works as a regular router/proxy for the providers you configure.
+
 ## Optional Headroom sidecar
 
 The 9Router image does not bundle Python or Headroom. To use Headroom in Docker, run it as a separate service and point 9Router at that proxy:
