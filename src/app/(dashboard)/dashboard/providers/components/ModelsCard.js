@@ -115,7 +115,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
   const [modelTestResults, setModelTestResults] = useState({});
-  const [testingModelId, setTestingModelId] = useState(null);
+  const [testingModelIds, setTestingModelIds] = useState(new Set());
   const [testError, setTestError] = useState("");
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
 
@@ -182,8 +182,8 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   };
 
   const handleTestModel = async (modelId) => {
-    if (testingModelId) return;
-    setTestingModelId(modelId);
+    if (testingModelIds.has(modelId)) return;
+    setTestingModelIds((prev) => new Set([...prev, modelId]));
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
@@ -196,7 +196,13 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
       setTestError("Network error");
-    } finally { setTestingModelId(null); }
+    } finally {
+      setTestingModelIds((prev) => {
+        const next = new Set(prev);
+        next.delete(modelId);
+        return next;
+      });
+    }
   };
 
   // Built-in models — filter by kindFilter if provided
@@ -241,7 +247,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
                 onDeleteAlias={() => handleDeleteAlias(existingAlias)}
                 testStatus={modelTestResults[model.id]}
                 onTest={() => handleTestModel(model.id)}
-                isTesting={testingModelId === model.id}
+                isTesting={testingModelIds.has(model.id)}
                 isFree={model.isFree}
               />
             );
@@ -258,7 +264,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
               onDeleteAlias={() => handleDeleteCustomModel(model.id)}
               testStatus={modelTestResults[model.id]}
               onTest={() => handleTestModel(model.id)}
-              isTesting={testingModelId === model.id}
+              isTesting={testingModelIds.has(model.id)}
               isCustom
             />
           ))}
