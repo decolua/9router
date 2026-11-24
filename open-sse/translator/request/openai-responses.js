@@ -11,6 +11,7 @@ import {
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
+  splitResponsesToolOutput,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 
@@ -33,6 +34,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // Group items by conversation turn
   let currentAssistantMsg = null;
   let pendingToolResults = [];
+  let pendingToolImages = [];
   let pendingReasoning = "";
   let pendingReasoningEncrypted = "";
   const additionalTools = [];
@@ -65,6 +67,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? RESPONSES_ITEM.MESSAGE : null);
+
+    // Images from a run of tool outputs go in one user turn after all of them,
+    // so tool messages stay contiguous after their assistant tool_calls.
+    const isToolOutput = itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT;
+    if (!isToolOutput && pendingToolImages.length > 0) {
+      result.messages.push({ role: ROLE.USER, content: pendingToolImages });
+      pendingToolImages = [];
+    }
 
     if (itemType === RESPONSES_ITEM.MESSAGE) {
       // Flush any pending assistant message with tool calls
@@ -140,11 +150,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         pendingToolResults = [];
       }
       // Add tool result immediately
+      const { text, images } = splitResponsesToolOutput(item.output);
       result.messages.push({
         role: ROLE.TOOL,
         tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
+        content: text
       });
+      if (images.length > 0) {
+        pendingToolImages.push({ type: OPENAI_BLOCK.TEXT, text: `[Image from tool result ${item.call_id}]` }, ...images);
+      }
     }
     else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
       if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
@@ -171,6 +185,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     for (const tr of pendingToolResults) {
       result.messages.push(tr);
     }
+  }
+  if (pendingToolImages.length > 0) {
+    result.messages.push({ role: ROLE.USER, content: pendingToolImages });
   }
 
   // Convert tools format.
