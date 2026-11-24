@@ -1,7 +1,7 @@
 import PropTypes from "prop-types";
-import { CapacityBadges } from "@/shared/components";
+import { CapacityBadges, PriceChip } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix }) {
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix, price, onOpenPrice }) {
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
@@ -29,6 +29,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           <span className="flex min-w-0 items-center text-[9px] gap-1 pl-1">
             {model.name && <span className="break-all sm:truncate text-[9px] italic text-text-muted/70">{model.name}</span>}
             <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
+            {onOpenPrice && <PriceChip price={price} onClick={onOpenPrice} />}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
@@ -101,4 +102,6 @@ ModelRow.propTypes = {
   onDisable: PropTypes.func,
   caps: PropTypes.object,
   thinkingSuffix: PropTypes.string,
+  price: PropTypes.shape({ pricing: PropTypes.object, source: PropTypes.string }),
+  onOpenPrice: PropTypes.func,
 };

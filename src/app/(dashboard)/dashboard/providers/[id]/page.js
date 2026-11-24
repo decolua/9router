@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, ZedAuthModal, XiaomiMimoAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, ZedAuthModal, XiaomiMimoAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal, PriceCard } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
@@ -194,6 +194,30 @@ export default function ProviderDetailPage() {
     return levels && levels.includes(thinkingMode) ? thinkingMode : null;
   };
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
+  // Per-model price chip ($) and price card: effective price + source for every model row.
+  const [prices, setPrices] = useState({});
+  const [priceCardModel, setPriceCardModel] = useState(null);
+  const priceModelIds = [
+    ...models.map((m) => m.id),
+    ...kiloFreeModels.map((m) => m.id),
+    ...getProviderCustomModelRows({ customModels, modelAliases, providerAlias: providerStorageAlias, builtInModels: models, type: "llm" }).map((m) => m.id),
+  ];
+  const priceModelIdsKey = [...new Set(priceModelIds)].join("|");
+  const [priceRefresh, setPriceRefresh] = useState(0);
+  useEffect(() => {
+    const ids = priceModelIdsKey ? priceModelIdsKey.split("|") : [];
+    if (!providerId || ids.length === 0) return undefined;
+    let cancelled = false;
+    fetch("/api/pricing/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: providerId, models: ids }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (!cancelled && data) setPrices(data.prices || {}); })
+      .catch((error) => console.log("Error loading prices:", error));
+    return () => { cancelled = true; };
+  }, [providerId, priceModelIdsKey, priceRefresh]);
   // Union of levels across this provider's reasoning models — drives the level picker options.
   // Include custom models too (e.g. manually added gpt-5.6-sol → max).
   const providerThinkingLevels = (() => {
@@ -1249,6 +1273,8 @@ export default function ProviderDetailPage() {
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
             thinkingSuffix={resolveThinkingSuffix(model.id)}
+            price={prices[model.id]}
+            onOpenPrice={() => setPriceCardModel(model.id)}
           />
         ))}
 
@@ -1275,6 +1301,8 @@ export default function ProviderDetailPage() {
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
               thinkingSuffix={resolveThinkingSuffix(model.id)}
+              price={prices[model.id]}
+              onOpenPrice={() => setPriceCardModel(model.id)}
             />
           );
         })}
@@ -1963,6 +1991,14 @@ export default function ProviderDetailPage() {
           isAnthropic={isAnthropicCompatible}
         />
       )}
+      <PriceCard
+        isOpen={Boolean(priceCardModel)}
+        provider={providerId}
+        model={priceCardModel}
+        price={priceCardModel ? prices[priceCardModel] : undefined}
+        onClose={() => setPriceCardModel(null)}
+        onChanged={() => setPriceRefresh((n) => n + 1)}
+      />
       {!isCompatible && (
         <AddCustomModelModal
           isOpen={showAddCustomModel}
