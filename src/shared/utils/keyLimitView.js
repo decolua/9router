@@ -27,7 +27,7 @@ export function keyLimitView(key) {
     return {
       greyed: true,
       warning: s.unbounded
-        ? "Cost limit is disabled because this key is unrestricted and can access unpriced models"
+        ? "Cost limit is disabled because this key can access unpriced models"
         : `Cost limit is disabled because this key can access unpriced models: ${s.unpriced.join(", ")}`,
       note: null,
       summary: null,
@@ -37,7 +37,7 @@ export function keyLimitView(key) {
     return {
       ...neutral,
       note: s.unbounded
-        ? "This key is unrestricted, so a limit is saved but not enforced until the key is restricted and every model it can reach has a price."
+        ? "This key can access models that have no price, so a limit is saved but not enforced until every model it can reach has a price."
         : `This key can reach unpriced models (${s.unpriced.join(", ")}), so a limit is saved but not enforced until they have a price.`,
     };
   }
@@ -46,4 +46,27 @@ export function keyLimitView(key) {
     ? `$${s.spentUsd.toFixed(2)} of $${limit.usd} ${when}, resets ${s.resetsAt}`
     : null;
   return { ...neutral, summary };
+}
+
+/**
+ * Text of the confirmation shown when the "Cost limit" switch is turned on (like the
+ * one "Restrict access" shows). Says whether the limit would be enforced right now and,
+ * when it would not, why and how to fix it: give the models a price with the "$" chip on
+ * the provider's model list.
+ * @returns {{ enforced: boolean, lines: string[] }}
+ */
+export function limitConfirmView(key) {
+  const s = key?.limitStatus || null;
+  const lines = ["Once the cost limit is reached, this key gets a 429 until the day or month ends (UTC)."];
+  if (s && !s.eligible) {
+    lines.push(
+      s.unbounded
+        ? "This key can access models that have no price. The limit is saved but will NOT be applied until every model it can reach has a price."
+        : `This key can reach models without a price (${s.unpriced.join(", ")}). The limit is saved but will NOT be applied until they have one.`,
+    );
+    lines.push('To price a model, open it in the provider\'s model list and click the "$" icon next to its badges: you can set a custom price there.');
+    return { enforced: false, lines };
+  }
+  lines.push("Every model this key can reach has a price, so the limit will be applied.");
+  return { enforced: true, lines };
 }

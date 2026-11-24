@@ -9,7 +9,7 @@ describe("keyLimitView: the limit can always be edited; the status only decides 
     const v = keyLimitView({ limit: null, limitStatus: st({ eligible: false, unbounded: true, effective: false }) });
     expect(v.greyed).toBe(false);
     expect(v.warning).toBeNull();
-    expect(v.note).toMatch(/unrestricted/i);
+    expect(v.note).toMatch(/no price/i);
     expect(v.note).toMatch(/not enforced/i);
   });
   it("restricted key reaching an unpriced model, no limit: editable, hint names the models", () => {
@@ -24,10 +24,10 @@ describe("keyLimitView: the limit can always be edited; the status only decides 
     expect(v.warning).toBe("Cost limit is disabled because this key can access unpriced models: a/x");
     expect(v.summary).toBeNull();
   });
-  it("limit set on an unrestricted key: greyed with the unrestricted warning", () => {
+  it("limit set on an unrestricted key: greyed with the unpriced-models warning", () => {
     const v = keyLimitView({ limit: { usd: 5, window: "day" }, limitStatus: st({ eligible: false, unbounded: true, effective: false }) });
     expect(v.greyed).toBe(true);
-    expect(v.warning).toMatch(/unrestricted/);
+    expect(v.warning).toMatch(/unpriced/);
   });
   it("effective limit: normal look, spend and reset shown", () => {
     const v = keyLimitView({ limit: { usd: 10, window: "month" }, limitStatus: st({ spentUsd: 2.5, resetsAt: "2026-12-01T00:00:00.000Z" }) });
@@ -72,5 +72,20 @@ describe("limitSwitchState: the Cost limit switch does not depend on Restrict ac
     // same local state, key flips between eligible and unrestricted: identical result
     expect(limitSwitchState(cases.eligible, true)).toEqual(limitSwitchState(cases.unrestricted, true));
     expect(limitSwitchState(cases.eligible, false)).toEqual(limitSwitchState(cases.unrestricted, false));
+  });
+});
+
+describe("limitConfirmView (popup when enabling the Cost limit)", () => {
+  it("unpriced reachable models: says the limit will NOT be applied and points to the $ price override", async () => {
+    const { limitConfirmView } = await import("../../src/shared/utils/keyLimitView.js");
+    const v = limitConfirmView({ limitStatus: { eligible: false, unbounded: false, unpriced: ["a/x"], effective: false } });
+    expect(v.enforced).toBe(false);
+    expect(v.lines.join(" ")).toMatch(/NOT be applied/);
+    expect(v.lines.join(" ")).toMatch(/"\$" icon/);
+    expect(v.lines.join(" ")).not.toMatch(/restrict/i);
+  });
+  it("all priced: says it will be applied", async () => {
+    const { limitConfirmView } = await import("../../src/shared/utils/keyLimitView.js");
+    expect(limitConfirmView({ limitStatus: { eligible: true, unpriced: [], effective: true } }).enforced).toBe(true);
   });
 });

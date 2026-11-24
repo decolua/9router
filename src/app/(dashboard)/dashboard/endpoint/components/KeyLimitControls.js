@@ -7,20 +7,21 @@
 // is kept, greyed out with a red warning.
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Toggle } from "@/shared/components";
+import { Toggle, Modal, Button } from "@/shared/components";
 import { KEY_LIMIT_WINDOW } from "@/shared/constants/keyAccess.js";
-import { keyLimitView, limitSwitchState } from "@/shared/utils/keyLimitView.js";
+import { keyLimitView, limitSwitchState, limitConfirmView } from "@/shared/utils/keyLimitView.js";
 
 export default function KeyLimitControls({ apiKey, onChange }) {
   const view = keyLimitView(apiKey);
   const limit = apiKey.limit;
   const [open, setOpen] = useState(false); // switched on here, nothing saved yet
+  const [confirming, setConfirming] = useState(false);
   const [usd, setUsd] = useState(limit ? String(limit.usd) : "");
   const [windowKind, setWindowKind] = useState(limit?.window || KEY_LIMIT_WINDOW.DAY);
   const { on } = limitSwitchState(apiKey, open);
 
   const toggle = (checked) => {
-    if (checked) return setOpen(true);
+    if (checked) return setConfirming(true);
     setOpen(false);
     setUsd("");
     if (limit) onChange(null);
@@ -35,6 +36,23 @@ export default function KeyLimitControls({ apiKey, onChange }) {
   return (
     <div className="mt-2" data-testid="key-limit">
       <Toggle size="sm" checked={on} label="Cost limit" onChange={toggle} />
+      {confirming && (
+        <Modal
+          isOpen
+          onClose={() => setConfirming(false)}
+          title="Enable cost limit"
+          footer={(
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
+              <Button size="sm" onClick={() => { setConfirming(false); setOpen(true); }}>Enable</Button>
+            </div>
+          )}
+        >
+          <div className="space-y-2 text-sm" data-testid="key-limit-confirm">
+            {limitConfirmView(apiKey).lines.map((line) => <p key={line}>{line}</p>)}
+          </div>
+        </Modal>
+      )}
       {on && (
         <>
           <div className={`mt-2 flex flex-wrap items-center gap-2 text-xs ${view.greyed ? "opacity-60" : ""}`} data-testid="key-limit-fields">
