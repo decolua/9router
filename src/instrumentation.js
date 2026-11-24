@@ -10,5 +10,8 @@ export async function register() {
 
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();
+
+    // Start the background services even if the server only serves prerendered pages or API requests.
+    await import("@/shared/services/bootstrap");
   }
 }
