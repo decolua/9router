@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { keyAccessFromColumns, keyAccessToColumns } from "@/shared/utils/keyAccess.js";
 import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
+import { keyLimitFromColumns, keyLimitToColumns } from "@/shared/utils/keyLimit.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -13,6 +14,7 @@ function rowToKey(row) {
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,
     access: keyAccessFromColumns(row.accessRestricted, row.accessAllow),
+    limit: keyLimitFromColumns(row.limitUsd, row.limitWindow),
   };
 }
 
@@ -49,6 +51,7 @@ export async function createApiKey(name, machineId) {
     isActive: true,
     createdAt: new Date().toISOString(),
     access: { restricted: false, allow: [] },
+    limit: null,
   };
   const cols = keyAccessToColumns(KEY_ACCESS_UNRESTRICTED);
   db.run(
@@ -66,9 +69,10 @@ export async function updateApiKey(id, data) {
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
     const cols = keyAccessToColumns(merged.access);
+    const limitCols = keyLimitToColumns(merged.limit);
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, accessRestricted = ?, accessAllow = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, cols.accessRestricted, cols.accessAllow, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, accessRestricted = ?, accessAllow = ?, limitUsd = ?, limitWindow = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, cols.accessRestricted, cols.accessAllow, limitCols.limitUsd, limitCols.limitWindow, id]
     );
     result = rowToKey(db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
   });

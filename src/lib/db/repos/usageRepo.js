@@ -813,3 +813,16 @@ export async function getRecentLogs(limit = 200) {
     return [];
   }
 }
+
+// Per-key spend limit. Summed recorded cost for one key value from
+// `sinceIso` (inclusive). Timestamps are ISO UTC, so the string comparison is
+// chronological. Served by idx_uh_apikey_ts.
+export async function getKeySpendSince(apiKey, sinceIso) {
+  if (!apiKey) return 0;
+  const db = await getAdapter();
+  const row = db.get(
+    "SELECT COALESCE(SUM(cost), 0) AS usd FROM usageHistory WHERE apiKey = ? AND timestamp >= ?",
+    [apiKey, sinceIso]
+  );
+  return Number(row?.usd) || 0;
+}
