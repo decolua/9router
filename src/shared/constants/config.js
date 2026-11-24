@@ -18,6 +18,7 @@ export const UPDATER_CONFIG = {
   npmPackageName: "9router",
   installCmd: "npm i -g 9router",
   installCmdLatest: "npm i -g 9router@latest --prefer-online",
+  dockerInstallCmdLatest: "docker compose pull 9router && docker compose up -d 9router",
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,
