@@ -210,6 +210,37 @@ const TRANSLATIONS = {
     goToApp: "アプリへ",
     selectLanguage: "言語を選択",
     onThisPage: "このページ"
+  },
+  tr: {
+    gettingStarted: "Başlangıç",
+    introduction: "Giriş",
+    quickStart: "Hızlı Başlangıç",
+    installation: "Kurulum",
+    providers: "Sağlayıcılar",
+    subscription: "Abonelik (Maksimum kullanım)",
+    cheap: "Ucuz (Yedek)",
+    free: "Ücretsiz (Yedek geçiş)",
+    features: "Özellikler",
+    smartRouting: "Akıllı Yönlendirme",
+    combos: "Kombolar ve Yedek Geçiş",
+    quotaTracking: "Kota Takibi",
+    integration: "Entegrasyon",
+    claudeCode: "Claude Code",
+    codex: "OpenAI Codex",
+    cursor: "Cursor",
+    cline: "Cline",
+    roo: "Roo",
+    continue: "Continue",
+    otherTools: "Diğer Araçlar",
+    deployment: "Dağıtım",
+    localhost: "Localhost",
+    cloud: "Bulut (VPS/Docker)",
+    help: "Yardım",
+    troubleshooting: "Sorun Giderme",
+    faq: "SSS",
+    goToApp: "Uygulamaya Git",
+    selectLanguage: "Dil Seçin",
+    onThisPage: "Bu sayfada"
   }
 };
 
