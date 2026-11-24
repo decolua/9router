@@ -23,7 +23,7 @@ export function openaiToClaudeRequest(model, body, stream) {
   const modelCeiling = getCapabilitiesForModel(null, model).maxOutput || undefined;
   const result = {
     model: model,
-    max_tokens: adjustMaxTokens(body, modelCeiling),
+    max_tokens: adjustMaxTokens(body, modelCeiling, true),
     stream: stream
   };
 
