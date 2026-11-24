@@ -7,7 +7,7 @@ import {
 } from "../services/auth.js";
 import { getSettings, getProviderConnectionById } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccessResolved, getAllowedConnectionIdsForProvider } from "../services/keyAccess.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -122,10 +122,17 @@ export async function handleVideoCreate(request, action) {
 
   // Per-key access control: the routed provider/model must be listed. A body
   // we cannot read a model from (multipart) is denied for restricted keys.
+  const keyAccess = await getKeyAccessContext(request);
   const keyAccessDenied = await enforceKeyAccessResolved(
-    await getKeyAccessContext(request), bodyInfo.parsed?.model ? String(bodyInfo.parsed.model) : "", provider, model
+    keyAccess, bodyInfo.parsed?.model ? String(bodyInfo.parsed.model) : "", provider, model
   );
   if (keyAccessDenied) return keyAccessDenied;
+
+  const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, provider);
+  if (allowedConnectionIds && allowedConnectionIds.size === 0) {
+    log.warn("AUTH", `key-access: provider "${provider}" is not allowed for this key`);
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `This API key is not allowed to use provider "${provider}"`);
+  }
 
   // Strip the provider prefix (e.g. "xai/grok-imagine-video") before forwarding;
   // otherwise forward the original bytes untouched.
@@ -158,7 +165,7 @@ export async function handleVideoCreate(request, action) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
@@ -231,7 +238,14 @@ export async function handleVideoGet(request, requestId) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const provider = await resolveGetProvider(request, preferredConnectionId);
 
-  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
+  const keyAccess = await getKeyAccessContext(request);
+  const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, provider);
+  if (allowedConnectionIds && allowedConnectionIds.size === 0) {
+    log.warn("AUTH", `key-access: provider "${provider}" is not allowed for this key`);
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `This API key is not allowed to use provider "${provider}"`);
+  }
+
+  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId, allowedConnectionIds });
   if (!credentials || credentials.allRateLimited) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
   }

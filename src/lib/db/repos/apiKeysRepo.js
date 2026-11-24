@@ -48,7 +48,7 @@ export async function createApiKey(name, machineId) {
     machineId,
     isActive: true,
     createdAt: new Date().toISOString(),
-    access: { restricted: false, allow: [] },
+    access: { ...KEY_ACCESS_UNRESTRICTED },
   };
   const cols = keyAccessToColumns(KEY_ACCESS_UNRESTRICTED);
   db.run(

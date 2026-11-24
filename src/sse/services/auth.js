@@ -32,6 +32,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
   const requestedModel = options?.requestedModel || model;
+  const allowedConnectionIds = options?.allowedConnectionIds instanceof Set
+    ? options.allowedConnectionIds
+    : (Array.isArray(options?.allowedConnectionIds) ? new Set(options.allowedConnectionIds) : null);
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -42,6 +45,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
+
+    // If key access explicitly denies this provider (empty allowed set)
+    if (allowedConnectionIds && allowedConnectionIds.size === 0) {
+      log.warn("AUTH", `${provider} | provider not allowed for this API key`);
+      return null;
+    }
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
@@ -79,12 +88,22 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // Filter by key-allowed accounts (Rule #1 Opsi 1: strict account isolation)
+    const scopedConnections = allowedConnectionIds
+      ? connections.filter((c) => allowedConnectionIds.has(c.id))
+      : connections;
+
+    if (scopedConnections.length === 0) {
+      log.warn("AUTH", `${provider} | none of the ${connections.length} active connection(s) are allowed for this API key`);
+      return null;
+    }
+
     // Antigravity quota cache is lazy: only populated after that account returns 409/429.
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
 
     // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
-    const availableConnections = connections.filter(c => {
+    const availableConnections = scopedConnections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       const enabled = c.providerSpecificData?.enabledModels;
@@ -102,8 +121,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return true;
     });
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
-    connections.forEach(c => {
+    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${scopedConnections.length}`);
+    scopedConnections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
       if (excluded || locked) {
@@ -114,10 +133,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     if (availableConnections.length === 0) {
       // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
+      const lockedConns = scopedConnections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
       if (isAntigravity && model && antigravityQuotaCache) {
-        connections.forEach((c) => {
+        scopedConnections.forEach((c) => {
           const connQuotas = antigravityQuotaCache.get(c.id);
           const quota = getAntigravityModelQuota(connQuotas, model) || connQuotas?.[model];
           const resetAt = quota?.resetAt;
@@ -127,7 +146,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
         const earliestConn = lockedConns[0];
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        log.warn("AUTH", `${provider} | all ${scopedConnections.length} allowed accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
         return {
           allRateLimited: true,
           retryAfter: earliest,
@@ -136,7 +155,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           lastErrorCode: earliestConn?.errorCode || null
         };
       }
-      log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
+      log.warn("AUTH", `${provider} | all ${scopedConnections.length} allowed accounts unavailable`);
       return null;
     }
 

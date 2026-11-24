@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const fx = vi.hoisted(() => ({
   combos: [
     { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
+    { id: "c2", name: "other", models: ["openai/model-c"] },
   ],
   keys: {},
 }));
@@ -120,14 +121,14 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
     expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
   });
-  it("restricted-to-model-B key: B 200; the combo containing B and model A are 403", async () => {
+  it("restricted-to-model-B key: B 200, combo Main routes with pruned member B (Rule #3), and model A / unallowed combo are 403", async () => {
     expect((await chat("openai/model-b", "sk-b")).status).toBe(200);
     vi.clearAllMocks();
-    // Bypass check: a per-member check would skip the failing model-a and serve
-    // the combo from model-b. The combo itself is not listed, so it is a 403.
-    expect((await chat("Main", "sk-b")).status).toBe(403);
+    // Rule #3 (Opsi A Dinamis Pruning): combo "Main" contains model-a (not allowed) and model-b (allowed).
+    // Member model-a is pruned out, and Main routes using model-b.
+    expect((await chat("Main", "sk-b")).status).toBe(200);
     expect((await chat("openai/model-a", "sk-b")).status).toBe(403);
-    expect(mocks.handleChatCore).not.toHaveBeenCalled();
+    expect((await chat("other", "sk-b")).status).toBe(403); // all members of "other" are pruned out -> 403
   });
   it("empty-list key: 403 on everything", async () => {
     for (const m of ["Main", "openai/model-a", "openai/model-b"]) expect((await chat(m, "sk-empty")).status).toBe(403);

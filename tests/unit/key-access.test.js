@@ -7,10 +7,16 @@ const fx = vi.hoisted(() => ({
   combos: [
     { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
     { id: "c2", name: "other", models: ["openai/model-c"] },
+    { id: "c3", name: "mixed", models: ["openai/model-a", "anthropic/claude-3-5"] },
   ],
   nodes: [{ id: "openai-compatible-chat-n1", type: "openai-compatible", prefix: "mock" }],
   aliases: { fast: "openai/model-a", bee: "openai/model-b" },
   keys: {},
+  connections: [
+    { id: "conn-oa-1", provider: "openai", name: "OpenAI Account 1" },
+    { id: "conn-oa-2", provider: "openai", name: "OpenAI Account 2" },
+    { id: "conn-ant-1", provider: "anthropic", name: "Anthropic Account 1" },
+  ],
 }));
 
 vi.mock("@/lib/localDb", () => ({
@@ -20,6 +26,9 @@ vi.mock("@/lib/localDb", () => ({
 }));
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getCombos: async () => fx.combos }));
 vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({ getApiKeyByKey: async (k) => fx.keys[k] || null }));
+vi.mock("@/lib/db/repos/connectionsRepo.js", () => ({
+  getProviderConnectionsByIds: async (ids) => fx.connections.filter((c) => ids.includes(c.id)),
+}));
 vi.mock("@/sse/utils/logger.js", () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }));
 
 const engine = await import("../../src/sse/services/keyAccess.js");
@@ -50,6 +59,9 @@ beforeEach(() => {
   key("cx", { restricted: true, allow: ["cx/gpt-5"] });
   key("node", { restricted: true, allow: ["mock/glm-4"] });
   key("tavily", { restricted: true, allow: ["tavily", "Main"] });
+  key("prov-oa", { restricted: true, allow: [], allowedProviders: ["openai"] });
+  key("conn-oa", { restricted: true, allow: [], allowedProviders: ["openai"], allowedConnections: ["conn-oa-1"] });
+  key("hierarchical", { restricted: true, allow: [], allowedProviders: ["openai", "anthropic"], allowedConnections: ["conn-oa-1"] });
 });
 
 describe("unrestricted passthrough", () => {
@@ -77,8 +89,11 @@ describe("restricted: allow by exact model", () => {
     expect(await status("sk-b", "openai/model-a")).toBe(403);
     expect(await status("sk-b", "openai/model-b-plus")).toBe(403); // exact, not prefix
   });
-  it("denies a combo whose members include the allowed model", async () => {
-    expect(await status("sk-b", "Main")).toBe(403);
+  it("allows a combo if any member is allowed (Rule #3 dynamic pruning), denies if all members are denied", async () => {
+    // combo "Main" has ["openai/model-a", "openai/model-b"]. sk-b allows model-b, so Main is accessible
+    expect(await status("sk-b", "Main")).toBe(200);
+    // combo "other" only has ["openai/model-c"], which sk-b does not allow -> denied
+    expect(await status("sk-b", "other")).toBe(403);
   });
 });
 
@@ -93,6 +108,68 @@ describe("restricted: allow by combo", () => {
   });
   it("other combos are denied", async () => {
     expect(await status("sk-combo", "other")).toBe(403);
+  });
+});
+
+describe("restricted: allowedProviders & allowedConnections", () => {
+  it("allows all models under allowedProviders when allow list is empty", async () => {
+    expect(await status("sk-prov-oa", "openai/model-a")).toBe(200);
+    expect(await status("sk-prov-oa", "openai/model-b")).toBe(200);
+    expect(await status("sk-prov-oa", "fast")).toBe(200); // alias resolving to openai/model-a
+    expect(await status("sk-prov-oa", "Main")).toBe(200); // combo whose members belong to openai
+    expect(await status("sk-prov-oa", "cx/gpt-5")).toBe(403); // provider codex not allowed
+    expect(await status("sk-prov-oa", "anthropic/claude-3-5")).toBe(403); // provider anthropic not allowed
+  });
+
+  it("filters out combo members with disallowed providers (Rule #3)", async () => {
+    const ctx = await ctxFor("sk-prov-oa");
+    const pruned = await engine.pruneComboModelsForKey(ctx, ["openai/model-a", "anthropic/claude-3-5", "openai/model-b"]);
+    expect(pruned).toEqual(["openai/model-a", "openai/model-b"]);
+  });
+
+  it("prunes combo models for model-restricted keys", async () => {
+    const ctx = await ctxFor("sk-b");
+    const pruned = await engine.pruneComboModelsForKey(ctx, ["openai/model-a", "openai/model-b", "openai/model-c"]);
+    expect(pruned).toEqual(["openai/model-b"]);
+  });
+
+  it("pruneComboModelsForKey returns unchanged list for unrestricted or null context", async () => {
+    expect(await engine.pruneComboModelsForKey(null, ["openai/model-a"])).toEqual(["openai/model-a"]);
+    const ctxOpen = await ctxFor("sk-open");
+    expect(await engine.pruneComboModelsForKey(ctxOpen, ["openai/model-a"])).toEqual(["openai/model-a"]);
+  });
+
+  it("getAllowedConnectionIdsForProvider respects allowedProviders and allowedConnections", async () => {
+    // Unrestricted
+    expect(await engine.getAllowedConnectionIdsForProvider(null, "openai")).toBeNull();
+    expect(await engine.getAllowedConnectionIdsForProvider(await ctxFor("sk-open"), "openai")).toBeNull();
+
+    // Provider allowlist without specific connection: returns null (all active accounts allowed)
+    const ctxProv = await ctxFor("sk-prov-oa");
+    expect(await engine.getAllowedConnectionIdsForProvider(ctxProv, "openai")).toBeNull();
+    const deniedSet = await engine.getAllowedConnectionIdsForProvider(ctxProv, "anthropic");
+    expect(deniedSet).toBeInstanceOf(Set);
+    expect(deniedSet.size).toBe(0); // 0 allowed = forbidden
+
+    // Specific connection allowlist
+    const ctxConn = await ctxFor("sk-conn-oa");
+    const connSet = await engine.getAllowedConnectionIdsForProvider(ctxConn, "openai");
+    expect(connSet).toBeInstanceOf(Set);
+    expect(connSet.has("conn-oa-1")).toBe(true);
+    expect(connSet.has("conn-oa-2")).toBe(false);
+
+    // Hierarchical (Rule #2 Opsi A):
+    // openai has specific account conn-oa-1 -> returns Set([conn-oa-1])
+    // anthropic is in allowedProviders with NO specific accounts -> returns null (all accounts permitted)
+    const ctxHier = await ctxFor("sk-hierarchical");
+    const hierOaSet = await engine.getAllowedConnectionIdsForProvider(ctxHier, "openai");
+    expect(hierOaSet).toBeInstanceOf(Set);
+    expect([...hierOaSet]).toEqual(["conn-oa-1"]);
+    expect(await engine.getAllowedConnectionIdsForProvider(ctxHier, "anthropic")).toBeNull();
+    // Non-allowed provider returns empty Set
+    const hierGeminiSet = await engine.getAllowedConnectionIdsForProvider(ctxHier, "gemini");
+    expect(hierGeminiSet).toBeInstanceOf(Set);
+    expect(hierGeminiSet.size).toBe(0);
   });
 });
 
@@ -186,11 +263,12 @@ describe("/v1/models filtering", () => {
   const ids = async (k) => (await engine.filterModelsListForKey(await ctxFor(k), list)).map((m) => m.id);
   it("lists only the allowed combos and models for each key", async () => {
     expect(await ids("sk-combo")).toEqual(["Main"]);
-    expect(await ids("sk-b")).toEqual(["openai/model-b"]);
+    expect(await ids("sk-b")).toEqual(["Main", "openai/model-b"]); // Main included due to Rule #3 dynamic pruning
     expect(await ids("sk-cx")).toEqual(["cx/gpt-5"]);
     expect(await ids("sk-node")).toEqual(["mock/glm-4"]);
     expect(await ids("sk-tavily")).toEqual(["Main", "tavily/search"]);
     expect(await ids("sk-empty")).toEqual([]);
+    expect(await ids("sk-prov-oa")).toEqual(["Main", "other", "openai/model-a", "openai/model-b"]);
   });
   it("leaves the list untouched for an unrestricted key", async () => {
     expect(await engine.filterModelsListForKey(await ctxFor("sk-open"), list)).toBe(list);
@@ -209,27 +287,61 @@ describe("capacity-adapter models", () => {
 
 describe("helpers: storage + validation", () => {
   it("columns -> access fails closed", () => {
-    expect(helpers.keyAccessFromColumns(0, '["x"]')).toEqual({ restricted: false, allow: [] });
-    expect(helpers.keyAccessFromColumns(null, null)).toEqual({ restricted: false, allow: [] }); // pre-migration row
-    expect(helpers.keyAccessFromColumns(1, "not json")).toEqual({ restricted: true, allow: [] });
-    expect(helpers.keyAccessFromColumns(1, '{"a":1}')).toEqual({ restricted: true, allow: [] });
-    expect(helpers.keyAccessFromColumns(1, '[" a ", "A", "", 3, "b"]')).toEqual({ restricted: true, allow: ["a", "b"] });
+    expect(helpers.keyAccessFromColumns(0, '["x"]')).toEqual({ restricted: false, allow: [], allowedProviders: [], allowedConnections: [] });
+    expect(helpers.keyAccessFromColumns(null, null)).toEqual({ restricted: false, allow: [], allowedProviders: [], allowedConnections: [] }); // pre-migration row
+    expect(helpers.keyAccessFromColumns(1, "not json")).toEqual({ restricted: true, allow: [], allowedProviders: [], allowedConnections: [] });
+    expect(helpers.keyAccessFromColumns(1, '{"a":1}')).toEqual({ restricted: true, allow: [], allowedProviders: [], allowedConnections: [] });
+    expect(helpers.keyAccessFromColumns(1, '[" a ", "A", "", 3, "b"]')).toEqual({ restricted: true, allow: ["a", "b"], allowedProviders: [], allowedConnections: [] });
+    expect(
+      helpers.keyAccessFromColumns(1, '{"allow":["a"],"allowedProviders":["openai"],"allowedConnections":["c1"]}')
+    ).toEqual({
+      restricted: true,
+      allow: ["a"],
+      allowedProviders: ["openai"],
+      allowedConnections: ["c1"],
+    });
   });
   it("access -> columns", () => {
-    expect(helpers.keyAccessToColumns(undefined)).toEqual({ accessRestricted: 0, accessAllow: "[]" });
-    expect(helpers.keyAccessToColumns({ restricted: true, allow: ["x", "X"] })).toEqual({ accessRestricted: 1, accessAllow: '["x"]' });
-    expect(helpers.keyAccessToColumns({ restricted: false, allow: ["x"] })).toEqual({ accessRestricted: 0, accessAllow: "[]" });
+    expect(helpers.keyAccessToColumns(undefined)).toEqual({
+      accessRestricted: 0,
+      accessAllow: '{"allow":[],"allowedProviders":[],"allowedConnections":[]}',
+    });
+    expect(helpers.keyAccessToColumns({ restricted: true, allow: ["x", "X"], allowedProviders: ["p1"], allowedConnections: ["c1"] })).toEqual({
+      accessRestricted: 1,
+      accessAllow: '{"allow":["x"],"allowedProviders":["p1"],"allowedConnections":["c1"]}',
+    });
+    expect(helpers.keyAccessToColumns({ restricted: false, allow: ["x"] })).toEqual({
+      accessRestricted: 0,
+      accessAllow: '{"allow":[],"allowedProviders":[],"allowedConnections":[]}',
+    });
   });
   it("input validation rejects rather than repairs", () => {
     const v = helpers.validateKeyAccessInput;
-    expect(v({ restricted: true, allow: [" Main ", "main", "cx/gpt-5"] })).toEqual({ ok: true, value: { restricted: true, allow: ["Main", "cx/gpt-5"] } });
-    expect(v({ restricted: false })).toEqual({ ok: true, value: { restricted: false, allow: [] } });
+    expect(v({ restricted: true, allow: [" Main ", "main", "cx/gpt-5"] })).toEqual({
+      ok: true,
+      value: { restricted: true, allow: ["Main", "cx/gpt-5"], allowedProviders: [], allowedConnections: [] },
+    });
+    expect(v({
+      restricted: true,
+      allow: ["Main"],
+      allowedProviders: [" OpenAI "],
+      allowedConnections: [" conn-1 "],
+    })).toEqual({
+      ok: true,
+      value: { restricted: true, allow: ["Main"], allowedProviders: ["OpenAI"], allowedConnections: ["conn-1"] },
+    });
+    expect(v({ restricted: false })).toEqual({
+      ok: true,
+      value: { restricted: false, allow: [], allowedProviders: [], allowedConnections: [] },
+    });
     expect(v(null).ok).toBe(false);
     expect(v([]).ok).toBe(false);
     expect(v({ restricted: "yes", allow: [] }).ok).toBe(false);
     expect(v({ restricted: true, allow: "Main" }).ok).toBe(false);
     expect(v({ restricted: true, allow: [1] }).ok).toBe(false);
     expect(v({ restricted: true, allow: [], mode: "deny" }).ok).toBe(false); // no deny mode
+    expect(v({ restricted: true, allow: [], allowedProviders: "openai" }).ok).toBe(false);
+    expect(v({ restricted: true, allow: [], allowedConnections: "conn1" }).ok).toBe(false);
     expect(v({ restricted: true, allow: Array.from({ length: KEY_ACCESS_MAX_ENTRIES + 1 }, (_, i) => `m${i}`) }).ok).toBe(false);
     expect(v({ restricted: true, allow: ["x".repeat(300)] }).ok).toBe(false);
   });
