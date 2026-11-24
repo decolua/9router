@@ -5,6 +5,8 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { parseTOML, stringifyTOML } from "confbox";
+import { buildModelsList } from "@/app/api/v1/models/route.js";
+import { buildCodexModelCatalog, loadBundledCodexCatalog } from "@/lib/cliTools/codexModelCatalog";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,7 @@ const execAsync = promisify(exec);
 const getCodexDir = () => path.join(os.homedir(), ".codex");
 const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
 const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
+const getCodexCatalogPath = () => path.join(getCodexDir(), "9router-models.json");
 
 // Flatten confbox-parsed TOML into a writable object, preserving nested tables
 const parsedToWritable = (obj) => obj ?? {};
@@ -39,6 +42,52 @@ const deleteNestedSection = (obj, dottedKey) => {
     if (cur == null) return;
   }
   delete cur[keys[keys.length - 1]];
+};
+
+// Write the 9Router model catalog so Codex's /model picker lists routable
+// (prefixed) ids instead of bare bundled slugs. Fail-open: returns a warning
+// instead of throwing so Apply still succeeds without the catalog.
+const writeModelCatalog = async (selectedModels) => {
+  let bundled;
+  try {
+    bundled = await loadBundledCodexCatalog();
+  } catch (error) {
+    console.log("Codex bundled catalog unavailable:", error.message);
+    return { warning: "Could not read Codex's bundled model catalog; /model picker was not updated" };
+  }
+
+  let models = [];
+  try {
+    models = await buildModelsList(["llm"]);
+  } catch (error) {
+    console.log("Could not build 9Router model list:", error.message);
+  }
+  // Selected models may be custom ids absent from /v1/models; list them too
+  const knownIds = new Set(models.map((m) => m.id));
+  for (const id of selectedModels) {
+    if (id && !knownIds.has(id)) {
+      models.push({ id });
+      knownIds.add(id);
+    }
+  }
+  if (models.length === 0) {
+    return { warning: "No 9Router models available; /model picker was not updated" };
+  }
+
+  const catalog = buildCodexModelCatalog(bundled, models);
+  const count = catalog.models.filter((m) => m.visibility === "list").length;
+  if (count === 0) {
+    return { warning: "Codex bundled catalog has no usable template; /model picker was not updated" };
+  }
+
+  const catalogPath = getCodexCatalogPath();
+  try {
+    await fs.writeFile(catalogPath, JSON.stringify(catalog));
+  } catch (error) {
+    console.log("Could not write Codex model catalog:", error.message);
+    return { warning: "Could not write Codex model catalog; /model picker was not updated" };
+  }
+  return { catalogPath, count };
 };
 
 // Check if codex CLI is installed (via which/where or config file exists)
@@ -147,6 +196,10 @@ export async function POST(request) {
     deleteNestedSection(parsed, "agents.subagent");
     setNestedSection(parsed, "agents.default_subagent_model", subagentModel || model);
 
+    // Point Codex at the 9Router catalog; leave any previous value alone on failure
+    const catalog = await writeModelCatalog([model, subagentModel]);
+    if (catalog.catalogPath) parsed.model_catalog_json = catalog.catalogPath;
+
     // Write merged config
     const configContent = stringifyTOML(parsed);
     await fs.writeFile(configPath, configContent);
@@ -155,6 +208,9 @@ export async function POST(request) {
       success: true,
       message: "Codex settings applied successfully!",
       configPath,
+      ...(catalog.catalogPath
+        ? { catalogPath: catalog.catalogPath, catalogModelCount: catalog.count }
+        : { catalogWarning: catalog.warning }),
     });
   } catch (error) {
     console.log("Error updating codex settings:", error);
@@ -195,6 +251,12 @@ export async function DELETE() {
     deleteNestedSection(parsed, "agents.default_subagent_model");
     deleteNestedSection(parsed, "agents.subagent");
 
+    // Remove the model catalog only if it's the one 9Router wrote
+    const catalogPath = getCodexCatalogPath();
+    if (parsed.model_catalog_json === catalogPath) {
+      delete parsed.model_catalog_json;
+    }
+
     // Write updated config
     const configContent = stringifyTOML(parsed);
     await fs.writeFile(configPath, configContent);
@@ -214,6 +276,12 @@ export async function DELETE() {
         await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
       }
     } catch { /* No auth file */ }
+
+    try {
+      await fs.unlink(catalogPath);
+    } catch (error) {
+      if (error.code !== "ENOENT") console.log("Could not remove Codex model catalog:", error.message);
+    }
 
     return NextResponse.json({
       success: true,
