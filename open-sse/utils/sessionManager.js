@@ -157,6 +157,11 @@ function extractClientSessionId(headers, body, scope = "") {
     return fromBody || null;
 }
 
+// Shared request-level extractor used by observability and provider caching.
+export function getClientSessionId(headers, body, scope = "") {
+    return extractClientSessionId(headers, body, scope);
+}
+
 function requestMessages(body) {
     if (Array.isArray(body?.messages)) return body.messages;
     if (Array.isArray(body?.input)) return body.input;

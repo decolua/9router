@@ -2,21 +2,13 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
-
-// Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
-function isLLMProvider(id) {
-  const p = AI_PROVIDERS[id];
-  if (!p?.serviceKinds) return true;
-  return p.serviceKinds.includes("llm");
-}
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import dynamic from "next/dynamic";
-// Lazy-load: keeps @xyflow/react and recharts out of the initial bundle
-const ProviderTopology = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderTopology"), { ssr: false });
+// Live route map uses browser EventSource and SVG animation.
+const LiveRoutes = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/live-routes/LiveRoutes"), { ssr: false });
 const UsageChart = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/UsageChart"), { ssr: false });
 const ProviderBarChart = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderBarChart"), { ssr: false });
 const TopModelsChart = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/TopModelsChart"), { ssr: false });
@@ -215,45 +207,11 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
-  const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
   const hasLoadedStats = useRef(false);
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
-
-  // Fetch connected providers once, deduplicate by provider type
-  // Always include noAuth free providers (e.g. opencode) regardless of connections
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/providers").then((r) => r.ok ? r.json() : null),
-      fetch("/api/provider-nodes").then((r) => r.ok ? r.json() : null),
-    ])
-      .then(([d, nodesData]) => {
-        // Build node name lookup for custom providers
-        const nodeNameMap = {};
-        for (const node of (nodesData?.nodes || [])) {
-          nodeNameMap[node.id] = node.name;
-        }
-        const seen = new Set();
-        const unique = (d?.connections || []).filter((c) => {
-          if (c.isActive === false) return false;
-          if (!isLLMProvider(c.provider)) return false;
-          if (AI_PROVIDERS[c.provider]?.hidden) return false;
-          if (seen.has(c.provider)) return false;
-          seen.add(c.provider);
-          return true;
-        }).map((c) => ({
-          ...c,
-          nodeName: nodeNameMap[c.provider] || null,
-        }));
-        const noAuthProviders = Object.values(FREE_PROVIDERS)
-          .filter((p) => p.noAuth && !p.hidden && !seen.has(p.id) && isLLMProvider(p.id))
-          .map((p) => ({ provider: p.id, name: p.name }));
-        setProviders([...unique, ...noAuthProviders]);
-      })
-      .catch(() => {});
-  }, []);
 
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
@@ -471,15 +429,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}
 
-      {/* Provider topology + Recent Requests */}
+      {/* Live route map + Recent Requests */}
       {loading ? spinner : (
-        <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-          <ProviderTopology
-            providers={providers}
-            activeRequests={stats.activeRequests || []}
-            lastProvider={stats.recentRequests?.[0]?.provider || ""}
-            errorProvider={stats.errorProvider || ""}
-          />
+        <div className="flex min-w-0 flex-col gap-4">
+          <LiveRoutes />
           <RecentRequests requests={stats.recentRequests || []} />
         </div>
       )}

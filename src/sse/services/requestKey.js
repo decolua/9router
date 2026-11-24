@@ -3,6 +3,7 @@ import { currentInference } from "@/lib/observability/requestContext.js";
 import { extractClientApiKey } from "@/shared/utils/clientApiKey.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
 import { groupKeyConnections } from "@/shared/utils/keyConnections.js";
+import { updateLiveRoute } from "@/lib/observability/liveRoutes.js";
 
 const verifiedKeys = new WeakMap();
 
@@ -15,6 +16,9 @@ export async function readRequestKey(request) {
   const record = key ? await getApiKeyByKey(key) : null;
   if (trace) {
     trace.apiKey = key;
+    trace.keyId = record?.id || null;
+    trace.keyName = record?.name || null;
+    updateLiveRoute(trace, { keyId: trace.keyId, keyName: trace.keyName });
     trace.connectionGroups = groupKeyConnections(
       record?.allowedConnections ?? [],
       record?.connectionProviders,

@@ -1,5 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
+import { detectClientDetails } from "open-sse/utils/clientDetector.js";
+import { getClientSessionId } from "open-sse/utils/sessionManager.js";
+import { getClientIp } from "../auth/loginLimiter.js";
+import { endLiveRoute, noteLiveAttempt, startLiveRoute, updateLiveRoute } from "./liveRoutes.js";
 
 const storage = new AsyncLocalStorage();
 export const currentInference = () => storage.getStore();
@@ -8,11 +12,21 @@ export const bindInference = callback => currentInference() ? AsyncLocalStorage.
 export function startInference(request, run) {
   if (currentInference()) return run(currentInference());
   const clientId = request.headers?.get?.("x-request-id");
+  const startedAt = Date.now();
+  const headers = request?.headers;
+  const rawHeaders = {};
+  headers?.forEach?.((value, key) => { rawHeaders[key.toLowerCase()] = value; });
   const trace = {
-    requestId: randomUUID(), started: Date.now(), attempts: 0, fallbacks: 0,
+    requestId: randomUUID(), started: startedAt, startedAt, attempts: 0, fallbacks: 0,
+    client: detectClientDetails(rawHeaders),
+    sessionId: getClientSessionId(rawHeaders, null),
+    ip: getClientIp(request),
     ...(clientId && /^[A-Za-z0-9._:-]{8,128}$/.test(clientId) ? { clientRequestId: clientId } : {}),
   };
-  return storage.run(trace, () => run(trace));
+  return storage.run(trace, () => {
+    startLiveRoute(trace, request);
+    return run(trace);
+  });
 }
 
 export function noteAttempt(provider, model, connectionId) {
@@ -20,6 +34,8 @@ export function noteAttempt(provider, model, connectionId) {
   if (!t) return;
   if (t.attempts && (t.connectionId !== connectionId || t.model !== model || t.provider !== provider)) t.fallbacks++;
   Object.assign(t, { provider, model, connectionId, attempts: t.attempts + 1, failure: null });
+  noteLiveAttempt(t, provider, model, connectionId);
+  updateLiveRoute(t, { keyId: t.keyId || null, keyName: t.keyName || null });
 }
 
 export function usageTrace(entry) {
@@ -27,10 +43,12 @@ export function usageTrace(entry) {
   if (!t) return entry;
   t.usageStarted = true;
   const status = t.failure ? "error" : entry.status;
-  return { ...entry, status, requestId: t.requestId, meta: {
+  const traced = { ...entry, status, requestId: t.requestId, meta: {
     usageReported: entry.usageReported ?? !!entry.tokens,
     attempts: t.attempts, fallbacks: t.fallbacks, finalConnectionId: entry.connectionId ?? null,
     latencyMs: Math.max(0, Date.now() - t.started), errorCategory: status === "error" ? t.failure?.category ?? "unknown" : null,
     ...(t.clientRequestId ? { clientRequestId: t.clientRequestId } : {}),
   } };
+  endLiveRoute(t, traced);
+  return traced;
 }

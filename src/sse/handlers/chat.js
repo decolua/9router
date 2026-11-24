@@ -1,4 +1,5 @@
 import { bindInference, currentInference, noteAttempt } from "@/lib/observability/requestContext.js";
+import { updateLiveRoute } from "@/lib/observability/liveRoutes.js";
 import { observeConnection } from "@/lib/observability/providerHealth.js";
 import { classifyInferenceError } from "open-sse/services/inferenceError.js";
 import { inferenceRoute } from "@/lib/observability/inferenceRoute.js";
@@ -209,6 +210,13 @@ async function dispatchChat(request, clientRawRequest = null) {
  */
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, keyAccess = null, requestedModel = null) {
   const modelInfo = await getModelInfo(modelStr);
+  const trace = currentInference();
+  if (trace) {
+    trace.requestedModel = requestedModel || body?.model || modelStr;
+    trace.sessionId = resolveSessionIdentity({ headers: clientRawRequest?.headers, body }).sessionId || trace.sessionId;
+    if (trace.requestedModel && trace.requestedModel !== modelStr && !trace.combo) trace.combo = trace.requestedModel;
+    updateLiveRoute(trace, { requestedModel: trace.requestedModel, sessionId: trace.sessionId, combo: trace.combo });
+  }
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
