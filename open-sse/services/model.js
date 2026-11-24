@@ -143,6 +143,7 @@ const MODEL_PREFIX_PROVIDERS = [
   // so bare usage without a provider/ prefix must route to bedrock, not fall through to openai.
   [/^(us|eu|ap|global)\.(anthropic|meta|amazon|mistral|xai)\./, "bedrock"],
   [/^gemini-/, "gemini"],
+  [/^grok-/, "xai"],
   [/^gpt-/, "openai"],
   [/^o[134]/, "openai"],
   [/^deepseek-/, "openrouter"],
