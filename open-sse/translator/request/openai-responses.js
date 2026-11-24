@@ -459,6 +459,17 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
 
+  // Structured output: Chat Completions' response_format becomes the
+  // Responses API's text.format, which the Codex allowlist keeps (it
+  // strips response_format). json_schema keeps its name, strict flag and
+  // schema; json_object stays json_object.
+  const rf = body.response_format;
+  if (rf && rf.type === "json_schema" && rf.json_schema && rf.json_schema.schema) {
+    result.text = { format: { type: "json_schema", name: rf.json_schema.name || "response", strict: rf.json_schema.strict !== false, schema: rf.json_schema.schema } };
+  } else if (rf && rf.type === "json_object") {
+    result.text = { format: { type: "json_object" } };
+  }
+
   return result;
 }
 
