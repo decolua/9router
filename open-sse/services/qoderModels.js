@@ -35,7 +35,7 @@ import {
   qoderInferenceBase,
   QODER_STATIC_MODEL_CONFIGS,
 } from "../shared/qoder/constants.js";
-import { qoderSiteOf } from "../shared/qoder/sites.js";
+import { qoderSiteOf, qoderInferenceBaseForSite } from "../shared/qoder/sites.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
@@ -211,7 +211,10 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, re
 
   // Intl job-token traffic is rejected by api3 ("Login expired" 403) — the
   // official qodercli serves it from api2 instead; CN uses the single gateway.
-  const modelListUrl = `${qoderInferenceBase(credentials, region)}/algo/api/v2/model/list`;
+  // Other sites (qwenwork…) are single-gateway too: their chat base serves all
+  // token kinds, so the region split does not apply.
+  const siteObj = site || qoderSiteOf(credentials?.provider);
+  const modelListUrl = `${qoderInferenceBaseForSite(credentials, siteObj)}/algo/api/v2/model/list`;
 
   const headers = {
     Accept: "application/json",

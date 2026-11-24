@@ -44,6 +44,7 @@ const executors = {
   iflow: new IFlowExecutor(),
   qoder: new QoderExecutor(),
   "qoder-cn": new QoderExecutor("qoder-cn"),
+  qwenwork: new QoderExecutor("qwenwork"),
   kiro: new KiroExecutor(),
   kimchi: new KimchiExecutor(),
   codex: new CodexExecutor(),

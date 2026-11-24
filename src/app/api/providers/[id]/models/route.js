@@ -540,6 +540,7 @@ const PROVIDER_MODELS_CONFIG = {
   },
   qoder: buildQoderModelsResolver("qoder"),
   "qoder-cn": buildQoderModelsResolver("qoder-cn"),
+  qwenwork: buildQoderModelsResolver("qwenwork"),
   "gemini-cli": {
     customResolver: buildOAuthResolver({
       refreshFn: (conn) => refreshGoogleToken(conn.refreshToken, GEMINI_CONFIG.clientId, GEMINI_CONFIG.clientSecret),

@@ -35,7 +35,7 @@ import {
   getQoderStaticModelConfig,
   qoderInferenceBase,
 } from "../shared/qoder/constants.js";
-import { qoderSiteOf } from "../shared/qoder/sites.js";
+import { qoderSiteOf, qoderInferenceBaseForSite } from "../shared/qoder/sites.js";
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
 import { encodeDataUri } from "../translator/concerns/image.js";
@@ -655,7 +655,7 @@ export class QoderExecutor extends BaseExecutor {
   }
 
   buildUrl(credentials) {
-    return `${qoderInferenceBase(credentials, this.region)}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
+    return `${qoderInferenceBaseForSite(credentials, this.site)}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
   }
 
   // Override execute entirely — Qoder needs:

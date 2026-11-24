@@ -95,6 +95,14 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     refreshable: false,
   },
+  qwenwork: {
+    // Same shape as qoder, QwenWork CN gateway host (oauth-only, no PAT).
+    url: "https://gateway.qwenwork.cn/api/v1/userinfo",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: false,
+  },
   kimi: { checkExpiry: true, refreshable: true },
   "kimi-coding": { checkExpiry: true, refreshable: true },
   cursor: { tokenExists: true },
@@ -926,6 +934,13 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           effectiveProxy,
         );
         return { valid: exRes.ok, error: exRes.ok ? null : "Invalid Personal Access Token" };
+      }
+      case "qwenwork": {
+        // QwenWork gateway hosts userinfo directly (oauth-only, no PAT).
+        const res = await fetchWithConnectionProxy("https://gateway.qwenwork.cn/api/v1/userinfo", {
+          headers: { Authorization: `Bearer ${connection.accessToken}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid token" };
       }
 case "llm7": {
         const baseUrl = connection.providerSpecificData?.baseUrl || "https://api.llm7.io/v1";
