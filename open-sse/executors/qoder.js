@@ -35,6 +35,7 @@ import {
   getQoderStaticModelConfig,
   qoderInferenceBase,
 } from "../shared/qoder/constants.js";
+import { qoderSiteOf } from "../shared/qoder/sites.js";
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
 import { encodeDataUri } from "../translator/concerns/image.js";
@@ -239,7 +240,7 @@ function truncate(s, n) {
 /**
  * Map the OpenAI-style request body into the exact shape Qoder expects.
  */
-async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl" }) {
+async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl", site = null }) {
   const qoderKey = String(model || "").replace(/^qoder\//, "");
 
   // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
@@ -285,6 +286,7 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
       proxyOptions,
       signal,
       uploadFn,
+      site,
     });
   } catch (err) {
     log?.warn?.("QODER", `attachment rewrite failed: ${err.message}`);
@@ -648,6 +650,7 @@ async function wrapQoderSSE(response, model, log = null) {
 export class QoderExecutor extends BaseExecutor {
   constructor(provider = "qoder") {
     super(provider, PROVIDERS[provider]);
+    this.site = qoderSiteOf(provider);
     this.region = provider === "qoder-cn" ? "cn" : "intl";
   }
 
@@ -702,7 +705,7 @@ export class QoderExecutor extends BaseExecutor {
     let qoderKey;
     let payload;
     try {
-      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, region: this.region }));
+      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, region: this.region, site: this.site }));
     } catch (err) {
       const fakeResp = new Response(
         JSON.stringify({ error: { message: err.message } }),
@@ -730,6 +733,7 @@ export class QoderExecutor extends BaseExecutor {
           // rejoins the back of the model queue. Derive a stable one instead.
           machineId: psd.machineId || deriveMachineId(psd.userId),
         },
+        { site: this.site.cosy },
       );
     } catch (err) {
       // cosy.js throws synchronously on missing userId/authToken — surface
@@ -772,7 +776,7 @@ export class QoderExecutor extends BaseExecutor {
           name: credentials.displayName || "",
           email: credentials.email || "",
           machineId: psd.machineId || deriveMachineId(psd.userId),
-        });
+        }, { site: this.site.cosy });
       } catch (err) {
         const fakeResp = new Response(
           JSON.stringify({ error: { message: `qoder cosy signing failed: ${err.message}` } }),
@@ -847,7 +851,7 @@ export class QoderExecutor extends BaseExecutor {
                 name: credentials.displayName || "",
                 email: credentials.email || "",
                 machineId: psd.machineId || deriveMachineId(psd.userId),
-              }),
+              }, { site: this.site.cosy }),
             },
             signal,
           },

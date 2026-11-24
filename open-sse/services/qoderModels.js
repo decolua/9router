@@ -35,6 +35,7 @@ import {
   qoderInferenceBase,
   QODER_STATIC_MODEL_CONFIGS,
 } from "../shared/qoder/constants.js";
+import { qoderSiteOf } from "../shared/qoder/sites.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
@@ -178,8 +179,10 @@ export async function resolveQoderCredentials(credentials, proxyOptions = null, 
 function cacheKey(credentials) {
   const psd = credentials?.providerSpecificData || {};
   const seed = psd.userId || credentials?.refreshToken || credentials?.accessToken || "anonymous";
-  const region = qoderRegionOf(credentials?.provider);
-  return createHash("sha256").update(`qoder:${region}:${seed}`).digest("hex");
+  // Site id (qoder / qoder-cn / …) keeps catalogs for different deployables
+  // apart; unknown providers fall back to the qoder intl site.
+  const siteId = qoderSiteOf(credentials?.provider).id;
+  return createHash("sha256").update(`qoder:${siteId}:${seed}`).digest("hex");
 }
 
 /**
@@ -202,7 +205,7 @@ function cosyCredsFromConnection(credentials) {
  *     rawConfigs: Map<modelKey, modelConfigObject> }
  * or `null` on any error.
  */
-async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, region = "intl") {
+async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, region = "intl", site = null) {
   const creds = cosyCredsFromConnection(credentials);
   if (!creds.userId || !creds.authToken) return null;
 
@@ -213,7 +216,7 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, re
   const headers = {
     Accept: "application/json",
     "Accept-Encoding": "identity",
-    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds),
+    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds, { site: site?.cosy }),
   };
 
   const controller = new AbortController();
@@ -331,7 +334,7 @@ export async function resolveQoderModels(credentials, options = {}) {
   }
 
   const fetchPromise = (async () => {
-    const fetched = await fetchQoderCatalogRaw(resolved, options.signal, options.proxyOptions, region);
+    const fetched = await fetchQoderCatalogRaw(resolved, options.signal, options.proxyOptions, region, qoderSiteOf(resolved?.provider || credentials?.provider));
     if (!fetched) return null;
     const entry = {
       expiresAt: Date.now() + CACHE_TTL_MS,

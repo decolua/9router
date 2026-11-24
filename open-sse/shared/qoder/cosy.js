@@ -54,19 +54,19 @@ function aesEncryptCbcBase64(plaintext, keyStr) {
   return encrypted.toString("base64");
 }
 
-function rsaEncryptBase64(data) {
+function rsaEncryptBase64(data, rsaPublicKey) {
   const encrypted = crypto.publicEncrypt(
-    { key: QODER_RSA_PUBLIC_KEY, padding: crypto.constants.RSA_PKCS1_PADDING },
+    { key: rsaPublicKey, padding: crypto.constants.RSA_PKCS1_PADDING },
     Buffer.from(data, "utf8"),
   );
   return encrypted.toString("base64");
 }
 
-function encryptUserInfo(userInfo) {
+function encryptUserInfo(userInfo, rsaPublicKey) {
   const aesKey = generateAesKey();
   const plaintext = JSON.stringify(userInfo);
   const infoB64 = aesEncryptCbcBase64(plaintext, aesKey);
-  const cosyKeyB64 = rsaEncryptBase64(aesKey);
+  const cosyKeyB64 = rsaEncryptBase64(aesKey, rsaPublicKey);
   return { cosyKey: cosyKeyB64, info: infoB64 };
 }
 
@@ -161,6 +161,10 @@ export function deriveMachineId(seed) {
  * @param {Buffer|Uint8Array|string} [options.signatureBody=body]
  *   Bytes to include in the authorization signature. This differs from `body`
  *   only for Qoder's image upload endpoint.
+ * @param {object} [options.site]          Site cosy block (see sites.js).
+ *   Undefined keys fall back to the Qoder IDE constants, so existing
+ *   callers are unchanged. A site may override clientType / ideVersion /
+ *   machineType / machineOs / dataPolicy / loginVersion / rsaPublicKey.
  * @returns {Record<string, string>} Header map ready to merge onto fetch().
  */
 export function buildCosyHeaders(body, requestUrl, creds, options = {}) {
@@ -170,13 +174,22 @@ export function buildCosyHeaders(body, requestUrl, creds, options = {}) {
   const bodyBuf = toBodyBuffer(body);
   const signatureBuf = toBodyBuffer(options.signatureBody ?? body);
 
+  const site = options.site || {};
+  const clientType = site.clientType ?? QODER_CLIENT_TYPE;
+  const ideVersion = site.ideVersion ?? QODER_IDE_VERSION;
+  const machineType = site.machineType ?? QODER_MACHINE_TYPE;
+  const machineOs = site.machineOs ?? QODER_MACHINE_OS;
+  const dataPolicy = site.dataPolicy ?? QODER_DATA_POLICY;
+  const loginVersion = site.loginVersion ?? QODER_LOGIN_VERSION;
+  const rsaPublicKey = site.rsaPublicKey ?? QODER_RSA_PUBLIC_KEY;
+
   const { cosyKey, info } = encryptUserInfo({
     uid: creds.userId,
     security_oauth_token: creds.authToken,
     name: creds.name || "",
     aid: "",
     email: creds.email || "",
-  });
+  }, rsaPublicKey);
 
   const timestamp = String(Math.floor(Date.now() / 1000));
   const requestId = uuidv4();
@@ -185,7 +198,7 @@ export function buildCosyHeaders(body, requestUrl, creds, options = {}) {
     version: "v1",
     requestId,
     info,
-    cosyVersion: QODER_IDE_VERSION,
+    cosyVersion: ideVersion,
     ideVersion: "",
   });
   const payloadB64 = Buffer.from(payloadJson, "utf8").toString("base64");
@@ -208,20 +221,20 @@ export function buildCosyHeaders(body, requestUrl, creds, options = {}) {
     "Cosy-Key": cosyKey,
     "Cosy-User": creds.userId,
     "Cosy-Date": timestamp,
-    "Cosy-Version": QODER_IDE_VERSION,
+    "Cosy-Version": ideVersion,
     "Cosy-Machineid": machineId,
     "Cosy-Machinetoken": machineId,
-    "Cosy-Machinetype": QODER_MACHINE_TYPE,
-    "Cosy-Machineos": QODER_MACHINE_OS,
-    "Cosy-Clienttype": QODER_CLIENT_TYPE,
+    "Cosy-Machinetype": machineType,
+    "Cosy-Machineos": machineOs,
+    "Cosy-Clienttype": clientType,
     "Cosy-Clientip": "127.0.0.1",
     "Cosy-Bodyhash": bodyHash,
     "Cosy-Bodylength": bodyLength,
     "Cosy-Sigpath": sigPath,
-    "Cosy-Data-Policy": QODER_DATA_POLICY,
+    "Cosy-Data-Policy": dataPolicy,
     "Cosy-Organization-Id": "",
     "Cosy-Organization-Tags": "",
-    "Login-Version": QODER_LOGIN_VERSION,
+    "Login-Version": loginVersion,
     "X-Request-Id": uuidv4(),
   };
 }
