@@ -24,6 +24,8 @@ describe("pingModelByKind reasoning models (#3010)", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   function jsonResponse(obj) {
@@ -34,6 +36,23 @@ describe("pingModelByKind reasoning models (#3010)", () => {
       json: async () => obj,
     };
   }
+
+  it("allows a reasoning model to answer after 20 seconds", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("Probe timed out", "TimeoutError")), milliseconds);
+      return controller.signal;
+    });
+    fetchMock.mockImplementation((url, { signal }) => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(jsonResponse({ choices: [{ message: { content: "Hi" } }] })), 20000);
+      signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+    }));
+    const result = pingModelByKind("vx/gemini-4-argon(high)", "llm", "http://127.0.0.1:20127")
+      .catch(error => ({ ok: false, error: error.message }));
+    await vi.advanceTimersByTimeAsync(20000);
+    expect((await result).ok).toBe(true);
+  });
 
   it("uses a 1024-token budget for the chat completions probe", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ choices: [{ message: { content: "Hi there!" } }] }));
