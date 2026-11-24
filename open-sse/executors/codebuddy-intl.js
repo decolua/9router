@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { DefaultExecutor } from "./default.js";
 
 /**
@@ -7,10 +8,38 @@ import { DefaultExecutor } from "./default.js";
  * non-stream requests are rejected, and reasoning is surfaced only when the
  * request carries the IDE's OpenAI-style reasoning params. Force stream and
  * mirror reasoning_summary exactly like CodeBuddyExecutor.
+ *
+ * The intl gateway additionally gates every chat request on the
+ * `X-Conversation-*` header family the official IDE sends. Without all three
+ * ids it answers HTTP 400 code 11128 ("request illegal" / "conversation id
+ * missing") before the model is ever reached, so buildHeaders() injects them.
  */
 export class CodeBuddyIntlExecutor extends DefaultExecutor {
   constructor() {
     super("codebuddy-intl");
+  }
+
+  /**
+   * The intl gateway runs a channel-verification check before routing and needs
+   * the `X-Conversation-*` header family the official IDE sends. Omitting any of
+   * the three ids yields HTTP 400 code 11128 ("request illegal" / "conversation
+   * id missing") on every model, regardless of how valid the credentials are.
+   *
+   * - X-Conversation-ID stays stable per connection so upstream prompt/KV cache
+   *   buckets survive across turns.
+   * - X-Conversation-Request-ID and X-Conversation-Message-ID are fresh per
+   *   request, mirroring the IDE's one-request-one-message behavior.
+   */
+  buildHeaders(credentials, stream = true, url, model, body = null) {
+    const headers = super.buildHeaders(credentials, stream, url, model, body);
+    const seed = credentials?.connectionId || credentials?.email || credentials?.apiKey || "";
+    const conversationId = seed
+      ? crypto.createHash("sha256").update(`codebuddy-intl\u0000${seed}`).digest("hex").slice(0, 32)
+      : crypto.randomUUID().replace(/-/g, "");
+    headers["X-Conversation-ID"] = conversationId;
+    headers["X-Conversation-Request-ID"] = crypto.randomUUID();
+    headers["X-Conversation-Message-ID"] = crypto.randomUUID();
+    return headers;
   }
 
   transformRequest(model, body, stream, credentials) {
