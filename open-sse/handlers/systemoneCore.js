@@ -58,7 +58,8 @@ export async function handleSystemoneCore({
     targetUrl = targetUrl.replace("{accountId}", accountId);
   }
   if (targetUrl.includes("{model}")) {
-    targetUrl = targetUrl.replace(/\{model\}/g, model);
+    const upstreamModel = getModelUpstreamId(provider, model) || model;
+    targetUrl = targetUrl.replace(/\{model\}/g, upstreamModel);
   }
 
   // Validate input at the trust boundary; question-level shape is upstream's job.

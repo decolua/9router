@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **System One**: use upstream model ID in URL template for Cloudflare Workers AI and Ollama — the `{model}` placeholder in `systemoneConfig.baseUrl` now resolves via `getModelUpstreamId()` so Cloudflare receives `clef-flash` instead of `@cf/cloudflare/clef-flash`, fixing 400 "not found" errors
+
 # v0.5.119 (2026-11-11)
 
 ## Features
