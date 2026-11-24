@@ -25,6 +25,10 @@ export default function APIPageClient({ machineId }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
+  // "created" | "rotated" — which flow opened the key modal.
+  const [createdKeyMode, setCreatedKeyMode] = useState("created");
+  const [editingKeyId, setEditingKeyId] = useState(null);
+  const [editingKeyName, setEditingKeyName] = useState("");
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -627,6 +631,7 @@ export default function APIPageClient({ machineId }) {
       const data = await res.json();
 
       if (res.ok) {
+        setCreatedKeyMode("created");
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
@@ -673,6 +678,67 @@ export default function APIPageClient({ machineId }) {
     } catch (error) {
       console.log("Error toggling key:", error);
     }
+  };
+
+  const startEditKeyName = (key) => {
+    setEditingKeyId(key.id);
+    setEditingKeyName(key.name || "");
+  };
+
+  const cancelEditKeyName = () => {
+    setEditingKeyId(null);
+    setEditingKeyName("");
+  };
+
+  const handleRenameKey = async (id) => {
+    const name = editingKeyName.trim();
+    const current = keys.find((k) => k.id === id);
+    if (!name || !current || name === current.name) {
+      cancelEditKeyName();
+      return;
+    }
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.key) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, name: data.key.name } : k));
+      } else {
+        console.log("Error renaming key:", data.error || res.status);
+      }
+    } catch (error) {
+      console.log("Error renaming key:", error);
+    } finally {
+      cancelEditKeyName();
+    }
+  };
+
+  // Rotate: the server generates a new secret for the same key record. The old
+  // secret stops working immediately, so this always goes through a confirm.
+  const handleRotateKey = (key) => {
+    setConfirmState({
+      title: "Rotate API Key",
+      message: `Rotate API key "${key.name}"?\n\nA new key will be generated and the current one will stop working immediately. Name, access and paused state are kept. Update every client that uses this key.`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch(`/api/keys/${key.id}/rotate`, { method: "POST" });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.key) {
+            setKeys(prev => prev.map(k => k.id === key.id ? { ...k, ...data.key } : k));
+            setCreatedKeyMode("rotated");
+            setCreatedKey(data.key.key);
+          } else {
+            console.log("Error rotating key:", data.error || res.status);
+          }
+        } catch (error) {
+          console.log("Error rotating key:", error);
+        }
+      }
+    });
   };
 
   // Save a key's access (restricted flag + allow list).
@@ -1025,7 +1091,47 @@ export default function APIPageClient({ machineId }) {
                 className={`group flex items-start justify-between gap-3 py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                  {editingKeyId === key.id ? (
+                    <div className="flex items-center gap-1 max-w-sm">
+                      <input
+                        autoFocus
+                        value={editingKeyName}
+                        onChange={(e) => setEditingKeyName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); handleRenameKey(key.id); }
+                          if (e.key === "Escape") { e.preventDefault(); cancelEditKeyName(); }
+                        }}
+                        maxLength={100}
+                        aria-label="Key name"
+                        className="flex-1 min-w-0 text-sm font-medium px-2 py-1 rounded border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:border-primary"
+                      />
+                      <button
+                        onClick={() => handleRenameKey(key.id)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                        title="Save name"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">check</span>
+                      </button>
+                      <button
+                        onClick={cancelEditKeyName}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                        title="Cancel"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">close</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{key.name}</p>
+                      <button
+                        onClick={() => startEditKeyName(key)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all shrink-0"
+                        title="Rename key"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">edit</span>
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-1 min-w-0 flex-wrap">
                     <code className="text-xs text-text-muted font-mono break-all min-w-0">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
@@ -1043,10 +1149,18 @@ export default function APIPageClient({ machineId }) {
                       <button
                         onClick={() => copy(key.key, key.id)}
                         className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                        title="Copy key"
                       >
                         <span className="material-symbols-outlined text-[14px]">
                           {copied === key.id ? "check" : "content_copy"}
                         </span>
+                      </button>
+                      <button
+                        onClick={() => handleRotateKey(key)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                        title="Rotate key (generate a new secret)"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">autorenew</span>
                       </button>
                     </div>
                   </div>
@@ -1136,10 +1250,10 @@ export default function APIPageClient({ machineId }) {
         </div>
       </Modal>
 
-      {/* Created Key Modal */}
+      {/* Created / Rotated Key Modal */}
       <Modal
         isOpen={!!createdKey}
-        title="API Key Created"
+        title={createdKeyMode === "rotated" ? "API Key Rotated" : "API Key Created"}
         onClose={() => setCreatedKey(null)}
       >
         <div className="flex flex-col gap-4">
@@ -1148,7 +1262,9 @@ export default function APIPageClient({ machineId }) {
               Save this key now!
             </p>
             <p className="text-sm text-yellow-700 dark:text-yellow-300">
-              Store this key securely. You can view or copy it later from the API Keys list.
+              {createdKeyMode === "rotated"
+                ? "The previous key no longer works. Update every client that used it. You can view or copy the new key later from the API Keys list."
+                : "Store this key securely. You can view or copy it later from the API Keys list."}
             </p>
           </div>
           <div className="flex gap-2">
