@@ -1,0 +1,31 @@
+name: Agent01 daily lead research
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '22 6 * * *'
+  push:
+    branches: [master]
+    paths:
+      - 'agent01-work/**'
+      - '.github/workflows/agent01-lead-research.yml'
+permissions:
+  contents: read
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Verify lead scoring
+        run: node agent01-work/scripts/test-leads.mjs
+      - name: Search live public work listings
+        run: node agent01-work/scripts/daily-leads.mjs
+      - name: Upload evidence and proposed leads
+        uses: actions/upload-artifact@v4
+        with:
+          name: Agent01-Daily-Verified-Work-Leads
+          path: agent01-work/output/
+          retention-days: 7
+          if-no-files-found: error

@@ -1,0 +1,37 @@
+[cerebrium.deployment]
+name = "sceneforge-qwen-quality-b200"
+python_version = "3.11"
+docker_base_image_url = "debian:bookworm-slim"
+disable_auth = false
+include = ["./*", "main.py", "contract.py", "cerebrium.toml"]
+exclude = [".git", ".venv", "tests", "legacy-l40", "__pycache__"]
+
+[cerebrium.runtime.custom]
+port = 8765
+entrypoint = ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8765"]
+healthcheck_endpoint = "/health"
+
+[cerebrium.hardware]
+compute = "BLACKWELL_B200"
+gpu_count = 1
+cpu = 8
+memory = 96.0
+
+[cerebrium.scaling]
+min_replicas = 0
+max_replicas = 1
+cooldown = 120
+replica_concurrency = 1
+response_grace_period = 900
+
+[cerebrium.dependencies.pip]
+fastapi = ">=0.115,<1"
+uvicorn = ">=0.30,<1"
+torch = ">=2.7,<3"
+diffusers = ">=0.36,<1"
+transformers = ">=4.51.3,<6"
+accelerate = ">=1,<3"
+safetensors = ">=0.4,<1"
+pillow = ">=10,<13"
+protobuf = ">=4,<7"
+sentencepiece = ">=0.2,<1"

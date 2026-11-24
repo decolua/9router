@@ -1,0 +1,53 @@
+name: Sponsie Native Android APK
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'sponsie-native/**'
+      - '.github/workflows/sponsie-apk.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'sponsie-native/**'
+      - '.github/workflows/sponsie-apk.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Install Android SDK 35
+        run: |
+          SDKMGR="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          test -n "$SDKMGR"
+          "$SDKMGR" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+      - name: Build debug APK
+        working-directory: sponsie-native
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Check APK and SHA-256
+        run: |
+          test -s sponsie-native/app/build/outputs/apk/debug/app-debug.apk
+          sha256sum sponsie-native/app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify APK signature and package identity
+        run: |
+          APK=sponsie-native/app/build/outputs/apk/debug/app-debug.apk
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print -quit)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "$APK"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print -quit)"
+          "$AAPT" dump badging "$APK" | grep -E '^package:|^sdkVersion:|^targetSdkVersion:'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sponsie-Native-Android-Debug-APK
+          path: sponsie-native/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

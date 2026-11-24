@@ -1,0 +1,12 @@
+{
+  "name": "agent01-work-copilot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/verify.mjs"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}

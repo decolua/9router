@@ -1,0 +1,41 @@
+plugins { id 'com.android.application' }
+def signingNames = ['NEXUS_UPLOAD_STORE_FILE', 'NEXUS_UPLOAD_STORE_PASSWORD', 'NEXUS_UPLOAD_KEY_ALIAS', 'NEXUS_UPLOAD_KEY_PASSWORD']
+def signingReady = signingNames.every { System.getenv(it) }
+android {
+  namespace 'za.nexusremote.portal'
+  compileSdk 36
+  defaultConfig {
+    applicationId 'za.nexusremote.portal'
+    minSdk 26
+    targetSdk 36
+    versionCode 2
+    versionName '1.0.1'
+  }
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+  signingConfigs {
+    if (signingReady) {
+      release {
+        storeFile file(System.getenv('NEXUS_UPLOAD_STORE_FILE'))
+        storePassword System.getenv('NEXUS_UPLOAD_STORE_PASSWORD')
+        keyAlias System.getenv('NEXUS_UPLOAD_KEY_ALIAS')
+        keyPassword System.getenv('NEXUS_UPLOAD_KEY_PASSWORD')
+      }
+    }
+  }
+  buildTypes {
+    release {
+      debuggable false
+      minifyEnabled false
+      if (signingReady) signingConfig signingConfigs.release
+    }
+  }
+}
+// Refuse release packages without an explicitly supplied upload identity.
+gradle.taskGraph.whenReady { graph ->
+  if (!signingReady && graph.allTasks.any { it.name in ['packageRelease', 'packageReleaseBundle', 'signReleaseBundle'] }) {
+    throw new GradleException('Release signing is not configured. Supply all NEXUS_UPLOAD_* environment variables; debug keys are not a release fallback.')
+  }
+}

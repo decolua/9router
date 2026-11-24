@@ -1,0 +1,22 @@
+name: Agent 01 offline checks
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'agent01-omniroute/**'
+      - '.github/workflows/agent01-check.yml'
+  schedule:
+    - cron: '17 5 * * *'
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest -v test_agent01.py
+        working-directory: agent01-omniroute

@@ -1,0 +1,5 @@
+{
+  "positive_prompt": {"node": "6", "input": "text"},
+  "reference_image": {"node": "12", "input": "image"},
+  "filename_prefix": {"node": "42", "input": "filename_prefix"}
+}

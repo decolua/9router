@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#070916">
+<meta name="description" content="Submit an application to NexusRemote for human-reviewed remote support and call center opportunities. No worker fees.">
+<title>Apply | NexusRemote</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/experience.css"><script src="/site.js" defer></script></head>
+<body data-page="apply">
+<header class="nav-wrap"><nav class="nav container" aria-label="Primary navigation"><a href="/" class="brand"><span class="logo"><span>N</span></span>NEXUS<em>REMOTE</em></a>
+<div class="nav-links" id="navLinks"><a href="/" data-tab="home">Overview</a><a href="/#spiral">3D network</a><a href="/#opportunities">Find work</a><a href="/apply" data-tab="apply" aria-current="page">Apply</a><a href="/login?role=worker" data-tab="worker">Worker portal</a></div>
+<div class="nav-actions"><a class="btn btn-quiet" href="/login?role=owner" data-tab="owner">Owner access</a><a class="btn btn-primary" href="/login">Sign in ↗</a><button class="btn menu-button" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">☰</button></div></nav></header>
+<main class="container">
+<div class="page-head" style="max-width:790px"><span class="eyebrow">Division B · Applicant screening</span><h1>Start your <span class="gradient-text">remote journey.</span></h1><p>Tell us a little about yourself and your work setup. Applications are held securely and reviewed by a human. Being considered is not a guarantee of employment.</p></div>
+<div style="display:grid;grid-template-columns:minmax(0,1.45fr) minmax(270px,.75fr);gap:24px;align-items:start" id="applyGrid">
+<section class="glass auth-card" style="margin-bottom:65px">
+<div class="eyebrow">Candidate intake</div><h2>Your application</h2><p>Required fields only. No card details, deposits or payments.</p>
+<form id="applicationForm" autocomplete="on">
+<div class="form-grid">
+<div><label for="fullName">Full name</label><input class="field" id="fullName" name="name" type="text" autocomplete="name" maxlength="100" minlength="2" required placeholder="Your full name"></div>
+<div><label for="email">Email address</label><input class="field" id="email" name="email" type="email" autocomplete="email" maxlength="180" required placeholder="you@example.com"></div>
+<div><label for="internet">Internet speed (Mbps)</label><input class="field" id="internet" name="internetMbps" type="number" value="20" min="0" max="10000" step=".1" required></div>
+<div><label for="headset">Calling equipment</label><select class="field" id="headset" name="headset" required><option value="usb">Dedicated USB headset</option><option value="bluetooth">Bluetooth headset / built-in microphone</option><option value="none">Not available yet</option></select></div>
+<div><label for="workspace">Your workspace</label><select class="field" id="workspace" name="workspace" required><option value="quiet">Quiet and private</option><option value="shared">Shared or occasionally noisy</option><option value="unknown">Not established yet</option></select></div>
+<div><label for="experience">Experience level</label><select class="field" id="experience" name="experience" required><option value="entry">New to call-center work</option><option value="experienced">Previous customer service / calls experience</option></select></div>
+</div>
+<div class="hidden" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+<div class="reflect-line"></div>
+<label class="check-row" for="consent"><input type="checkbox" id="consent" name="consent" required><span>I agree to have my application details securely stored and reviewed for potential opportunities. I have read the <a href="/privacy" target="_blank" rel="noopener">privacy information</a>, understand that no employment is guaranteed and that applicants are not charged fees.</span></label>
+<div id="applicationMessage" class="notice hidden" aria-live="polite" role="status"></div>
+<button type="submit" class="btn btn-primary wide" id="applySubmit" style="margin-top:19px">Submit for human review <span aria-hidden="true">→</span></button>
+<p class="callout">You won't be redirected into a dialer or shown invented earnings after submitting.</p>
+</form>
+</section>
+<aside>
+<div class="glass" style="padding:26px;margin-bottom:16px">
+<span class="eyebrow">What happens next</span><div class="steps-list">
+<div class="step"><span>01</span><div><strong>Secure submission</strong><p>Your application receives a reference number.</p></div></div>
+<div class="step"><span>02</span><div><strong>Human review</strong><p>An authorized reviewer evaluates your stated readiness.</p></div></div>
+<div class="step"><span>03</span><div><strong>Verified onboarding</strong><p>Only approved candidates receive a private invitation, if suitable.</p></div></div>
+</div></div>
+<div class="notice success"><strong>No applicant fees.</strong> We will never charge you for an application, interview, equipment optimization or a training unlock.</div>
+</aside>
+</div></main>
+<footer class="footer"><div class="container"><span>© NexusRemote · Transparent recruitment</span><span><a href="/">Overview</a> · <a href="/login">Sign in</a> · <a href="/privacy">Privacy</a></span></div></footer>
+<style>@media(max-width:790px){#applyGrid{display:block!important}}</style></body></html>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NexusRemote icon">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#121b46"/><stop offset=".55" stop-color="#0b1431"/><stop offset="1" stop-color="#071c27"/></linearGradient>
+<linearGradient id="ring" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b5a5ff"/><stop offset=".46" stop-color="#7da4ff"/><stop offset="1" stop-color="#60efd2"/></linearGradient>
+<radialGradient id="light" cx=".25" cy=".2"><stop stop-color="#c4b9ff" stop-opacity=".4"/><stop offset="1" stop-color="#0b122b" stop-opacity="0"/></radialGradient>
+<filter id="glow"><feGaussianBlur stdDeviation="10"/></filter>
+</defs>
+<rect width="512" height="512" rx="118" fill="url(#bg)"/><rect x="22" y="22" width="468" height="468" rx="105" fill="url(#light)" stroke="#8da4f6" stroke-opacity=".28" stroke-width="3"/>
+<ellipse cx="256" cy="256" rx="165" ry="90" fill="none" stroke="url(#ring)" stroke-width="12" transform="rotate(-31 256 256)" opacity=".5" filter="url(#glow)"/>
+<ellipse cx="256" cy="256" rx="165" ry="90" fill="none" stroke="url(#ring)" stroke-width="11" transform="rotate(-31 256 256)"/>
+<ellipse cx="256" cy="256" rx="158" ry="81" fill="none" stroke="#bfc7ff" stroke-width="6" stroke-opacity=".7" transform="rotate(48 256 256)"/>
+<circle cx="256" cy="256" r="128" fill="#101c43" stroke="url(#ring)" stroke-opacity=".44" stroke-width="7"/>
+<path d="M163 342V170h42l104 104V170h39v172h-38L202 234v108z" fill="url(#ring)" stroke="#c8e1ff" stroke-opacity=".15" stroke-width="3" />
+<circle cx="383" cy="128" r="13" fill="#75ffdc"/><circle cx="126" cy="380" r="10" fill="#ac96ff"/>
+</svg>

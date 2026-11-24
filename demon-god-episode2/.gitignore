@@ -1,0 +1,4 @@
+renders/
+output/
+__pycache__/
+*.pyc

@@ -1,0 +1,34 @@
+services:
+  vllm:
+    profiles: ["gpu"]
+    image: vllm/vllm-openai:latest
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 8
+              capabilities: [gpu]
+    ipc: host
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      HF_TOKEN: "${HF_TOKEN:-}"
+      VLLM_API_KEY: "${VLLM_API_KEY:?Set a strong key in .env}"
+    volumes:
+      - "hf-cache:/root/.cache/huggingface"
+    command:
+      - --model
+      - "${MODEL_ID:-Qwen/Qwen3-235B-A22B-Instruct-2507}"
+      - --tensor-parallel-size
+      - "8"
+      - --max-model-len
+      - "32768"
+      - --gpu-memory-utilization
+      - "0.90"
+      - --api-key
+      - "${VLLM_API_KEY:?Set a strong key in .env}"
+    restart: unless-stopped
+volumes:
+  hf-cache:

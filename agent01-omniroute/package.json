@@ -1,0 +1,11 @@
+{
+  "name": "agent01-free-scheduled-check",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node daily-agent.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1"
+  }
+}

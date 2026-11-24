@@ -1,0 +1,96 @@
+name: NexusRemote — Android verification
+on:
+  workflow_dispatch:
+    inputs:
+      build_release:
+        description: Build signed release bundle (requires android-release environment secrets)
+        type: boolean
+        default: false
+  pull_request:
+    paths: ['nexusremote-android/**', '.github/workflows/nexusremote-android-apk.yml']
+  push:
+    branches: [master]
+    paths: ['nexusremote-android/**', '.github/workflows/nexusremote-android-apk.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android platform
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0' 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Policy and tab regressions
+        run: |
+          sh nexusremote-android/tests/run-policy-tests.sh
+          node --test nexusremote-android/tests/*.test.cjs
+      - name: Compile and lint debug APK
+        working-directory: nexusremote-android
+        run: ./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Verify debug APK signature and archive
+        run: |
+          APK=nexusremote-android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          unzip -t "$APK"
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NexusRemote-Debug-and-Reports
+          path: |
+            nexusremote-android/app/build/outputs/apk/debug/app-debug.apk
+            nexusremote-android/app/build/reports/
+          retention-days: 30
+          if-no-files-found: error
+  signed-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_release && github.ref == 'refs/heads/master'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: android-release
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build signed bundle
+        working-directory: nexusremote-android
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.NEXUS_UPLOAD_KEYSTORE_BASE64 }}
+          NEXUS_UPLOAD_STORE_PASSWORD: ${{ secrets.NEXUS_UPLOAD_STORE_PASSWORD }}
+          NEXUS_UPLOAD_KEY_ALIAS: ${{ secrets.NEXUS_UPLOAD_KEY_ALIAS }}
+          NEXUS_UPLOAD_KEY_PASSWORD: ${{ secrets.NEXUS_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$UPLOAD_KEYSTORE_BASE64"
+          export NEXUS_UPLOAD_STORE_FILE="$RUNNER_TEMP/nexus-upload.jks"
+          trap 'rm -f "$NEXUS_UPLOAD_STORE_FILE"' EXIT
+          umask 077
+          printf '%s' "$UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$NEXUS_UPLOAD_STORE_FILE"
+          ./gradlew :app:bundleRelease :app:lintRelease --no-daemon
+          jarsigner -verify app/build/outputs/bundle/release/app-release.aab
+          sha256sum app/build/outputs/bundle/release/app-release.aab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NexusRemote-Signed-Release-Candidate
+          path: nexusremote-android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error

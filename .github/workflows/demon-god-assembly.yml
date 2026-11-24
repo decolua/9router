@@ -1,0 +1,28 @@
+name: Demon God Episode Assembly Tests
+on:
+  pull_request:
+    paths:
+      - 'demon-god-episode2/**'
+      - '.github/workflows/demon-god-assembly.yml'
+  push:
+    paths:
+      - 'demon-god-episode2/**'
+      - '.github/workflows/demon-god-assembly.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: demon-god-episode2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+      - name: Run manifest and assembly tests
+        run: python -m unittest discover -p 'test_*.py' -v
