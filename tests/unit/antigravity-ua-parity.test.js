@@ -12,7 +12,7 @@ import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 const require = createRequire(import.meta.url);
 const mitm = require("../../src/mitm/antigravityIdeVersion.js");
 
-const EXPECTED_VERSION = "2.33.0";
+const EXPECTED_VERSION = "2.34.0";
 
 describe("Antigravity UA parity", () => {
   it("replaces the version on a Hub UA and keeps hub/ plus the platform suffix", () => {

@@ -324,8 +324,8 @@ async function getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAlive
  * reusing idle sockets that upstream edges (NVIDIA NIM, Cloudflare) silently
  * dropped without sending a TCP RST.
  */
-export function getDirectDispatcher(insecure = false) {
-  const { keepAliveTimeout, keepAliveMaxTimeout } = resolveKeepAliveTimeouts();
+export function getDirectDispatcher(insecure = false, targetUrl = "") {
+  const { keepAliveTimeout, keepAliveMaxTimeout } = resolveKeepAliveTimeouts(targetUrl);
   const key = `direct::${insecure ? "insecure" : "secure"}::${keepAliveTimeout}::${keepAliveMaxTimeout}`;
   return getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAliveMaxTimeout);
 }
@@ -349,10 +349,10 @@ export function getFreshRetryDispatcher(insecure = false) {
  * Always returns a dispatcher — the direct path needs the custom Agent too,
  * otherwise the default global agent's ClientHello gets RST-ed by DPI.
  */
-async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false) {
+async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false, targetUrl = "") {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) {
-    return forceFreshSocket ? getFreshRetryDispatcher(insecure) : getDirectDispatcher(insecure);
+    return forceFreshSocket ? getFreshRetryDispatcher(insecure) : getDirectDispatcher(insecure, targetUrl);
   }
 
   const key = `${normalized}::${insecure ? "insecure" : "secure"}`;
@@ -382,7 +382,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
-    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket);
+    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket, url);
     return await rawFetch(url, { ...options, dispatcher });
   } catch (err) {
     const isStrictSsl = options.strictTls === true || process.env.STRICT_SSL === "true" || process.env.STRICT_SSL === "1";
@@ -392,7 +392,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
       }
       // ponytail: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
       console.warn(`[ProxyFetch] TLS cert verification failed (${err.cause?.code || err.code}), retrying with insecure TLS: ${url}`);
-      const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket);
+      const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket, url);
       return await rawFetch(url, { ...options, dispatcher: insecureDispatcher });
     }
 
