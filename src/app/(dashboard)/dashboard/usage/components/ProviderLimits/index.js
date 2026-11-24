@@ -61,11 +61,13 @@ const KIRO_METHOD_LABELS = {
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
   codex: "codexAutoPing",
+  antigravity: "antigravityAutoPing",
 };
 
 const AUTO_PING_TOOLTIPS = {
   claude: "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.",
   codex: "Auto-starts the next 5h Codex window after reset by sending a tiny request. Consumes a small amount of quota.",
+  antigravity: "Auto-starts the next 5h Antigravity window after reset by sending a tiny request. Consumes a small amount of quota.",
 };
 
 function kiroMethodLabel(conn) {
@@ -163,7 +165,7 @@ export default function ProviderLimits() {
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [autoPingConfigs, setAutoPingConfigs] = useState({ claude: {}, codex: {} });
+  const [autoPingConfigs, setAutoPingConfigs] = useState({ claude: {}, codex: {}, antigravity: {} });
   const [scheduleConnection, setScheduleConnection] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
@@ -608,6 +610,7 @@ export default function ProviderLimits() {
         setAutoPingConfigs({
           claude: s?.claudeAutoPing || {},
           codex: s?.codexAutoPing || {},
+          antigravity: s?.antigravityAutoPing || {},
         });
         setQuotaVisibility(s?.quotaVisibility || {});
       })
@@ -1273,7 +1276,9 @@ export default function ProviderLimits() {
                         ? `Auto-ping active: ${activeModes.join(" + ")}. Click to configure.`
                         : conn.provider === "codex"
                           ? "Auto-starts the next 5h Codex window after reset or on schedule. Click to configure."
-                          : "Auto-starts a new window on quota reset or fixed schedule. Click to configure.";
+                          : conn.provider === "antigravity"
+                            ? "Auto-starts the next 5h Antigravity window after reset or on schedule. Click to configure."
+                            : "Auto-starts a new window on quota reset or fixed schedule. Click to configure.";
 
                       return (
                         <Tooltip text={tooltipText}>

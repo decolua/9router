@@ -41,6 +41,7 @@ const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "comman
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
   codex: "codexAutoPing",
+  antigravity: "antigravityAutoPing",
 };
 
 function sleep(ms) {
