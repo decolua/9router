@@ -2,30 +2,29 @@ import { KEY_LIMIT_WINDOW } from "@/shared/constants/keyAccess.js";
 
 /**
  * State of the "Cost limit" switch. It is its own switch, independent of
- * "Restrict access": the only coupling is the priced-only rule, and that can
- * only make the switch unavailable while it is off. It is never left stuck on
- * and disabled: a limit that is saved keeps the switch on and usable (so it can
- * be cleared), and a locally switched-on switch drops back to off if the key
- * stops being able to take a limit (for example Restrict access is turned off).
- * @param {object} key the key with `limit` and `limitStatus`
+ * "Restrict access" and of pricing: it is on when a limit is saved or when it
+ * was switched on in this session (nothing saved yet), and nothing about the key
+ * ever disables it. Whether a saved limit is ENFORCED is a separate matter, shown
+ * by keyLimitView (greyed with a red warning).
+ * @param {object} key the key with `limit`
  * @param {boolean} open switched on in this session, nothing saved yet
- * @returns {{ on: boolean, disabled: boolean }}
+ * @returns {{ on: boolean }}
  */
 export function limitSwitchState(key, open) {
-  const limit = key?.limit || null;
-  const blocked = keyLimitView(key).disabled && !limit;
-  return { on: Boolean(limit) || (Boolean(open) && !blocked), disabled: blocked };
+  return { on: Boolean(key?.limit) || Boolean(open) };
 }
 
-// Pure view model for the dashboard "Cost limit" row.
+// Pure view model for the dashboard "Cost limit" row. The fields are always editable;
+// the status only decides the look (greyed + red warning when a saved limit is not
+// enforced) and a hint (when a limit would not be enforced yet).
 export function keyLimitView(key) {
   const limit = key?.limit || null;
   const s = key?.limitStatus || null;
-  if (!s) return { disabled: true, greyed: false, warning: null, note: "Cost limit status unavailable", summary: null };
+  const neutral = { greyed: false, warning: null, note: null, summary: null };
+  if (!s) return neutral;
 
   if (limit && !s.effective) {
     return {
-      disabled: true,
       greyed: true,
       warning: s.unbounded
         ? "Cost limit is disabled because this key is unrestricted and can access unpriced models"
@@ -36,18 +35,15 @@ export function keyLimitView(key) {
   }
   if (!limit && !s.eligible) {
     return {
-      disabled: true,
-      greyed: false,
-      warning: null,
+      ...neutral,
       note: s.unbounded
-        ? "A cost limit needs a restricted key: an unrestricted key can reach unpriced models"
-        : `Cost limit unavailable: this key can access unpriced models: ${s.unpriced.join(", ")}`,
-      summary: null,
+        ? "This key is unrestricted, so a limit is saved but not enforced until the key is restricted and every model it can reach has a price."
+        : `This key can reach unpriced models (${s.unpriced.join(", ")}), so a limit is saved but not enforced until they have a price.`,
     };
   }
   const when = limit?.window === KEY_LIMIT_WINDOW.MONTH ? "this month" : "today";
   const summary = limit && s.spentUsd !== null
     ? `$${s.spentUsd.toFixed(2)} of $${limit.usd} ${when}, resets ${s.resetsAt}`
     : null;
-  return { disabled: false, greyed: false, warning: null, note: null, summary };
+  return { ...neutral, summary };
 }

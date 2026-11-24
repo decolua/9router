@@ -34,25 +34,34 @@ async function restrictedKey(allow) {
   return k;
 }
 
+// The Cost limit is independent of Restrict access and of pricing: it can always be saved.
+// Pricing only decides whether it is ENFORCED (limitStatus.effective), shown greyed in the UI.
 describe("PUT /api/keys/[id] limit", () => {
   it("rejects an invalid limit with 400", async () => {
     const k = await restrictedKey(["openai/gpt-4"]);
-    const res = await put(k.id, { limit: { usd: -1, window: "day" } });
-    expect(res.status).toBe(400);
+    expect((await put(k.id, { limit: { usd: -1, window: "day" } })).status).toBe(400);
+    expect((await put(k.id, { limit: { usd: 5, window: "week" } })).status).toBe(400);
+    expect((await put(k.id, { limit: "5" })).status).toBe(400);
   });
-  it("rejects a limit on an unrestricted key with 400 (it can reach every model)", async () => {
+  it("accepts a limit on an UNRESTRICTED key, saved but not effective", async () => {
     const k = await db.createApiKey("open", "machine-1");
     const res = await put(k.id, { limit: { usd: 5, window: "day" } });
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/unrestricted|every model/i);
+    expect(res.status).toBe(200);
+    const { key } = await res.json();
+    expect(key.limit).toEqual({ usd: 5, window: "day" });
+    expect(key.limitStatus.effective).toBe(false);
+    expect(key.limitStatus.unbounded).toBe(true);
   });
-  it("rejects a limit when a reachable model is unpriced and names it", async () => {
+  it("accepts a limit while a reachable model is unpriced, saved but not effective, models named", async () => {
     const k = await restrictedKey(["acme/no-such-model"]);
     const res = await put(k.id, { limit: { usd: 5, window: "day" } });
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("acme/no-such-model");
+    expect(res.status).toBe(200);
+    const { key } = await res.json();
+    expect(key.limit).toEqual({ usd: 5, window: "day" });
+    expect(key.limitStatus.effective).toBe(false);
+    expect(key.limitStatus.unpriced).toEqual(["acme/no-such-model"]);
   });
-  it("accepts a limit on a fully priced restricted key and returns it with a status", async () => {
+  it("accepts a limit on a fully priced restricted key and it is effective", async () => {
     const k = await restrictedKey(["openai/gpt-4"]);
     const res = await put(k.id, { limit: { usd: 5, window: "day" } });
     expect(res.status).toBe(200);
@@ -67,6 +76,16 @@ describe("PUT /api/keys/[id] limit", () => {
     expect(res.status).toBe(200);
     expect((await res.json()).key.limit).toBeNull();
   });
+  it("turning Restrict access off keeps the limit, which stops being effective; turning it on again restores it", async () => {
+    const k = await restrictedKey(["openai/gpt-4"]);
+    await put(k.id, { limit: { usd: 5, window: "day" } });
+    let { key } = await (await put(k.id, { access: { restricted: false, allow: [] } })).json();
+    expect(key.limit).toEqual({ usd: 5, window: "day" });
+    expect(key.limitStatus.effective).toBe(false);
+    ({ key } = await (await put(k.id, { access: { restricted: true, allow: ["openai/gpt-4"] } })).json());
+    expect(key.limit).toEqual({ usd: 5, window: "day" });
+    expect(key.limitStatus.effective).toBe(true);
+  });
   it("changing access to an unpriced model keeps the limit but the status says it is not effective", async () => {
     const k = await restrictedKey(["openai/gpt-4"]);
     await put(k.id, { limit: { usd: 5, window: "day" } });
@@ -77,11 +96,12 @@ describe("PUT /api/keys/[id] limit", () => {
     expect(key.limitStatus.effective).toBe(false);
     expect(key.limitStatus.unpriced).toEqual(["acme/no-such-model"]);
   });
-  it("an override price makes a previously unpriced model eligible", async () => {
-    await db.updatePricing({ acme: { "no-such-model": { input: 1, output: 2 } } });
+  it("an override price makes the saved limit effective", async () => {
     const k = await restrictedKey(["acme/no-such-model"]);
-    const res = await put(k.id, { limit: { usd: 5, window: "day" } });
-    expect(res.status).toBe(200);
+    await put(k.id, { limit: { usd: 5, window: "day" } });
+    await db.updatePricing({ acme: { "no-such-model": { input: 1, output: 2 } } });
+    const { keys } = await (await keysList.GET()).json();
+    expect(keys.find((x) => x.id === k.id).limitStatus.effective).toBe(true);
   });
 });
 

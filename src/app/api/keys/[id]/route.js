@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
-import { validateKeyAccessInput, validateLimitForKey } from "@/shared/utils/keyAccess.js";
+import { validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
+import { validateKeyLimitInput } from "@/shared/utils/keyLimit.js";
 import { getLimitStatus } from "@/sse/services/keySpendLimit.js";
 
 // GET /api/keys/[id] - Get single key
@@ -38,7 +39,9 @@ export async function PUT(request, { params }) {
       updateData.access = checked.value;
     }
     if (limit !== undefined) {
-      const checked = await validateLimitForKey(limit, existing, updateData.access || existing.access, getLimitStatus);
+      // A limit can always be saved; whether it is ENFORCED (restricted key, every reachable model
+      // priced) is reported in limitStatus and applied at request time.
+      const checked = validateKeyLimitInput(limit);
       if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
       updateData.limit = checked.value;
     }
