@@ -31,6 +31,26 @@ const LOCAL_STDIO_PLUGINS = [
     args: ["-y", "@browsermcp/mcp@latest"],
     toolNames: ["browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_screenshot", "browser_get_console_logs", "browser_wait", "browser_press_key", "browser_go_back", "browser_go_forward"],
   },
+  {
+    name: "lians-memory",
+    title: "Lians Memory",
+    description: "Local-first memory shared across agent sessions, with current and point-in-time recall",
+    setupUrl: "https://docs.astral.sh/uv/getting-started/installation/",
+    setupLabel: "Install uv",
+    command: "uvx",
+    args: ["--from", "lians-sdk[mcp]", "lians-mcp"],
+    toolNames: [
+      "remember",
+      "recall",
+      "recall_at",
+      "reconstruct",
+      "list_conflicts",
+      "memory_lineage",
+      "fact_history",
+      "backtest_check",
+      "memory_feedback",
+    ],
+  },
 ];
 
 function buildManagedMcpServers(plugins) {
