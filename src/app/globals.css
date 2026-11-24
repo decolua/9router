@@ -208,6 +208,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root[dir="rtl"],
+[dir="rtl"],
+:root[lang="fa"],
+[lang="fa"],
+:lang(fa) {
+  --font-sans: var(--font-vazirmatn), 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
 /* Selection - brand-tinted */
 ::selection {
   background-color: rgba(229, 106, 74, 0.25);
