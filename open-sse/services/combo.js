@@ -519,12 +519,12 @@ export async function handleComboChat({
             }
           }
 
-          log.info("COMBO", `Model ${modelStr} succeeded`);
+          log.info("COMBO", `Model ${modelStr} succeeded · ATTEMPT ${i + 1}/${rotatedModels.length}`);
           return result;
         }
 
         if (peeked.outcome === "content") {
-          log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
+          log.info("COMBO", `Model ${modelStr} succeeded · ATTEMPT ${i + 1}/${rotatedModels.length}${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
           return peeked.response;
         }
 
