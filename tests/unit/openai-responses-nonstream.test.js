@@ -9,6 +9,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
 const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
+const { openaiResponsesToOpenAIRequest } = await import("../../open-sse/translator/request/openai-responses.js");
 
 // A chat.completion body as returned by a chat-native upstream (e.g. op-ericding)
 const CHAT_TOOL_BODY = {
@@ -85,6 +86,117 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
   });
 });
 
+// Regression guard for the custom-tool metadata type mismatch.
+//
+// The Responses request translator collects custom tool names in a Set but
+// exports them as an Array — `result._customToolNames = [...customToolNames]`
+// (open-sse/translator/request/openai-responses.js:229). chatCore.js:192 lifts
+// that value off the translated body and hands it to this consumer unchanged,
+// which asked it for `customToolNames?.has(name)`
+// (open-sse/handlers/chatCore/nonStreamingHandler.js:109). Arrays have no
+// `.has`, so a custom tool call threw *after* the provider had already answered
+// and surfaced to the client as a bodyless HTTP 500.
+//
+// The streaming path was never affected: open-sse/utils/stream.js:62 already
+// normalises with `new Set(customToolNames || [])`. Every pre-existing test in
+// this file passed a hand-built Set, so the seam between the producer and this
+// consumer was never exercised.
+describe("custom tool names supplied as the request translator's array", () => {
+  const FREEFORM = "FREEFORM-LIVE-OK";
+  const MULTILINE = [
+    "FREEFORM-BEGIN",
+    "{\"json\":\"looking\"}",
+    "Free-Tier-Combo",
+    "bridge/free-tier",
+    "FREEFORM-END"
+  ].join("\n");
+
+  const FREEFORM_TOOL = {
+    type: "custom",
+    name: "bridge_freeform",
+    description: "Echoes freeform text.",
+    format: { type: "grammar", syntax: "lark", definition: "start: /(.|\\n)+/" }
+  };
+
+  const bodyWithCall = (name, argumentsText) => {
+    const body = structuredClone(CHAT_TOOL_BODY);
+    body.choices[0].message.tool_calls[0] = {
+      id: "call_ff",
+      type: "function",
+      function: { name, arguments: argumentsText }
+    };
+    return body;
+  };
+
+  const translate = (body, customToolNames) =>
+    translateNonStreamingResponse(body, FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, customToolNames);
+
+  const customCall = (out) => (out.output || []).find((item) => item.type === "custom_tool_call");
+  const functionCall = (out) => (out.output || []).find((item) => item.type === "function_call");
+
+  it("emits custom_tool_call when the marked name arrives in an array", () => {
+    const out = translate(bodyWithCall("bridge_freeform", JSON.stringify({ input: FREEFORM })), ["bridge_freeform"]);
+    expect(customCall(out)).toMatchObject({
+      call_id: "call_ff",
+      name: "bridge_freeform",
+      input: FREEFORM
+    });
+    expect(functionCall(out)).toBeUndefined();
+  });
+
+  it("unwraps the Chat input parameter without leaking the JSON wrapper", () => {
+    const out = translate(bodyWithCall("bridge_freeform", JSON.stringify({ input: FREEFORM })), ["bridge_freeform"]);
+    expect(customCall(out).input).toBe(FREEFORM);
+    expect(customCall(out).input).not.toBe(JSON.stringify({ input: FREEFORM }));
+  });
+
+  it("preserves multi-line raw input verbatim", () => {
+    const out = translate(bodyWithCall("bridge_freeform", JSON.stringify({ input: MULTILINE })), ["bridge_freeform"]);
+    expect(customCall(out).input).toBe(MULTILINE);
+  });
+
+  it("treats an array and a Set identically", () => {
+    const body = bodyWithCall("bridge_freeform", JSON.stringify({ input: FREEFORM }));
+    expect(translate(body, ["bridge_freeform"])).toEqual(translate(body, new Set(["bridge_freeform"])));
+  });
+
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["an empty array", []],
+    ["an empty Set", new Set()]
+  ])("emits function_call when the collection is %s", (_label, customToolNames) => {
+    const out = translate(bodyWithCall("shell", "{\"cmd\":\"ls\"}"), customToolNames);
+    expect(functionCall(out)).toMatchObject({
+      call_id: "call_ff",
+      name: "shell",
+      arguments: "{\"cmd\":\"ls\"}"
+    });
+    expect(customCall(out)).toBeUndefined();
+  });
+
+  it("emits function_call when the array holds a different name", () => {
+    const out = translate(bodyWithCall("shell", "{\"cmd\":\"ls\"}"), ["bridge_freeform"]);
+    expect(functionCall(out)).toMatchObject({ name: "shell", arguments: "{\"cmd\":\"ls\"}" });
+    expect(customCall(out)).toBeUndefined();
+  });
+
+  it("accepts the collection the request translator actually produces", () => {
+    const translated = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {
+      input: [
+        { type: "additional_tools", role: "developer", tools: [FREEFORM_TOOL] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "go" }] }
+      ]
+    }, true, null);
+
+    // Pins the producer contract this consumer has to tolerate.
+    expect(Array.isArray(translated._customToolNames)).toBe(true);
+
+    const out = translate(bodyWithCall("bridge_freeform", JSON.stringify({ input: FREEFORM })), translated._customToolNames);
+    expect(customCall(out)).toMatchObject({ name: "bridge_freeform", input: FREEFORM });
+  });
+});
+
 describe("forced-SSE JSON path for a Responses-API client behind a chat upstream", () => {
   const sseCtx = (sourceFormat, targetFormat) => {
     const encoder = new TextEncoder();
@@ -127,6 +239,20 @@ describe("forced-SSE JSON path for a Responses-API client behind a chat upstream
   it("returns a custom_tool_call for a marked tool", async () => {
     const ctx = sseCtx(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
     ctx.customToolNames = new Set(["shell"]);
+    const result = await handleForcedSSEToJson(ctx);
+    expect(result.success).toBe(true);
+    const json = await result.response.json();
+    const call = (json.output || []).find((item) => item.type === "custom_tool_call");
+    expect(call).toMatchObject({
+      call_id: "call_9",
+      name: "shell",
+      input: "{\"cmd\":\"pwd\"}"
+    });
+  });
+
+  it("returns a custom_tool_call when the marked names arrive as an array", async () => {
+    const ctx = sseCtx(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
+    ctx.customToolNames = ["shell"];
     const result = await handleForcedSSEToJson(ctx);
     expect(result.success).toBe(true);
     const json = await result.response.json();
