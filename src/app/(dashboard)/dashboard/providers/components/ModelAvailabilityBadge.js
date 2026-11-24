@@ -55,13 +55,13 @@ export default function ModelAvailabilityBadge() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [expanded]);
 
-  const handleClearCooldown = async (provider, model) => {
-    setClearing(`${provider}:${model}`);
+  const handleClearCooldown = async (provider, model, connectionId) => {
+    setClearing(connectionId);
     try {
       const res = await fetch("/api/models/availability", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "clearCooldown", provider, model }),
+        body: JSON.stringify({ action: "clearCooldown", provider, model, connectionId }),
       });
       if (res.ok) {
         notify.success(`Cooldown cleared for ${model}`);
@@ -93,7 +93,7 @@ export default function ModelAvailabilityBadge() {
 
   return (
     <div className="relative" ref={ref}>
-      {/* <button
+      <button
         onClick={() => setExpanded(!expanded)}
         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
           isHealthy
@@ -107,7 +107,7 @@ export default function ModelAvailabilityBadge() {
         {isHealthy
           ? "All models operational"
           : `${unavailableCount} model${unavailableCount !== 1 ? "s" : ""} with issues`}
-      </button> */}
+      </button>
 
       {expanded && (
         <div className="absolute top-full right-0 mt-2 w-80 bg-surface border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
@@ -143,10 +143,10 @@ export default function ModelAvailabilityBadge() {
                     <div className="flex flex-col gap-1">
                       {provModels.map((m) => {
                         const status = STATUS_CONFIG[m.status] || STATUS_CONFIG.unknown;
-                        const isClearing = clearing === `${m.provider}:${m.model}`;
+                        const isClearing = clearing === m.connectionId;
                         return (
                           <div
-                            key={`${m.provider}-${m.model}`}
+                            key={`${m.connectionId}-${m.model}`}
                             className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-surface/30"
                           >
                             <div className="flex items-center gap-1.5 min-w-0">
@@ -156,13 +156,16 @@ export default function ModelAvailabilityBadge() {
                               >
                                 {status.icon}
                               </span>
-                              <span className="font-mono text-xs text-text-main truncate">{m.model}</span>
+                              <span className="min-w-0">
+                                <span className="block font-mono text-xs text-text-main truncate">{m.model}</span>
+                                <span className="block text-[10px] text-text-muted truncate">{m.connectionName}</span>
+                              </span>
                             </div>
                             {m.status === "cooldown" && (
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => handleClearCooldown(m.provider, m.model)}
+                                onClick={() => handleClearCooldown(m.provider, m.model, m.connectionId)}
                                 disabled={isClearing}
                                 className="text-[10px] px-1.5! py-0.5! ml-2"
                               >
