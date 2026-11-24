@@ -240,7 +240,17 @@ function removeAllDNSEntriesSync() {
     const filtered = content.split(/\r?\n/).filter(l => !allHosts.some(h => l.includes(h))).join(eol);
     const next = filtered.replace(/[\r\n\s]+$/g, "") + eol;
     if (next === content) return;
-    fs.writeFileSync(HOSTS_FILE, next, "utf8");
+    try {
+      fs.writeFileSync(HOSTS_FILE, next, "utf8");
+    } catch (err) {
+      if (IS_WIN) {
+        try {
+          const ps = `$h='${HOSTS_FILE}'; $t=@(${allHosts.map(x => `'${x}'`).join(',')}); $c=(Get-Content -LiteralPath $h | Where-Object { $l=$_; -not ($t | Where-Object { $l -match [regex]::Escape($_) }) }); Set-Content -LiteralPath $h -Value $c; ipconfig /flushdns`;
+          const b64 = Buffer.from(ps, "utf16le").toString("base64");
+          execSync(`powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${b64}`, { windowsHide: true, stdio: "ignore" });
+        } catch { /* ignore */ }
+      }
+    }
     if (IS_WIN) {
       try { execSync("ipconfig /flushdns", { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
     } else if (IS_MAC) {
