@@ -384,15 +384,25 @@ export class AntigravityExecutor extends BaseExecutor {
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
     
-    // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
-    // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
+    // Rewrite competing-client branding in system prompts (e.g. Claude Code, Codex CLI,
+    // Hermes, OpenCode, OpenClaw) so Antigravity doesn't flag systemInstruction with a bare 429.
     if (requestWithoutTools.systemInstruction?.parts) {
+      const rewrittenParts = [];
       for (const part of requestWithoutTools.systemInstruction.parts) {
-        if (typeof part.text !== "string") continue;
-        for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
-          part.text = part.text.replaceAll(from, to);
+        if (typeof part.text !== "string") {
+          rewrittenParts.push(part);
+          continue;
         }
+        let text = part.text;
+        for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
+          text = text.replaceAll(from, to);
+        }
+        if (text.trim()) rewrittenParts.push({ ...part, text });
       }
+      requestWithoutTools.systemInstruction = {
+        ...requestWithoutTools.systemInstruction,
+        parts: rewrittenParts,
+      };
     }
 
     // The real client always opens the system prompt with the Antigravity identity.

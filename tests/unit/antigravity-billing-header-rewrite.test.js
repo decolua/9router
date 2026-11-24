@@ -18,10 +18,12 @@ function systemTextSentToAntigravity(systemContent) {
 }
 
 describe("Antigravity strips the Claude Code billing header from system prompts", () => {
-  it("removes the header line prepended by Claude Code", () => {
-    const text = systemTextSentToAntigravity(`${HEADER}\n\nYou are Claude Code, Anthropic's official CLI for Claude.`);
+  it("removes the header line prepended by Claude Code and rewrites the fingerprinted identity", () => {
+    const text = systemTextSentToAntigravity(`${HEADER}\n\nYou are Claude Code, Anthropic's official CLI for Claude.\nFollow project rules.`);
     expect(text).not.toContain("x-anthropic-billing-header");
-    expect(text).toContain("You are Claude Code, Anthropic's official CLI for Claude.");
+    expect(text).not.toContain("You are Claude Code");
+    expect(text).toContain("You are an AI coding assistant.");
+    expect(text).toContain("Follow project rules.");
   });
 
   it("removes the header when it is not the first line", () => {

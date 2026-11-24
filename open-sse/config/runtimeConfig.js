@@ -66,12 +66,27 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1
 // Keep-alive socket TTL. Cap it below upstream/edge idle windows (Cloudflare, AWS Global
 // Accelerator / NVIDIA NIM) that drop idle sockets without a TCP RST. keepAliveMaxTimeout is
 // clamped to the same value so an upstream `Keep-Alive` header cannot extend it to 600s.
+// Google Frontend (*.googleapis.com) keeps HTTP/1.1 sockets open for minutes (matching
+// Antigravity Go http.DefaultTransport IdleConnTimeout = 90s), avoiding ~100-200ms cold
+// TCP+TLS handshakes between turns >4s apart; stale-socket replay still covers dead sockets.
 export const DEFAULT_KEEPALIVE_TIMEOUT_MS = 4 * 1000;
+export const GOOGLE_KEEPALIVE_TIMEOUT_MS = 90 * 1000;
 export const FRESH_RETRY_KEEPALIVE_TIMEOUT_MS = 1;
 export const FETCH_KEEPALIVE_TIMEOUT_MS = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", DEFAULT_KEEPALIVE_TIMEOUT_MS);
 
-export function resolveKeepAliveTimeouts() {
-  const timeout = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", DEFAULT_KEEPALIVE_TIMEOUT_MS);
+function isGoogleApisHost(targetUrl) {
+  if (!targetUrl) return false;
+  try {
+    const hostname = new URL(targetUrl).hostname.toLowerCase();
+    return hostname === "googleapis.com" || hostname.endsWith(".googleapis.com");
+  } catch {
+    return false;
+  }
+}
+
+export function resolveKeepAliveTimeouts(targetUrl = "") {
+  const defaultTimeout = isGoogleApisHost(targetUrl) ? GOOGLE_KEEPALIVE_TIMEOUT_MS : DEFAULT_KEEPALIVE_TIMEOUT_MS;
+  const timeout = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", defaultTimeout);
   return { keepAliveTimeout: timeout, keepAliveMaxTimeout: timeout };
 }
 

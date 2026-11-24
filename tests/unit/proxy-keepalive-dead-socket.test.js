@@ -21,16 +21,28 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     vi.doUnmock("undici");
   });
 
-  it("keeps the existing 4s default, clamps keepAliveMaxTimeout, and honors FETCH_KEEPALIVE_TIMEOUT_MS", async () => {
+  it("keeps the existing 4s default, uses 90s for googleapis.com, clamps keepAliveMaxTimeout, and honors FETCH_KEEPALIVE_TIMEOUT_MS", async () => {
     const { resolveKeepAliveTimeouts } = await import("../../open-sse/config/runtimeConfig.js");
 
     expect(resolveKeepAliveTimeouts()).toEqual({
       keepAliveTimeout: 4_000,
       keepAliveMaxTimeout: 4_000,
     });
+    expect(resolveKeepAliveTimeouts("https://integrate.api.nvidia.com/v1/chat/completions")).toEqual({
+      keepAliveTimeout: 4_000,
+      keepAliveMaxTimeout: 4_000,
+    });
+    expect(resolveKeepAliveTimeouts("https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse")).toEqual({
+      keepAliveTimeout: 90_000,
+      keepAliveMaxTimeout: 90_000,
+    });
 
     process.env.FETCH_KEEPALIVE_TIMEOUT_MS = "1";
     expect(resolveKeepAliveTimeouts()).toEqual({
+      keepAliveTimeout: 1,
+      keepAliveMaxTimeout: 1,
+    });
+    expect(resolveKeepAliveTimeouts("https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse")).toEqual({
       keepAliveTimeout: 1,
       keepAliveMaxTimeout: 1,
     });
@@ -44,13 +56,17 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     } = await import("../../open-sse/utils/proxyFetch.js");
     resetDirectDispatchersForTests();
 
-    const direct1 = await getDirectDispatcher(false);
-    const direct2 = await getDirectDispatcher(false);
+    const direct1 = await getDirectDispatcher(false, "https://integrate.api.nvidia.com");
+    const direct2 = await getDirectDispatcher(false, "https://integrate.api.nvidia.com");
+    const google1 = await getDirectDispatcher(false, "https://daily-cloudcode-pa.googleapis.com");
+    const google2 = await getDirectDispatcher(false, "https://daily-cloudcode-pa.googleapis.com");
     const fresh1 = await getFreshRetryDispatcher(false);
     const fresh2 = await getFreshRetryDispatcher(false);
 
     expect(direct1).not.toBeNull();
     expect(direct1).toBe(direct2);
+    expect(google1).toBe(google2);
+    expect(google1).not.toBe(direct1);
     expect(fresh1).not.toBeNull();
     expect(fresh1).toBe(fresh2);
     expect(fresh1).not.toBe(direct1);

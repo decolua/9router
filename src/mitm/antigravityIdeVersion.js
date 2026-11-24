@@ -12,7 +12,7 @@
 // Official Antigravity Hub Desktop fingerprint captured from macOS arm64.
 // Keep this static even when 9router runs on Linux: the provider profile is
 // intentionally matching the Hub client, not the server host.
-const ANTIGRAVITY_IDE_VERSION = "2.33.0";
+const ANTIGRAVITY_IDE_VERSION = "2.34.0";
 const ANTIGRAVITY_IDE_VERSION_OVERRIDE_ENABLED = true;
 
 const ANTIGRAVITY_UA_HUB_PREFIX = "antigravity/hub/";
