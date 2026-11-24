@@ -4,6 +4,7 @@
 // fullModel, routedModel, origin } where origin is one of "provider",
 // "custom", "studio" or "combo".
 import { parseAllowedModels, matchesAllowedModels } from "../db/repos/allowedModels.js";
+import { isReservedProviderPrefix } from "../../shared/utils/providerPrefix.js";
 
 /**
  * Every id spelling one catalog entry may be called by. The request gate and
@@ -17,6 +18,27 @@ import { parseAllowedModels, matchesAllowedModels } from "../db/repos/allowedMod
  * label matched, the id never did, and the request gate would have refused the
  * call. Only ids the client can actually send are admitted.
  */
+export function createCustomProviderModelEntry({ provider, model, providerNode, aliases = {} } = {}) {
+  const providerId = String(provider || "").trim();
+  const modelInfo = typeof model === "string" ? { id: model } : (model || {});
+  const modelId = String(modelInfo.id || modelInfo.model || modelInfo.name || "").trim();
+  if (!providerId || !modelId) return null;
+
+  const prefix = String(providerNode?.prefix || "").trim();
+  const routedProvider = prefix && !isReservedProviderPrefix(prefix) ? prefix : providerId;
+  const fullModel = `${providerId}/${modelId}`;
+  const storedFullModel = modelInfo.providerAlias ? `${modelInfo.providerAlias}/${modelId}` : fullModel;
+  return {
+    name: modelInfo.display_name || modelInfo.displayName || modelInfo.name || modelId,
+    model: modelId,
+    provider: providerId,
+    fullModel,
+    routedModel: `${routedProvider}/${modelId}`,
+    alias: aliases[fullModel] || aliases[storedFullModel] || modelId,
+    origin: "custom",
+  };
+}
+
 export function modelMatchCandidates(entry) {
   const out = [];
   const push = (v) => {

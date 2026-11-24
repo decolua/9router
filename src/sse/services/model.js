@@ -1,20 +1,7 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
-import REGISTRY from "open-sse/providers/registry/index.js";
-
-// Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
-const LOCAL_PROVIDER_ALIASES = {
-  xmtp: "xiaomi-tokenplan",
-  "xiaomi-tokenplan": "xiaomi-tokenplan",
-};
-
-const RESERVED_PROVIDER_PREFIXES = new Set(Object.keys(LOCAL_PROVIDER_ALIASES));
-for (const entry of REGISTRY) {
-  RESERVED_PROVIDER_PREFIXES.add(entry.id);
-  if (entry.alias) RESERVED_PROVIDER_PREFIXES.add(entry.alias);
-  for (const alias of entry.aliases || []) RESERVED_PROVIDER_PREFIXES.add(alias);
-}
+import { LOCAL_PROVIDER_ALIASES, isReservedProviderPrefix } from "@/shared/utils/providerPrefix.js";
 
 // How many studio names one request may chain through before it looks like a loop.
 const MAX_STUDIO_HOPS = 3;
@@ -61,7 +48,7 @@ export async function getModelInfo(modelStr, studioHops = 0) {
   if (!parsed.isAlias) {
     // Provider-node prefixes are user-defined. They must not override built-in
     // provider ids/aliases such as `cf`, `cloudflare-ai`, `openai`, or `hf`.
-    if (!RESERVED_PROVIDER_PREFIXES.has(parsed.providerAlias)) {
+    if (!isReservedProviderPrefix(parsed.providerAlias)) {
       const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
       const matchedOpenAI = openaiNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedOpenAI) {

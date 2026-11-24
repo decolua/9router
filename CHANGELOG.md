@@ -7,6 +7,9 @@
 ## WHAT'S FIXED?
 - Allowed API-key sessions to read only the provider list, provider-node list, and per-connection model catalogs needed by the key editor; provider settings and all write routes remain restricted to provider managers.
 - Added clearer refresh, loading, empty, and search-no-match states to the model picker, with a retry action when the provider list cannot refresh.
+- Reused live OpenAI- and Anthropic-compatible provider catalogs in Usage Analytics, matching custom models by the node's routable prefix and keeping models outside the key allowlist hidden.
+- Rejected custom provider prefixes that conflict with built-in aliases, with an actionable message in create and edit flows; built-in routing remains authoritative.
+- Routed DeepSeek Web and Gemini Web cookie requests through the canonical OpenAI format so tool schemas and tool-call responses survive request and response translation.
 
 # 23-11-2026
 ## WHAT'S FIXED?

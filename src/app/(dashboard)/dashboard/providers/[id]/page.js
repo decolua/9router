@@ -540,9 +540,12 @@ export default function ProviderDetailPage() {
         setProviderNode(data.node);
         await fetchConnections();
         setShowEditNodeModal(false);
+        return { ok: true };
       }
+      return { error: data.error || "Failed to update provider node." };
     } catch (error) {
       console.log("Error updating provider node:", error);
+      return { error: "Unable to update the provider node. Please try again." };
     }
   };
 

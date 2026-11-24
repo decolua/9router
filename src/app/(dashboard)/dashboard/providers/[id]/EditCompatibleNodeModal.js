@@ -19,6 +19,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [submitError, setSubmitError] = useState("");
 
   useEffect(() => {
     if (node) {
@@ -29,6 +30,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
         logo: node.logo || "",
       });
+      setSubmitError("");
     }
   }, [node, isAnthropic]);
 
@@ -39,6 +41,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    setSubmitError("");
     setSaving(true);
     try {
       const payload = {
@@ -50,7 +53,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
       }
-      await onSave(payload);
+      const result = await onSave(payload);
+      if (result?.error) setSubmitError(result.error);
     } finally {
       setSaving(false);
     }
@@ -97,7 +101,10 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         <Input
           label="Prefix"
           value={formData.prefix}
-          onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
+          onChange={(e) => {
+            setFormData({ ...formData, prefix: e.target.value });
+            setSubmitError("");
+          }}
           placeholder={isAnthropic ? "ac-prod" : "oc-prod"}
           hint="The provider prefix used in model IDs"
         />
@@ -116,6 +123,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
           hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />
+        {submitError && <p role="alert" className="text-sm text-red-500">{submitError}</p>}
         <div className="flex gap-2">
           <Input
             label="API Key (for Check)"

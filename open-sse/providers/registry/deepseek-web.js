@@ -24,7 +24,8 @@ export default {
   authHint: "Paste your userToken / session token from chat.deepseek.com (DevTools -> Application -> Local Storage/Cookies)",
   transport: {
     baseUrl: "https://chat.deepseek.com/api/v0",
-    format: "deepseek-web",
+    // The cookie executor bridges this text-only web API to OpenAI tool calls.
+    format: "openai",
     authType: "cookie",
   },
   models: [

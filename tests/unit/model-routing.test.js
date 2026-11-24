@@ -58,6 +58,26 @@ describe("model routing", () => {
       });
   });
 
+  it("keeps the built-in OpenAI alias ahead of a conflicting custom prefix", async () => {
+    const ctx = await setupDb();
+    cleanup = ctx.cleanup;
+
+    await ctx.createProviderNode({
+      id: "openai-compatible-chat-openai-collision",
+      type: "openai-compatible",
+      name: "Compatible OpenAI Collision",
+      prefix: "openai",
+      apiType: "chat",
+      baseUrl: "https://compatible.test/v1",
+    });
+
+    await expect(ctx.getModelInfo("openai/wz/gpt-5.6-luna"))
+      .resolves.toEqual({
+        provider: "openai",
+        model: "wz/gpt-5.6-luna",
+      });
+  });
+
   it("still routes non-reserved compatible node prefixes", async () => {
     const ctx = await setupDb();
     cleanup = ctx.cleanup;

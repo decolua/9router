@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode, getCustomModels, deleteCustomModel, getModelAliases, deleteModelAlias } from "@/models";
 import { normalizeLogo } from "@/shared/utils/providerLogo";
+import { isReservedProviderPrefix } from "@/shared/utils/providerPrefix.js";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,10 @@ export async function PUT(request, { params }) {
 
     if (!prefix?.trim()) {
       return NextResponse.json({ error: "Prefix is required" }, { status: 400 });
+    }
+
+    if (isReservedProviderPrefix(prefix)) {
+      return NextResponse.json({ error: `The prefix "${prefix.trim()}" is reserved by a built-in provider. Choose a unique prefix for this custom node.` }, { status: 400 });
     }
 
     // Only validate apiType for OpenAI Compatible nodes

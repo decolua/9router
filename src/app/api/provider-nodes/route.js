@@ -3,6 +3,7 @@ import { createProviderNode, getProviderNodes, updateProviderNode, getProviderNo
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
 import { normalizeLogo } from "@/shared/utils/providerLogo";
+import { isReservedProviderPrefix } from "@/shared/utils/providerPrefix.js";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,9 @@ export async function POST(request) {
 
  if (!prefix?.trim()) {
  return NextResponse.json({ error: "Prefix is required" }, { status: 400 });
+ }
+ if (isReservedProviderPrefix(prefix)) {
+ return NextResponse.json({ error: `The prefix "${prefix.trim()}" is reserved by a built-in provider. Choose a unique prefix for this custom node.` }, { status: 400 });
  }
 
  const normalizedLogo = normalizeLogo(logo);
@@ -159,6 +163,9 @@ export async function PATCH(request) {
  // Sanitize prefix
  if (updateData.prefix !== undefined) {
  updateData.prefix = updateData.prefix.trim().replace(/^\/+|\/+$/g, "");
+ if (isReservedProviderPrefix(updateData.prefix)) {
+ return NextResponse.json({ error: `The prefix "${updateData.prefix}" is reserved by a built-in provider. Choose a unique prefix for this custom node.` }, { status: 400 });
+ }
  }
  // Sanitize baseUrl
  if (updateData.baseUrl !== undefined) {

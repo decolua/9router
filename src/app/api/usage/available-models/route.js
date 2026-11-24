@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionContext } from "@/lib/auth/dashboardPermissions";
-import { filterModelsByAllowedModels, collapseModelsByAdmittedId, worstModelStatus } from "@/lib/usage/availableModels.js";
+import { filterModelsByAllowedModels, collapseModelsByAdmittedId, createCustomProviderModelEntry, worstModelStatus } from "@/lib/usage/availableModels.js";
 import { AI_MODELS } from "@/shared/constants/config";
-import { FREE_PROVIDERS, getProviderAlias, resolveProviderId } from "@/shared/constants/providers";
+import { FREE_PROVIDERS, getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider, resolveProviderId } from "@/shared/constants/providers";
+import { fetchCompatibleProviderModels } from "@/lib/compatibleProviderModels.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getSettings } from "@/lib/db/repos/settingsRepo.js";
@@ -69,8 +70,9 @@ export async function GET() {
     const allowedModelsRaw = ctx.allowedModels || "*";
     const isApiKey = ctx.session.role === "apikey";
 
-    const [modelAliases, disabled, customModels, combos, connections, studioModels] = await Promise.all([
+    const [modelAliases, providerNodes, disabled, customModels, combos, connections, studioModels] = await Promise.all([
       import("@/models").then((m) => m.getModelAliases().catch(() => ({}))),
+      import("@/models").then((m) => m.getProviderNodes().catch(() => [])),
       getDisabledModels().catch(() => ({})),
       import("@/lib/localDb").then((m) => m.getCustomModels().catch(() => [])),
       import("@/lib/localDb").then((m) => m.getCombos().catch(() => [])),
@@ -96,21 +98,63 @@ export async function GET() {
       });
     }
 
+    const providerNodesById = new Map(
+      (providerNodes || []).filter((node) => node?.id).map((node) => [String(node.id), node])
+    );
+    const providerNodesByPrefix = new Map(
+      (providerNodes || []).filter((node) => node?.prefix).map((node) => [String(node.prefix).toLowerCase(), node])
+    );
     const seenFull = new Set(entries.map((e) => e.fullModel));
+
     for (const m of customModels || []) {
       if (!m?.id || (m.kind || m.type || "llm") !== "llm") continue;
-      const fullModel = `${m.providerAlias}/${m.id}`;
-      if (seenFull.has(fullModel)) continue;
-      seenFull.add(fullModel);
-      entries.push({
-        name: m.name || m.id,
-        model: m.id,
-        provider: m.providerAlias,
-        fullModel,
-        routedModel: fullModel,
-        alias: (modelAliases || {})[fullModel] || m.id,
-        origin: "custom",
+      const node = providerNodesById.get(String(m.providerAlias)) || providerNodesByPrefix.get(String(m.providerAlias).toLowerCase());
+      const entry = createCustomProviderModelEntry({
+        provider: node?.id || m.providerAlias,
+        model: { ...m, id: m.id },
+        providerNode: node,
+        aliases: modelAliases || {},
       });
+      if (!entry || seenFull.has(entry.fullModel)) continue;
+      seenFull.add(entry.fullModel);
+      entries.push(entry);
+    }
+
+    // The key editor already exposes these account-scoped live catalogs. Add
+    // only IDs actually returned by a compatible provider, under the same
+    // unique prefix the request router accepts; never synthesize models from
+    // allow-list text alone.
+    const liveConnections = (connections || []).filter((connection) => (
+      connection?.provider &&
+      connection.isActive !== false &&
+      (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
+    ));
+    const liveCatalogs = await Promise.all(liveConnections.map(async (connection) => {
+      try {
+        const result = await fetchCompatibleProviderModels(
+          connection,
+          providerNodesById.get(String(connection.provider))
+        );
+        return { connection, models: result.models || [] };
+      } catch (error) {
+        console.log(`Unable to fetch custom provider models for ${connection.provider}:`, error.message);
+        return { connection, models: [] };
+      }
+    }));
+
+    for (const { connection, models } of liveCatalogs) {
+      const providerNode = providerNodesById.get(String(connection.provider));
+      for (const model of models) {
+        const entry = createCustomProviderModelEntry({
+          provider: connection.provider,
+          model,
+          providerNode,
+          aliases: modelAliases || {},
+        });
+        if (!entry || seenFull.has(entry.fullModel)) continue;
+        seenFull.add(entry.fullModel);
+        entries.push(entry);
+      }
     }
 
     for (const s of studioModels || []) {

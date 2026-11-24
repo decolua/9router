@@ -24,7 +24,8 @@ export default {
   authHint: "Paste your __Secure-1PSID cookie (plus __Secure-1PSIDTS) from gemini.google.com (DevTools -> Application -> Cookies). Best exported from Firefox: Chrome binds the session to the device, so a Chrome-exported cookie typically dies within 30 minutes.",
   transport: {
     baseUrl: "https://gemini.google.com/app",
-    format: "gemini-web",
+    // The cookie executor bridges this text-only web API to OpenAI tool calls.
+    format: "openai",
     authType: "cookie",
   },
   models: [

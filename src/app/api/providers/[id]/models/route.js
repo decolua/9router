@@ -12,7 +12,7 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
+import { fetchCompatibleProviderModels } from "@/lib/compatibleProviderModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
@@ -580,108 +580,34 @@ export async function GET(request, { params }) {
     }
 
     if (isOpenAICompatibleProvider(connection.provider)) {
-      let baseUrl = connection.providerSpecificData?.baseUrl;
-      if (!baseUrl) {
-        const node = await getProviderNodeById(connection.provider);
-        baseUrl = node?.baseUrl;
+      const node = connection.providerSpecificData?.baseUrl
+        ? null
+        : await getProviderNodeById(connection.provider);
+      const result = await fetchCompatibleProviderModels(connection, node);
+      if (result.error) {
+        return NextResponse.json({ error: result.error }, { status: result.status || 500 });
       }
-      if (!baseUrl) {
-        return NextResponse.json({ error: "No base URL configured for OpenAI compatible provider" }, { status: 400 });
-      }
-      const url = `${baseUrl.replace(/\/$/, "")}/models`;
-      const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
-      const response = await proxyAwareFetch(
-        url,
-        withModelTimeout({
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": "9router/0.5 (models-discovery)",
-            ...(connection.apiKey ? { "Authorization": `Bearer ${connection.apiKey}` } : {}),
-          },
-        }),
-        proxy
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log(`Error fetching models from ${connection.provider}:`, errorText);
-        return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
-          { status: response.status }
-        );
-      }
-
-      const data = await response.json();
-      const rawList = Array.isArray(data) ? data : (data.data || data.models || data.results || []);
-      const models = rawList.map((m) => {
-        if (typeof m === "string") return { id: m, name: m };
-        const id = m?.id || m?.name || m?.model;
-        return { id, name: m?.display_name || m?.displayName || m?.name || id };
-      }).filter((m) => Boolean(m.id));
 
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models
+        models: result.models,
       });
     }
 
     if (isAnthropicCompatibleProvider(connection.provider)) {
-      let baseUrl = connection.providerSpecificData?.baseUrl;
-      if (!baseUrl) {
-        const node = await getProviderNodeById(connection.provider);
-        baseUrl = node?.baseUrl;
+      const node = connection.providerSpecificData?.baseUrl
+        ? null
+        : await getProviderNodeById(connection.provider);
+      const result = await fetchCompatibleProviderModels(connection, node);
+      if (result.error) {
+        return NextResponse.json({ error: result.error }, { status: result.status || 500 });
       }
-      if (!baseUrl) {
-        return NextResponse.json({ error: "No base URL configured for Anthropic compatible provider" }, { status: 400 });
-      }
-
-      baseUrl = baseUrl.replace(/\/$/, "");
-      if (baseUrl.endsWith("/messages")) {
-        baseUrl = baseUrl.slice(0, -9);
-      }
-
-      const url = `${baseUrl}/models`;
-      const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
-      const response = await proxyAwareFetch(
-        url,
-        withModelTimeout({
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": "9router/0.5 (models-discovery)",
-            "anthropic-version": "2023-06-01",
-            ...(connection.apiKey ? {
-              "x-api-key": connection.apiKey,
-              "Authorization": `Bearer ${connection.apiKey}`,
-            } : {}),
-          },
-        }),
-        proxy
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log(`Error fetching models from ${connection.provider}:`, errorText);
-        return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
-          { status: response.status }
-        );
-      }
-
-      const data = await response.json();
-      const rawList = Array.isArray(data) ? data : (data.data || data.models || data.results || []);
-      const models = rawList.map((m) => {
-        if (typeof m === "string") return { id: m, name: m };
-        const id = m?.id || m?.name || m?.model;
-        return { id, name: m?.display_name || m?.displayName || m?.name || id };
-      }).filter((m) => Boolean(m.id));
 
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models
+        models: result.models,
       });
     }
 

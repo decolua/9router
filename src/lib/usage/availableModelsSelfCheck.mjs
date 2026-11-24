@@ -6,7 +6,7 @@
 // card must show exactly what the key may call. A restricted key sees only
 // its own models, a "*" key sees everything, and the permission gate keeps
 // the read-only endpoint on viewUsage without opening any write access.
-import { filterModelsByAllowedModels, modelMatchCandidates, worstModelStatus, normalizeModelStatus } from "./availableModels.js";
+import { createCustomProviderModelEntry, filterModelsByAllowedModels, modelMatchCandidates, worstModelStatus, normalizeModelStatus } from "./availableModels.js";
 import { requiredPermissionsForApiPath } from "../auth/permissionPaths.js";
 
 const results = [];
@@ -51,6 +51,35 @@ run("a wildcard key sees everything", () => {
     const out = filterModelsByAllowedModels(CATALOG, raw);
     assert.equal(out.length, CATALOG.length, `wildcard ${JSON.stringify(raw)}`);
   }
+});
+
+run("a live custom model uses its unique node prefix", () => {
+  const entry = createCustomProviderModelEntry({
+    provider: "openai-compatible-chat-test",
+    model: { id: "wz/gpt-5.6-luna", name: "GPT 5.6 Luna" },
+    providerNode: { id: "openai-compatible-chat-test", prefix: "openai-acme" },
+  });
+  assert.equal(entry.routedModel, "openai-acme/wz/gpt-5.6-luna", "public route id");
+  assert.deep(names(filterModelsByAllowedModels([entry], "openai-acme/wz/gpt-5.6-luna")), ["wz/gpt-5.6-luna"], "exact allowlist");
+});
+
+run("a live custom model outside the allowlist remains hidden", () => {
+  const entry = createCustomProviderModelEntry({
+    provider: "openai-compatible-chat-test",
+    model: { id: "wz/gpt-5.6-luna" },
+    providerNode: { id: "openai-compatible-chat-test", prefix: "openai-acme" },
+  });
+  assert.equal(filterModelsByAllowedModels([entry], "openai-acme/wz/other-model").length, 0, "not allowed");
+});
+
+run("a reserved built-in prefix is not exposed as a custom route", () => {
+  const entry = createCustomProviderModelEntry({
+    provider: "openai-compatible-chat-test",
+    model: { id: "wz/gpt-5.6-luna" },
+    providerNode: { id: "openai-compatible-chat-test", prefix: "openai" },
+  });
+  assert.equal(entry.routedModel, "openai-compatible-chat-test/wz/gpt-5.6-luna", "fallback route id");
+  assert.equal(filterModelsByAllowedModels([entry], "openai/wz/gpt-5.6-luna").length, 0, "reserved alias must not match");
 });
 
 run("prefix and suffix patterns work like the request gate", () => {
