@@ -88,14 +88,23 @@ export function getAntigravityModelQuota(quotas, model) {
   }
 
   // 2. Direct tier aliases if base model was passed
+  if (cleanModel === "gemini-4-carbon" && quotas["gemini-4-carbon-high"]) {
+    candidates.push(quotas["gemini-4-carbon-high"]);
+  }
   if (cleanModel === "gemini-4-argon" && quotas["gemini-4-argon-high"]) {
     candidates.push(quotas["gemini-4-argon-high"]);
   }
-  if (cleanModel === "claude-sonnet-5-5" && quotas["claude-sonnet-5-5-high"]) {
-    candidates.push(quotas["claude-sonnet-5-5-high"]);
+  if (cleanModel === "gemini-4-neon" && quotas["gemini-4-neon-high"]) {
+    candidates.push(quotas["gemini-4-neon-high"]);
   }
-  if (cleanModel === "claude-opus-5-5" && quotas["claude-opus-5-5-high"]) {
-    candidates.push(quotas["claude-opus-5-5-high"]);
+  if (cleanModel === "gemini-4-hydrogen" && quotas["gemini-4-hydrogen-high"]) {
+    candidates.push(quotas["gemini-4-hydrogen-high"]);
+  }
+  if (cleanModel === "claude-sonnet-5-5" && (quotas["claude-sonnet-5-5-medium"] || quotas["claude-sonnet-5-5-high"])) {
+    candidates.push(quotas["claude-sonnet-5-5-medium"] || quotas["claude-sonnet-5-5-high"]);
+  }
+  if (cleanModel === "claude-opus-5-5" && (quotas["claude-opus-5-5-medium"] || quotas["claude-opus-5-5-high"])) {
+    candidates.push(quotas["claude-opus-5-5-medium"] || quotas["claude-opus-5-5-high"]);
   }
   if (cleanModel === "gemini-3.8-flash" && quotas["gemini-3.8-flash-medium"]) {
     candidates.push(quotas["gemini-3.8-flash-medium"]);

@@ -48,9 +48,13 @@ describe("deepseek-v4-1-flash capabilities (#4293)", () => {
 // directly — this is reliable and does not require a full React setup.
 
 import fs from "fs";
-import path from "path";
+import { LIVE_CATALOG_PROVIDERS } from "@/shared/utils/selectableModels.js";
 
-describe("ModelSelectModal LIVE_CATALOG_PROVIDERS includes zed (#4244)", () => {
+// #4244 added zed to the picker's live-catalog list. That list now lives in
+// selectableModels so the Combo picker, the CLI-tool cards and
+// /api/providers/[id]/models share one definition; this guards the same intent
+// without pinning it to a string inside ModelSelectModal.
+describe("LIVE_CATALOG_PROVIDERS includes zed (#4244)", () => {
   let src;
   beforeAll(() => {
     const fileUrl = new URL("../../src/shared/components/ModelSelectModal.js", import.meta.url);
@@ -58,19 +62,18 @@ describe("ModelSelectModal LIVE_CATALOG_PROVIDERS includes zed (#4244)", () => {
   });
 
   it("includes zed in LIVE_CATALOG_PROVIDERS", () => {
-    // Match the const definition line and verify zed is present
-    const match = src.match(/const LIVE_CATALOG_PROVIDERS\s*=\s*\[([^\]]+)\]/);
-    expect(match).toBeTruthy();
-    const list = match[1];
-    expect(list).toContain('"zed"');
+    expect(LIVE_CATALOG_PROVIDERS).toContain("zed");
   });
 
   it("still includes cursor, cline, clinepass", () => {
-    const match = src.match(/const LIVE_CATALOG_PROVIDERS\s*=\s*\[([^\]]+)\]/);
-    const list = match[1];
-    expect(list).toContain('"cursor"');
-    expect(list).toContain('"cline"');
-    expect(list).toContain('"clinepass"');
+    expect(LIVE_CATALOG_PROVIDERS).toEqual(
+      expect.arrayContaining(["cursor", "cline", "clinepass"])
+    );
+  });
+
+  it("the picker imports the shared list instead of declaring its own", () => {
+    expect(src).toContain('LIVE_CATALOG_PROVIDERS');
+    expect(src).not.toMatch(/const LIVE_CATALOG_PROVIDERS\s*=\s*\[/);
   });
 
   it("zedModels hook call is present in the file", () => {

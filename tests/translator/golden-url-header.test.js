@@ -1,11 +1,11 @@
-// P0 GOLDEN: lock buildUrl + buildHeaders cho mọi provider trên code CŨ.
-// Sinh snapshot lần đầu (baseline) → sau refactor chạy lại phải khớp y hệt.
-// Mock proxyFetch + uuid-heavy executors KHÔNG cần ở đây vì chỉ gọi buildUrl/buildHeaders (pure).
+// P0 GOLDEN: lock buildUrl + buildHeaders for every provider on the OLD code.
+// Generate the snapshot once (baseline) → after the refactor, re-running must match exactly.
+// Mocking proxyFetch + uuid-heavy executors is NOT needed here because only buildUrl/buildHeaders (pure) are called.
 import { describe, it, expect } from "vitest";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
 
-// Credentials mẫu cố định (deterministic) — KHÔNG dùng Date.now/random.
+// Fixed (deterministic) sample credentials — do NOT use Date.now/random.
 const API_KEY_CRED = { apiKey: "sk-test-APIKEY", providerSpecificData: {} };
 const OAUTH_CRED = { accessToken: "tok-test-ACCESS", providerSpecificData: {} };
 const SPECIAL_CRED = {
@@ -14,8 +14,8 @@ const SPECIAL_CRED = {
   providerSpecificData: { accountId: "ACC123", region: "sgp", baseUrl: "https://custom.example.com/v1", orgId: "ORG9" },
 };
 
-// Provider cần executor riêng (buildUrl/buildHeaders không nằm ở DefaultExecutor) → bỏ qua ở golden này.
-// Chúng được lock riêng ở 11-provider edge tests / unit test chuyên biệt.
+// Providers that need their own executor (buildUrl/buildHeaders not in DefaultExecutor) → skipped in this golden.
+// They are locked separately in the 11-provider edge tests / dedicated unit tests.
 const SPECIALIZED = new Set([
   "antigravity", "azure", "gemini-cli", "github", "iflow", "qoder", "kiro",
   "codex", "cursor", "vertex", "vertex-partner", "opencode",
@@ -26,7 +26,7 @@ const SPECIALIZED = new Set([
 // Per-process / per-request values: kimi's random device name, minimax's session UUID.
 const VOLATILE_HEADERS = new Set(["x-msh-device-name", "x-mavis-session-id"]);
 
-// Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) để snapshot ổn định.
+// Sanitize headers: strip tokens + dynamic time fields (kimi X-Msh-Device-Id) so snapshots stay stable.
 function sanitize(headers) {
   const out = {};
   for (const [k, v] of Object.entries(headers)) {
