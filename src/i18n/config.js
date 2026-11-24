@@ -19,6 +19,7 @@ export const LOCALES = [
   "tr",
   "uk",
   "tl",
+  "ms",
   "id",
   "km",
   "th",
@@ -59,6 +60,7 @@ export const LOCALE_NAMES = {
   tr: "Türkçe",
   uk: "Українська",
   tl: "Tagalog",
+  ms: "Bahasa Melayu",
   id: "Indonesia",
   th: "ไทย",
   km: "ខ្មែរ",
@@ -136,6 +138,9 @@ export function normalizeLocale(locale) {
   }
   if (locale === "tl") {
     return "tl";
+  }
+  if (locale === "ms") {
+    return "ms";
   }
   if (locale === "id") {
     return "id";
