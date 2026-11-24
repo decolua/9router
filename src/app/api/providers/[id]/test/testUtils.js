@@ -6,6 +6,7 @@ import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { ANTIGRAVITY_IDE_USER_AGENT } from "open-sse/providers/shared.js";
 import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { createKimiApiKeyProbe, isKimiApiKeyAccepted } from "open-sse/services/kimi.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
@@ -711,12 +712,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "kimi": {
-        const res = await fetchWithConnectionProxy("https://api.kimi.com/coding/v1/messages", {
-          method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "kimi-latest", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const probe = createKimiApiKeyProbe(connection.apiKey);
+        const res = await fetchWithConnectionProxy(probe.url, probe.options, effectiveProxy);
+        const valid = isKimiApiKeyAccepted(res.status);
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "alicode":
