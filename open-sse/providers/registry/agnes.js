@@ -33,6 +33,12 @@ export default {
     { id: "agnes-2.5-pro", name: "Agnes 2.5 Pro" },
     { id: "agnes-2.5-pro-beta", name: "Agnes 2.5 Pro Beta" },
     { id: "agnes-3.0-flash", name: "Agnes 3.0 Flash" },
+    // Announced 2026-10-05, not yet served: the docs page states "Coming soon"
+    // and that API availability will be announced at launch. Seeded so the id is
+    // ready when it flips; passthroughModels covers it either way.
+    // Dotted form per the docs ("Use `agnes-3.0-pro` as the model name"), which
+    // also matches the agnes-3.0-flash seed above.
+    { id: "agnes-3.0-pro", name: "Agnes 3.0 Pro" },
   ],
   passthroughModels: true,
 };
