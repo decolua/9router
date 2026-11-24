@@ -36,7 +36,7 @@ export async function PUT(request, { params }) {
       
       // Check if name already exists (exclude current combo)
       const existing = await getComboByName(body.name);
-      if (existing && existing.id !== id) {
+      if (existing && String(existing.id) !== String(id)) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
       }
     }
