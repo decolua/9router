@@ -209,11 +209,14 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
   const sortBy = searchParams.get("sortBy") || "rawModel";
   const sortOrder = searchParams.get("sortOrder") || "asc";
+  const initialView = searchParams.get("view");
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
-  const [tableView, setTableView] = useState("model");
+  const [tableView, setTableView] = useState(
+    initialView && TABLE_OPTIONS.some((o) => o.value === initialView) ? initialView : "model"
+  );
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
