@@ -205,7 +205,7 @@ function cosyCredsFromConnection(credentials) {
  *     rawConfigs: Map<modelKey, modelConfigObject> }
  * or `null` on any error.
  */
-async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, region = "intl", site = null) {
+export async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, region = "intl", site = null) {
   const creds = cosyCredsFromConnection(credentials);
   if (!creds.userId || !creds.authToken) return null;
 
@@ -253,11 +253,17 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, re
     if (signal && abortListener) signal.removeEventListener("abort", abortListener);
   }
 
+  // A deployable with no catalog service (QwenWork's enterprise flagship
+  // answers 503 "Model catalog is unavailable") falls back to the site's
+  // built-in list. Any other status — 500 included — stays a hard miss so
+  // a transient server error isn't masked by stale fallback data.
+  if (response.status === 503 && site?.catalog?.fallbackModels) {
+    return { models: null, rawConfigs: null, fallback: site.catalog.fallbackModels };
+  }
   if (!response.ok) return null;
 
   const body = await response.json().catch(() => null);
   if (!body || !Array.isArray(body.chat)) return null;
-
   const models = [];
   const rawConfigs = new Map();
   for (const entry of body.chat) {
@@ -339,6 +345,33 @@ export async function resolveQoderModels(credentials, options = {}) {
   const fetchPromise = (async () => {
     const fetched = await fetchQoderCatalogRaw(resolved, options.signal, options.proxyOptions, region, qoderSiteOf(resolved?.provider || credentials?.provider));
     if (!fetched) return null;
+    // A 503 fallback (see fetchQoderCatalogRaw) carries the site's raw
+    // listing — normalize it into the same { models, rawConfigs } shape.
+    if (fetched.fallback) {
+      const models = [];
+      const rawConfigs = new Map();
+      for (const entry of fetched.fallback) {
+        if (!entry?.key) continue;
+        rawConfigs.set(entry.key, entry);
+        models.push({
+          id: entry.key,
+          name: `${entry.display_name || entry.key}`,
+          contextLength: Number(entry.max_input_tokens) || 131_072,
+          isVL: !!entry.is_vl,
+          isReasoning: !!entry.is_reasoning,
+          maxOutputTokens: Number(entry.max_output_tokens) || 0,
+          description: entry.description || "",
+        });
+      }
+      const entry = {
+        expiresAt: Date.now() + CACHE_TTL_MS,
+        models,
+        rawConfigs,
+        fetched: true,
+      };
+      catalogCache.set(key, entry);
+      return entry;
+    }
     const entry = {
       expiresAt: Date.now() + CACHE_TTL_MS,
       models: fetched.models,

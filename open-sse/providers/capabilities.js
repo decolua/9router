@@ -528,6 +528,10 @@ PROVIDER_CAPABILITIES["qwenwork"] = {
   "pro":                { contextWindow: 131072 },
   "qwen3.8-max-preview": { contextWindow: 131072 },
 };
+// QwenWork enterprise flagship (qwenwork-enterprise) serves the same model
+// catalog from the enterprise's own host, so it shares the public-cloud
+// capability table verbatim.
+PROVIDER_CAPABILITIES["qwenwork-enterprise"] = PROVIDER_CAPABILITIES["qwenwork"];
 PROVIDER_CAPABILITIES.cx = PROVIDER_CAPABILITIES.codex;
 PROVIDER_CAPABILITIES.dv = PROVIDER_CAPABILITIES["devin-cli"];
 PROVIDER_CAPABILITIES.devin = PROVIDER_CAPABILITIES["devin-cli"];

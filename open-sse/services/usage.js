@@ -34,8 +34,7 @@ import {
   getVercelAiGatewayUsage,
   getQoderUsage,
 } from "./usage/misc.js";
-import { U } from "./usage/shared.js";
-import { getQwenworkUsage } from "./usage/qwenwork.js";
+import { normalizeEnterpriseHost } from "../shared/qoder/sites.js";
 
 /**
  * Get usage data for a provider connection
@@ -52,7 +51,8 @@ const USAGE_HANDLERS = {
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   qoder: (c) => getQoderUsageFor(c),
   "qoder-cn": (c) => getQoderUsageFor(c),
-  qwenwork: (c) => getQwenworkUsage(c.accessToken, U("qwenwork").url, c.proxyOptions),
+  qwenwork: (c) => getQwenworkUsage(c.accessToken, qwenworkUsageUrl(c), c.proxyOptions),
+  "qwenwork-enterprise": (c) => getQwenworkUsage(c.accessToken, qwenworkUsageUrl(c), c.proxyOptions),
   iflow: (c) => getIflowUsage(c.accessToken),
   ollama: (c) => getOllamaUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   // OAuth connections store the coding-plan key on accessToken (no apiKey)
@@ -91,6 +91,15 @@ const USAGE_HANDLERS = {
 async function getQoderUsageFor(c) {
   const resolved = await resolveQoderCredentials(c, c.proxyOptions).catch(() => null);
   return getQoderUsage(resolved?.accessToken || c.accessToken, c.proxyOptions, c.provider || "qoder");
+}
+
+// QwenWork usage URL: the account-context path. An enterprise credential's
+// enterpriseHost overrides the public gateway — the enterprise's tokens
+// never leave the enterprise domain.
+function qwenworkUsageUrl(c) {
+  const host = normalizeEnterpriseHost((c.providerSpecificData || {}).enterpriseHost);
+  if (host) return `https://${host}/api/v1/adapter/user/account-context?include=user,plan,quota`;
+  return U("qwenwork").url;
 }
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {

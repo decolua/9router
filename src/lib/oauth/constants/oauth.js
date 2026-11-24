@@ -57,6 +57,20 @@ export const QWENWORK_CONFIG = {
   siteId: "qwenwork",
 };
 
+// QwenWork enterprise flagship (企业旗舰版) — same protocol as the public
+// cloud, but the deployable lives on the enterprise's own domain, asked at
+// sign-in (device-code request param "domain"). No redirect_uri: the
+// flagship's /device/selectAccounts refuses one. The config's gateway URLs
+// are placeholders — the provider rewrites them onto https://<domain> when
+// the user enters one (see providers/qwenwork-enterprise.js).
+export const QWENWORK_ENTERPRISE_CONFIG = {
+  ...QWENWORK_CONFIG,
+  // No redirect_uri on the enterprise device flow.
+  redirectUri: null,
+  siteId: "qwenwork-enterprise",
+  enterprise: true,
+};
+
 // iFlow OAuth Configuration (Authorization Code)
 export const IFLOW_CONFIG = { ...PROVIDER_OAUTH["iflow"] };
 

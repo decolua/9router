@@ -1047,11 +1047,52 @@ export class QoderExecutor extends BaseExecutor {
   // Qoder device tokens don't refresh through OAuth — the upstream returns
   // 403 for our flow. Surfacing failure via 401-on-chat is enough; the
   // dashboard tells users to re-login when their token expires (~30 days).
-  async refreshCredentials() {
-    return null;
+  //
+  // QwenWork (both clouds) is different: its device token IS the chat token
+  // and its refresh endpoint (/api/v1/deviceToken/refresh) honors the device
+  // refresh token. The site flags it with deviceRefresh.enabled.
+  async refreshCredentials(credentials, log, proxyOptions = null) {
+    const site = this.site;
+    if (!site?.deviceRefresh?.enabled) return null;
+    const refresh = credentials?.refreshToken;
+    if (!refresh) return null;
+    // Enterprise credentials route to their own host; the public cloud to
+    // the site's gateway.
+    const host = qoderInferenceBaseForSite(credentials, site);
+    const url = `${host}/api/v1/deviceToken/refresh`;
+    const body = { refresh_token: refresh, ...(site.deviceRefresh.target ? { target: site.deviceRefresh.target } : {}) };
+    try {
+      const response = await proxyAwareFetch(
+        url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(body),
+        },
+        proxyOptions,
+      );
+      if (!response.ok) {
+        log?.warn?.("QODER", `${site.id} device token refresh: HTTP ${response.status}`);
+        return null;
+      }
+      const data = await response.json().catch(() => null);
+      const token = data?.token || data?.device_token || "";
+      if (!token || !data?.refresh_token) return null;
+      const expiresAt = data?.expires_at || (data?.expires_in ? Date.now() + data.expires_in * 1000 : null);
+      return { accessToken: token, refreshToken: data.refresh_token, ...(expiresAt ? { expiresAt } : {}) };
+    } catch (err) {
+      log?.warn?.("QODER", `${site.id} device token refresh failed: ${err.message}`);
+      return null;
+    }
   }
 
-  needsRefresh() {
+  needsRefresh(credentials) {
+    // QwenWork's device token is the chat token: expired means unusable.
+    if (this.site?.deviceRefresh?.enabled) {
+      const expiresAt = credentials?.expiresAt ? Date.parse(credentials.expiresAt) : NaN;
+      if (Number.isFinite(expiresAt)) return expiresAt <= Date.now() + 60_000;
+      return false;
+    }
     return false;
   }
 }
