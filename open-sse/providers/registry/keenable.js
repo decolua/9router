@@ -27,7 +27,7 @@ export default {
   },
   fetchConfig: {
     baseUrl: "https://api.keenable.ai/v1/fetch/public",
-    method: "GET",
+    method: "POST",
     authType: "none",
     authHeader: "none",
     costPerQuery: 0,

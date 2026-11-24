@@ -61,17 +61,18 @@ describe("Keenable Search and Fetch", () => {
 
   it("fetches a page without credentials and maps the content", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      url, title: "Article", content: "# Article\n\nBody", truncated: false, total_chars: 16, author: "Ann",
+      results: [{ url, title: "Article", content: "# Article\n\nBody", truncated: false, total_chars: 16, author: "Ann" }],
     }), { headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     const result = await handleFetchCore({ url, provider: "keenable", providerConfig: provider.fetchConfig, credentials: null, maxCharacters: 5000 });
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ provider: "keenable", title: "Article", content: { format: "markdown", text: "# Article\n\nBody" }, metadata: { author: "Ann" } });
-    const called = new URL(fetchMock.mock.calls[0][0]);
-    expect(called.origin + called.pathname).toBe("https://api.keenable.ai/v1/fetch/public");
-    expect(called.searchParams.get("url")).toBe(url);
-    expect(called.searchParams.get("max_chars")).toBe("5000");
-    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
+    const [calledUrl, init] = fetchMock.mock.calls[0];
+    expect(calledUrl).toBe("https://api.keenable.ai/v1/fetch/public");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ urls: [url], content: { max_chars: 5000 } });
+    expect(init.headers.Authorization).toBeUndefined();
+    expect(init.headers["X-Keenable-Title"]).toBe("9router");
   });
 
   it("surfaces upstream errors and unsupported formats", async () => {
@@ -87,7 +88,7 @@ describe("Keenable Search and Fetch", () => {
 
   it("truncates fetched content on Unicode code-point boundaries", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      url, title: "Emoji", content: "A😀", truncated: false, total_chars: 2,
+      results: [{ url, title: "Emoji", content: "A😀", truncated: false, total_chars: 2 }],
     }), { headers: { "content-type": "application/json" } })));
     const result = await handleFetchCore({ url, provider: "keenable", providerConfig: provider.fetchConfig, maxCharacters: 2 });
     expect(result.success).toBe(true);

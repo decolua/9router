@@ -182,16 +182,18 @@ async function runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPer
   };
 }
 
-// Keenable keyless public fetch: GET /v1/fetch/public?url=...&max_chars=...
-// Response: { url, title, content, truncated, total_chars, author?, published_at? }
+// Keenable keyless public fetch: POST /v1/fetch/public with {urls, content.max_chars}
+// Response: { results: [{ url, title, content, truncated, total_chars, author?, published_at? }] }
+// GET /v1/fetch is deprecated and sunsets 1 Mar 2027.
 async function runKeenable({ url, fmt, timeoutMs, maxCharacters, costPerQuery, startedAt, baseUrl }) {
   if (fmt !== "markdown") return { success: false, status: 400, error: `Unsupported Keenable format: ${fmt}` };
-  const qp = new URLSearchParams({ url });
-  if (Number.isInteger(maxCharacters) && maxCharacters > 0) qp.set("max_chars", String(maxCharacters));
+  const body = { urls: [url] };
+  if (Number.isInteger(maxCharacters) && maxCharacters > 0) body.content = { max_chars: maxCharacters };
   const upstreamStart = Date.now();
-  const r = await tryFetch(`${baseUrl || "https://api.keenable.ai/v1/fetch/public"}?${qp}`, {
-    method: "GET",
-    headers: { Accept: "application/json", "X-Keenable-Title": "9router" },
+  const r = await tryFetch(baseUrl || "https://api.keenable.ai/v1/fetch/public", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", "X-Keenable-Title": "9router" },
+    body: JSON.stringify(body),
   }, timeoutMs);
   if (!r.ok) return { success: false, status: r.timeout ? 504 : 502, error: r.error };
   const upstreamMs = Date.now() - upstreamStart;
@@ -200,16 +202,21 @@ async function runKeenable({ url, fmt, timeoutMs, maxCharacters, costPerQuery, s
     const error = json?.message || json?.error || responseText?.slice(0, 500) || `Keenable error: ${r.res.status}`;
     return { success: false, status: r.res.status, error };
   }
-  if (!json || typeof json.content !== "string") {
+  const page = Array.isArray(json?.results) ? json.results[0] : null;
+  if (page?.error) {
+    const err = page.error;
+    return { success: false, status: err.status || 502, error: err.message || err.error || "Keenable fetch failed" };
+  }
+  if (!page || typeof page.content !== "string") {
     return { success: false, status: 502, error: "Keenable returned no extractable content" };
   }
-  const text = truncate(json.content, maxCharacters);
+  const text = truncate(page.content, maxCharacters);
   return {
     success: true,
     data: {
-      ...buildData({ provider: "keenable", url, title: json.title, format: fmt, text,
+      ...buildData({ provider: "keenable", url, title: page.title, format: fmt, text,
         costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs }),
-      metadata: { author: json.author || null, published_at: json.published_at || null, language: null },
+      metadata: { author: page.author || null, published_at: page.published_at || null, language: null },
     },
   };
 }
