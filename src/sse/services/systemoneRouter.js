@@ -10,6 +10,11 @@ import {
   parseSystemOneRouteAnswer,
 } from "open-sse/services/systemoneRouter.js";
 
+// Cloudflare Clef restricts choice option ids to letters, digits, '_', '.' and '-'.
+// Combo members are full model ids (with '/' and ':'), so remap them to m0, m1...
+// for these providers and translate the answer back before combo ordering.
+const SAFE_OPTION_ID_PROVIDERS = new Set(["cloudflare-ai"]);
+
 /**
  * Dispatch an in-process System One decision evaluation for a combo request.
  * Resolves the configured router model's provider and credentials, sends the choice
@@ -45,9 +50,6 @@ export async function resolveSmartChoice({
     return null;
   }
 
-  const criteria = buildChoiceCriteria(models);
-  if (Object.keys(criteria).length === 0) return null;
-
   try {
     const modelInfo = await getModelInfo(targetModel);
     if (!modelInfo?.provider) {
@@ -56,6 +58,22 @@ export async function resolveSmartChoice({
     }
 
     const { provider, model } = modelInfo;
+
+    // Cloudflare Clef rejects option ids containing '/' or ':'; combo members are
+    // full model ids. Remap to m0, m1... and keep a reverse map for the answer.
+    let optionToModel = null;
+    let criteria = buildChoiceCriteria(models);
+    if (SAFE_OPTION_ID_PROVIDERS.has(provider)) {
+      optionToModel = new Map();
+      criteria = {};
+      models.forEach((candidate, i) => {
+        const optionId = `m${i}`;
+        criteria[optionId] = candidate;
+        optionToModel.set(optionId, candidate);
+      });
+    }
+    if (Object.keys(criteria).length === 0) return null;
+
     const credentials = await getProviderCredentials(provider, new Set(), model);
     if (!credentials || credentials.allRateLimited) {
       log?.warn?.("COMBO", `smart-router: no credentials available for router provider "${provider}"`);
@@ -101,10 +119,24 @@ export async function resolveSmartChoice({
     }
 
     const json = await result.response.json();
-    const route = parseSystemOneRouteAnswer(json);
+    let route = parseSystemOneRouteAnswer(json);
     if (!route || !route.choice) {
       log?.warn?.("COMBO", "smart-router: response missing valid route choice");
       return null;
+    }
+
+    // Translate Clef's m0/m1... option ids back to the combo's model ids so
+    // orderModelsByChoice() can float the winner to the front.
+    if (optionToModel) {
+      const originalChoice = optionToModel.get(route.choice);
+      if (!originalChoice) {
+        log?.warn?.("COMBO", `smart-router: unknown option id "${route.choice}"`);
+        return null;
+      }
+      const probabilities = route.probabilities
+        ? Object.fromEntries(Object.entries(route.probabilities).map(([key, value]) => [optionToModel.get(key) || key, value]))
+        : null;
+      route = { ...route, choice: originalChoice, probabilities };
     }
 
     return route;
