@@ -114,6 +114,13 @@ async function runHeavyStartup() {
       .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
   }
 
+  // Quota-reset webhooks: the scheduler only exists while the setting is on.
+  if (settings.quotaResetNotify?.enabled) {
+    import("@/shared/services/quotaResetNotifier")
+      .then(({ configureQuotaResetNotifier }) => configureQuotaResetNotifier(settings))
+      .catch((e) => console.log("[QuotaReset] notifier start failed:", e.message));
+  }
+
   // An earlier version of the accounts "Check" button looked for a credentials
   // file that a token account never has, decided the account was signed out and
   // wrote isActive:false / testStatus:"pending" — switching off the only kind of
