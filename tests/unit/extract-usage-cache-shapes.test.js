@@ -31,6 +31,14 @@ describe("extractUsageFromResponse cache surfaces", () => {
     expect(out.cache_read_input_tokens).toBeUndefined();
   });
 
+  it("surfaces OpenAI Responses output_tokens_details.reasoning_tokens", () => {
+    const out = extractUsageFromResponse({
+      usage: { input_tokens: 100, output_tokens: 20,
+        output_tokens_details: { reasoning_tokens: 12 } },
+    });
+    expect(canonicalizeUsage(out).reasoning_tokens).toBe(12);
+  });
+
   it("canonicalizes Responses usage without double-counting the prompt", () => {
     const extracted = extractUsageFromResponse({
       usage: { input_tokens: 25421, output_tokens: 5,
