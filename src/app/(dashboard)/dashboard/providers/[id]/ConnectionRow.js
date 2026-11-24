@@ -5,12 +5,15 @@ import { createPortal } from "react-dom";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import CooldownTimer from "./CooldownTimer";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
+  const { copied, copy } = useCopyToClipboard();
+  const copyIdKey = `conn-id-${connection.id}`;
   const proxyBtnRef = useRef(null);
   const [proxyDropdownStyle, setProxyDropdownStyle] = useState(null);
 
@@ -229,6 +232,15 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               </span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
+            <button
+              type="button"
+              onClick={() => copy(connection.id || "", copyIdKey)}
+              title="Copy connection ID — send it as the x-connection-id request header to pin requests to this account (falls back to other accounts when it is unavailable)"
+              className="flex items-center gap-0.5 rounded font-mono text-[11px] text-text-muted transition-colors hover:text-primary"
+            >
+              <span className="material-symbols-outlined text-xs">{copied === copyIdKey ? "check" : "content_copy"}</span>
+              {copied === copyIdKey ? "copied" : `${(connection.id || "").slice(0, 8)}…`}
+            </button>
             {connection.globalPriority && (
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
             )}
