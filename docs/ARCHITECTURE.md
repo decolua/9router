@@ -25,6 +25,22 @@ Primary runtime model:
 
 ## Scope and Boundaries
 
+### Codex function-tool strict mode
+
+Codex tool normalization preserves explicit `strict: false` and `strict: true`
+from both Chat Completions and Responses function declarations. Unspecified
+strict mode remains unspecified; the router does not rewrite `required` or
+invent session IDs. Dropping `strict: false` can let upstream strict defaults
+change optional-argument behavior. Regression check:
+
+```sh
+node --test tests/unit/codex-tool-strict-preservation.test.mjs
+```
+
+This check covers request normalization, not live upstream behavior. Production
+deployment and a new-session OpenCode smoke test are still required to confirm
+the end-to-end subagent issue is resolved.
+
 ### In Scope
 
 - Local gateway runtime
