@@ -1,3 +1,5 @@
+import { redactLogValue } from "../../lib/observability/logPrivacy.js";
+import { currentInference } from "../../lib/observability/requestContext.js";
 // Logger utility for cloud
 
 const LOG_LEVELS = {
@@ -10,7 +12,9 @@ const LOG_LEVELS = {
 const LEVEL = LOG_LEVELS[process.env.LOG_LEVEL?.toUpperCase?.()] ?? LOG_LEVELS.INFO;
 
 function formatTime() {
-  return new Date().toLocaleTimeString("en-US", { hour12: false });
+  const time = new Date().toLocaleTimeString("en-US", { hour12: false });
+  const id = currentInference()?.requestId;
+  return id ? `${time} ${id}` : time;
 }
 
 // Colored-dot tags to correlate request lines by session (same session → same color)
@@ -35,12 +39,12 @@ export function tagForSession(seed) {
 // Print one correlated line: [time] tag symbol message
 export function line(tag, symbol, message) {
   if (LEVEL > LOG_LEVELS.INFO) return;
-  console.log(`[${formatTime()}] ${tag} ${symbol} ${message}`);
+  console.log(`[${formatTime()}] ${tag} ${symbol} ${redactLogValue(message)}`);
 }
 
 // Like line() but always printed regardless of LOG_LEVEL (errors must never be hidden)
 export function errorLine(tag, symbol, message) {
-  console.log(`[${formatTime()}] ${tag} ${symbol} ${message}`);
+  console.log(`[${formatTime()}] ${tag} ${symbol} ${redactLogValue(message)}`);
 }
 
 // Format thinking intent for the request line ("high(10k)" / "off" / "auto")
@@ -58,9 +62,9 @@ export function fmtThink(intent) {
 
 function formatData(data) {
   if (!data) return "";
-  if (typeof data === "string") return data;
+  if (typeof data === "string") return redactLogValue(data);
   try {
-    return JSON.stringify(data);
+    return JSON.stringify(redactLogValue(data));
   } catch {
     return String(data);
   }
@@ -69,28 +73,28 @@ function formatData(data) {
 export function debug(tag, message, data) {
   if (LEVEL <= LOG_LEVELS.DEBUG) {
     const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] 🔍 [${tag}] ${message}${dataStr}`);
+    console.log(`[${formatTime()}] 🔍 [${tag}] ${redactLogValue(message)}${dataStr}`);
   }
 }
 
 export function info(tag, message, data) {
   if (LEVEL <= LOG_LEVELS.INFO) {
     const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] ℹ️  [${tag}] ${message}${dataStr}`);
+    console.log(`[${formatTime()}] ℹ️  [${tag}] ${redactLogValue(message)}${dataStr}`);
   }
 }
 
 export function warn(tag, message, data) {
   if (LEVEL <= LOG_LEVELS.WARN) {
     const dataStr = data ? ` ${formatData(data)}` : "";
-    console.warn(`[${formatTime()}] ⚠️  [${tag}] ${message}${dataStr}`);
+    console.warn(`[${formatTime()}] ⚠️  [${tag}] ${redactLogValue(message)}${dataStr}`);
   }
 }
 
 export function error(tag, message, data) {
   if (LEVEL <= LOG_LEVELS.ERROR) {
     const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] ❌ [${tag}] ${message}${dataStr}`);
+    console.log(`[${formatTime()}] ❌ [${tag}] ${redactLogValue(message)}${dataStr}`);
   }
 }
 

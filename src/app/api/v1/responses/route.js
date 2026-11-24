@@ -1,14 +1,5 @@
-import { handleChat } from "@/sse/handlers/chat.js";
-import { initTranslators } from "open-sse/translator/index.js";
-
-let initialized = false;
-
-async function ensureInitialized() {
-  if (!initialized) {
-    await initTranslators();
-    initialized = true;
-  }
-}
+import { chatInferenceRoute } from "@/sse/handlers/budgetInference.js";
+import { BUDGET_ENDPOINT } from "@/shared/utils/keyBudget.js";
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -20,11 +11,4 @@ export async function OPTIONS() {
   });
 }
 
-/**
- * POST /v1/responses - OpenAI Responses API format
- * Now handled by translator pattern (openai-responses format auto-detected)
- */
-export async function POST(request) {
-  await ensureInitialized();
-  return await handleChat(request);
-}
+export const POST = chatInferenceRoute(BUDGET_ENDPOINT.RESPONSES);

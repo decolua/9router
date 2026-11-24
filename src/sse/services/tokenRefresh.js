@@ -1,3 +1,5 @@
+import { observeConnection } from "@/lib/observability/providerHealth.js";
+import { classifyInferenceError } from "open-sse/services/inferenceError.js";
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
 import { getProviderConnectionById, updateProviderConnection } from "../../lib/localDb.js";
@@ -7,7 +9,7 @@ import {
   removeConnection,
 } from "open-sse/services/projectId.js";
 import {
-  TOKEN_EXPIRY_BUFFER_MS as BUFFER_MS,
+  isUnrecoverableRefreshError, TOKEN_EXPIRY_BUFFER_MS as BUFFER_MS,
   refreshAccessToken as _refreshAccessToken,
   refreshClaudeOAuthToken as _refreshClaudeOAuthToken,
   refreshGoogleToken as _refreshGoogleToken,
@@ -267,6 +269,9 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
     });
 
     const newCreds = await _refreshProviderCredentials(provider, creds, log);
+    if (newCreds?.error && isUnrecoverableRefreshError(newCreds)) {
+      await observeConnection(creds.connectionId, classifyInferenceError({ refreshFailed: true }));
+    }
     if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
       const mergedCreds = {
         ...newCreds,

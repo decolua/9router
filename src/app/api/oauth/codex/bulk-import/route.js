@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
@@ -16,7 +17,7 @@ import { extractCodexAccountInfo } from "@/lib/oauth/providers";
  *
  * Tokens are NEVER echoed back in the response.
  */
-export async function POST(request) {
+async function postHandler(request) {
   let body;
   try {
     body = await request.json();
@@ -119,3 +120,5 @@ export async function POST(request) {
 
   return NextResponse.json({ success, failed, results });
 }
+
+export const POST = withProviderAudit(postHandler);

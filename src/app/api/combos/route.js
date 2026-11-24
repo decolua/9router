@@ -10,7 +10,10 @@ const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 export async function GET() {
   try {
     const combos = await getCombos();
-    return NextResponse.json({ combos });
+    return NextResponse.json({ combos: combos.map(({ id, name, kind, models, createdAt, updatedAt }) => ({
+      id, name, kind, createdAt, updatedAt,
+      models: Array.isArray(models) ? models.filter(model => typeof model === "string") : [],
+    })) });
   } catch (error) {
     console.log("Error fetching combos:", error);
     return NextResponse.json({ error: "Failed to fetch combos" }, { status: 500 });

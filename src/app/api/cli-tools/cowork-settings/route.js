@@ -1,5 +1,6 @@
 "use server";
 
+import { publicToolConfig } from "../publicToolConfig.js";
 import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
@@ -273,7 +274,7 @@ export async function GET() {
 
     return NextResponse.json({
       installed: true,
-      config,
+      config: publicToolConfig(config),
       has9Router,
       configPath,
       cowork: {

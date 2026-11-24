@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { createProviderConnection } from "@/models";
@@ -12,7 +13,7 @@ import {
  *
  * Body: { accessToken, userId, systemId? }
  */
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const body = await request.json();
     const accessToken = typeof body?.accessToken === "string" ? body.accessToken.trim() : "";
@@ -78,3 +79,5 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export const POST = withProviderAudit(postHandler);

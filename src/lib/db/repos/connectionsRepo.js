@@ -1,9 +1,11 @@
+import { redactLogValue } from "../../observability/logPrivacy.js";
+import { auditConnection } from "../../observability/providerAudit.js";
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 const OPTIONAL_FIELDS = [
-  "displayName", "email", "globalPriority", "defaultModel",
+  "weight", "displayName", "email", "globalPriority", "defaultModel",
   "accessToken", "refreshToken", "expiresAt", "tokenType",
   "scope", "projectId", "apiKey", "testStatus",
   "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
@@ -18,6 +20,7 @@ function resetHealthStateOnActivation(existing, patch) {
   const normalized = {
     ...patch,
     testStatus: "active",
+    ...(existing.lastErrorCategory === "auth_invalid" && { lastErrorCategory: null, observedErrorAt: null }),
     lastError: Object.hasOwn(patch, "lastError") ? patch.lastError : null,
     lastErrorAt: Object.hasOwn(patch, "lastErrorAt") ? patch.lastErrorAt : null,
     errorCode: null,
@@ -59,7 +62,7 @@ function connToRow(c) {
     email: email ?? null,
     priority: priority ?? null,
     isActive: isActive === false ? 0 : 1,
-    data: stringifyJson(rest),
+    data: stringifyJson(rest.lastError ? { ...rest, lastError: redactLogValue(rest.lastError) } : rest),
     createdAt,
     updatedAt,
   };
@@ -135,7 +138,7 @@ function reorderInTx(db, providerId) {
 export async function createProviderConnection(data) {
   const db = await getAdapter();
   const now = new Date().toISOString();
-  let result;
+  let result, replaced = false;
 
   db.transaction(() => {
     // apikey connections are deduped by name and need only the current max
@@ -212,6 +215,7 @@ export async function createProviderConnection(data) {
       const normalized = resetHealthStateOnActivation(existing, data);
       const merged = { ...existing, ...normalized, updatedAt: now };
       upsert(db, merged);
+      replaced = true;
       result = merged;
       return;
     }
@@ -256,23 +260,33 @@ export async function createProviderConnection(data) {
     result = conn;
   });
 
+  await auditConnection(replaced ? "update" : "create", result.id);
   return result;
 }
 
 // Critical: OAuth refresh token race — atomic merge inside transaction
-export async function updateProviderConnection(id, data) {
+export async function updateProviderConnection(id, data, { ifUnchangedSince } = {}) {
   const db = await getAdapter();
   let result;
   db.transaction(() => {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
+    if (ifUnchangedSince && (existing.lastErrorAt !== ifUnchangedSince.lastErrorAt ||
+        existing.observedErrorAt !== ifUnchangedSince.observedErrorAt ||
+        Object.keys(existing).some(k => k.startsWith(MODEL_LOCK_PREFIX) && existing[k] !== ifUnchangedSince[k]))) return;
     const normalized = resetHealthStateOnActivation(existing, data);
     const merged = { ...existing, ...normalized, updatedAt: new Date().toISOString() };
+    if (data.testStatus === "unavailable") {
+      for (const key of Object.keys(data)) {
+        if (key.startsWith(MODEL_LOCK_PREFIX) && Date.parse(existing[key]) > Date.parse(data[key])) merged[key] = existing[key];
+      }
+    }
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);
     result = merged;
   });
+  if (result) await auditConnection("update", id);
   return result;
 }
 
@@ -286,14 +300,16 @@ export async function deleteProviderConnection(id) {
     reorderInTx(db, row.provider);
     ok = true;
   });
+  if (ok) await auditConnection("delete", id);
   return ok;
 }
 
 export async function deleteProviderConnectionsByProvider(providerId) {
   const db = await getAdapter();
-  const before = db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [providerId]);
+  const rows = db.all(`SELECT id FROM providerConnections WHERE provider = ?`, [providerId]);
   db.run(`DELETE FROM providerConnections WHERE provider = ?`, [providerId]);
-  return before?.n || 0;
+  for (const row of rows) await auditConnection("delete", row.id);
+  return rows.length;
 }
 
 export async function reorderProviderConnections(providerId) {
@@ -304,7 +320,7 @@ export async function reorderProviderConnections(providerId) {
 export async function cleanupProviderConnections() {
   const db = await getAdapter();
   const fieldsToCheck = [
-    "displayName", "email", "globalPriority", "defaultModel",
+    "weight", "displayName", "email", "globalPriority", "defaultModel",
     "accessToken", "refreshToken", "expiresAt", "tokenType",
     "scope", "projectId", "apiKey", "testStatus",
     "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn",

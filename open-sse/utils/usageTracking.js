@@ -329,6 +329,8 @@ export function extractUsage(chunk) {
 export function mergeUsage(prev, next) {
   if (!prev) return next || null;
   if (!next) return prev;
+  // The upstream trailer supersedes the estimate emitted with the finish chunk.
+  if (prev.estimated) return next;
   const merged = { ...prev };
   const nextHasCache = next.cache_read_input_tokens != null || next.cache_creation_input_tokens != null;
   const prevHasCache = prev.cache_read_input_tokens != null || prev.cache_creation_input_tokens != null;

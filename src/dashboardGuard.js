@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
-import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getSettings, validateApiKey, admitApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { ADMIN, VIEWER } from "@/lib/auth/dashboardRoles";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+
+function admissionError(body, status, headers) {
+  return NextResponse.json(body, { status, headers: { ...headers, "X-Request-Id": crypto.randomUUID() } });
+}
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -13,25 +18,28 @@ async function getCliToken() {
   return cachedCliToken;
 }
 
-async function hasValidCliToken(request) {
+export async function hasValidCliToken(request) {
   const token = request.headers.get(CLI_TOKEN_HEADER);
   if (!token) return false;
   return token === await getCliToken();
 }
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
-const PUBLIC_API_PATHS = [
+const PUBLIC_API_PATHS = new Set([
   "/api/health",
   "/api/init",
   "/api/locale",
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/status",
-  "/api/auth/oidc",
-  "/api/auth/saml",
+  "/api/auth/oidc/start",
+  "/api/auth/oidc/callback",
+  "/api/auth/saml/start",
+  "/api/auth/saml/acs",
+  "/api/auth/saml/metadata",
   "/api/version",
   "/api/settings/require-login",
-];
+]);
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
 // Keep root-level rewrites here too: middleware runs before Next.js rewrites.
@@ -50,26 +58,20 @@ const ALWAYS_PROTECTED = [
   "/api/oauth/minimax-code-global/lease",
 ];
 
-// Require auth, but allow through if requireLogin is disabled
-const PROTECTED_API_PATHS = [
-  "/api/settings",
-  "/api/keys",
-  "/api/providers",
-  "/api/provider-nodes",
-  "/api/proxy-pools",
-  "/api/combos",
-  "/api/models",
-  "/api/usage",
-  "/api/oauth",
-  "/api/cloud",
-  "/api/media-providers",
-  "/api/pricing",
-  "/api/tags",
-  "/api/cli-tools",
-  "/api/mcp",
-  "/api/translator",
-  "/api/tunnel",
-];
+// Exact normalized paths only.
+const VIEWER_READ_PATHS = new Set([
+  "/api/notifications", "/api/usage/chart", "/api/usage/stats", "/api/usage/providers", "/api/providers/summary",
+  "/api/models", "/api/combos",
+]);
+
+function viewerMayAccess(request) {
+  const { pathname, searchParams } = request.nextUrl;
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  if (pathname === "/api/keys") {
+    return searchParams.size === 1 && searchParams.get("view") === "summary";
+  }
+  return VIEWER_READ_PATHS.has(pathname);
+}
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
 const LOCAL_ONLY_PATHS = [
@@ -90,6 +92,8 @@ const LOCAL_ONLY_PATHS = [
   "/api/auth/reset-password",
   "/api/headroom/start",
   "/api/headroom/stop",
+  "/api/headroom/restart",
+  "/api/headroom/extras",
   "/api/headroom/proxy",
 ];
 
@@ -164,18 +168,6 @@ async function canAccessPublicLlmApi(request) {
   return await hasValidApiKey(request);
 }
 
-async function canAccessLocalOnlyRoute(request) {
-  if (await hasValidCliToken(request)) return true;
-  // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
-  if (isLocalRequest(request) && await isAuthenticated(request)) return true;
-  return false;
-}
-
-async function hasValidToken(request) {
-  const token = request.cookies.get("auth_token")?.value;
-  return await verifyDashboardAuthToken(token);
-}
-
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
 async function loadSettings() {
   try {
@@ -185,57 +177,90 @@ async function loadSettings() {
   }
 }
 
-async function isAuthenticated(request) {
-  if (await hasValidToken(request)) return true;
-  const settings = await loadSettings();
-  if (settings && settings.requireLogin === false) return true;
-  return false;
+// An invalid presented cookie never falls back to anonymous admin access.
+export async function dashboardRole(request, { requireCredential = false } = {}) {
+  if (await hasValidCliToken(request)) return ADMIN;
+  const token = request.cookies.get("auth_token")?.value;
+  if (token) return (await getDashboardAuthSession(token))?.role ?? null;
+  if (!requireCredential && (await loadSettings())?.requireLogin === false) return ADMIN;
+  return null;
 }
 
-function isPublicApi(pathname) {
-  if (isPublicLlmApi(pathname)) return true;
-  return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+function unauthorized() {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
-// Shared with src/proxy.js — the mimo login branch must respect dashboard auth.
-export { isAuthenticated };
+function administratorRequired() {
+  return NextResponse.json({ error: "Administrator required" }, { status: 403 });
+}
+
+export async function requireDashboardAdmin(request, options) {
+  const role = await dashboardRole(request, options);
+  return role === ADMIN ? null : role === VIEWER ? administratorRequired() : unauthorized();
+}
 
 export const __test__ = {
   isLocalRequest,
   isPublicLlmApi,
   extractApiKey,
   canAccessPublicLlmApi,
-  canAccessLocalOnlyRoute,
 };
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
-  // Local-only gate for spawn-capable / host-secret routes.
-  if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
-    if (!(await canAccessLocalOnlyRoute(request))) {
+  // Next supplies the normalized pathname. Never let alternate spellings of
+  // the API namespace fall through to the unguarded page branch.
+  let decodedPath;
+  try { decodedPath = decodeURIComponent(pathname); } catch { return unauthorized(); }
+  if (/^\/api(?:\/|$)/i.test(decodedPath) && !pathname.startsWith("/api/")) {
+    return await dashboardRole(request) === VIEWER ? administratorRequired() : unauthorized();
+  }
+
+  // /systemone is a legacy rewrite: apply admission to a presented key
+  // without changing the existing rules for requests that present no key.
+  const publicLlm = isPublicLlmApi(pathname);
+  const keyedSystemone = pathname === "/systemone" && request.method === "POST" && extractApiKey(request);
+  if (publicLlm || keyedSystemone) {
+    const key = extractApiKey(request);
+    if (key) {
+      const post = request.method === "POST";
+      // Voice lookup and video polling can contact a provider on GET (or HEAD).
+      const mediaRead = ["GET", "HEAD"].includes(request.method) && /^\/(?:api\/)?v1\/(?:audio|videos)(?:\/|$)/.test(pathname);
+      if (post || mediaRead) {
+        const { status, retryAfter, windows } = await admitApiKey(key, pathname, post);
+        if (status === 403) return admissionError({ error: "Budgeted keys support chat completions, messages and responses endpoints" }, status);
+        if (status === 200) return NextResponse.next();
+        if (status === 429) return admissionError({ error: "API key request limit exceeded", windows },
+          status, { "Retry-After": String(retryAfter), "Cache-Control": "no-store" });
+        if (status === 503) return admissionError({ error: "Quota storage unavailable" }, status);
+      } else if (await validateApiKey(key)) return NextResponse.next();
+    } else if (await canAccessPublicLlmApi(request)) return NextResponse.next();
+    return admissionError({ error: "API key required for remote API access" }, 401);
+  }
+
+  // Dashboard API: public entry points are exact paths, never whole subtrees.
+  if (pathname.startsWith("/api/")) {
+    if (PUBLIC_API_PATHS.has(pathname)) return NextResponse.next();
+    const gatePath = decodedPath.toLowerCase();
+    const localOnly = LOCAL_ONLY_PATHS.some(p => gatePath.startsWith(p));
+    const requireCredential = ALWAYS_PROTECTED.some(p => gatePath.startsWith(p)) ||
+      /^\/api\/keys\/[^/]+\/rotate\/?$/.test(gatePath);
+    const role = await dashboardRole(request, { requireCredential });
+    if (role === VIEWER && (localOnly || requireCredential || !viewerMayAccess(request))) return administratorRequired();
+    if (localOnly && !(await hasValidCliToken(request)) && (!isLocalRequest(request) || !role)) {
       return NextResponse.json({ error: "Local only: CLI token required" }, { status: 403 });
     }
+    if (role) return NextResponse.next();
+    return unauthorized();
   }
 
-  // Always protected - require valid JWT or local CLI token (machineId-based)
-  if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (await hasValidCliToken(request) || await hasValidToken(request))
-      return NextResponse.next();
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (isPublicLlmApi(pathname)) {
-    if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
-  }
-
-  // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
-  if (pathname.startsWith("/api/")) {
-    if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
-      return NextResponse.next();
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Page rendering only needs GET/HEAD. Server actions must not provide a
+  // second write path outside the API routes.
+  if (request.method && !["GET", "HEAD"].includes(request.method) &&
+      (pathname.startsWith("/dashboard") || request.headers.has("next-action"))) {
+    const denied = await requireDashboardAdmin(request);
+    if (denied) return denied;
   }
 
   // Protect all dashboard routes
@@ -263,18 +288,8 @@ export async function proxy(request) {
       // On error, keep defaults (require login, block tunnel)
     }
 
-    // If login not required, allow through
-    if (!requireLogin) return NextResponse.next();
-
-    // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
-    if (token) {
-      if (await verifyDashboardAuthToken(token)) {
-        return NextResponse.next();
-      } else {
-        return NextResponse.redirect(new URL("/login", request.url));
-      }
-    }
+    if (await hasValidCliToken(request) || (token ? await getDashboardAuthSession(token) : !requireLogin)) return NextResponse.next();
 
     return NextResponse.redirect(new URL("/login", request.url));
   }

@@ -18,13 +18,53 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
-import KeyAccessControls from "./components/KeyAccessControls";
+import CreateKeyModal from "./components/CreateKeyModal";
+import ApiKeysPanel from "./components/ApiKeysPanel";
+
+async function fetchConnections() {
+  const response = await fetch("/api/providers", { cache: "no-store" });
+  if (!response.ok) throw new Error("Could not load accounts");
+  const { connections } = await response.json();
+  if (!Array.isArray(connections)) throw new Error("Could not load accounts");
+  return connections;
+}
+
+async function fetchKeys() {
+  const res = await fetch("/api/keys", { cache: "no-store" });
+  if (!res.ok) throw new Error("Could not load API keys");
+  const data = await res.json();
+  if (!Array.isArray(data.keys)) throw new Error("Invalid key list");
+  return data.keys;
+}
+
+async function loadKeys() {
+  const existing = await fetchKeys();
+  if (existing.length) return existing;
+  // Auto-provision the first key so a new endpoint works out of the box.
+  try {
+    const response = await fetch("/api/keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Default Key" }),
+    });
+    if (response.ok) return await fetchKeys();
+  } catch { /* Keep the empty state if provisioning fails. */ }
+  return existing;
+}
+
 export default function APIPageClient({ machineId }) {
+  const [connections, setConnections] = useState(null);
+  const reloadConnections = useCallback(() =>
+    fetchConnections().then(setConnections, () => setConnections(false)), []);
+  useEffect(() => { void reloadConnections(); }, [reloadConnections]);
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
+  const [rotatedKey, setRotatedKey] = useState(null);
+  const [rotationError, setRotationError] = useState("");
+  const [rotating, setRotating] = useState(false);
+  const rotationPending = useRef(false);
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -79,13 +119,6 @@ export default function APIPageClient({ machineId }) {
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
 
-  // Client-side local/remote detection (UI hint only, not a security gate)
-  const [isRemoteHost, setIsRemoteHost] = useState(false);
-  useEffect(() => {
-    if (typeof window !== "undefined")
-      setIsRemoteHost(!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
-  }, []);
-
   const { copied, copy } = useCopyToClipboard();
 
   // Security gate: block remote exposure while dashboard uses default password or login is off.
@@ -98,29 +131,6 @@ export default function APIPageClient({ machineId }) {
   useEffect(() => {
     if (tsLogRef.current) tsLogRef.current.scrollTop = tsLogRef.current.scrollHeight;
   }, [tsInstallLog]);
-
-  useEffect(() => {
-    fetchData();
-    loadSettings();
-  }, []);
-
-  // Status poll: only while degraded (not yet reachable). Stop once healthy to avoid spam.
-  // Visibility re-check: refresh once when tab becomes visible.
-  useEffect(() => {
-    const anyEnabled = tunnelEnabled || tsEnabled;
-    if (!anyEnabled) return;
-    const tunnelHealthy = !tunnelEnabled || tunnelReachable;
-    const tsHealthy = !tsEnabled || tsReachable;
-    const allHealthy = tunnelHealthy && tsHealthy;
-    const onVisible = () => { if (!document.hidden) syncTunnelStatus(); };
-    document.addEventListener("visibilitychange", onVisible);
-    if (allHealthy) return () => document.removeEventListener("visibilitychange", onVisible);
-    const timer = setInterval(() => { if (!document.hidden) syncTunnelStatus(); }, STATUS_POLL_FAST_MS);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [tunnelEnabled, tsEnabled, tunnelReachable, tsReachable]);
 
   // Browser-side periodic ping: probes tunnel/tailscale URLs directly so UI stays
   // "reachable" even when backend DNS (1.1.1.1) hiccups on *.ts.net or *.trycloudflare.com.
@@ -173,7 +183,7 @@ export default function APIPageClient({ machineId }) {
   }, []);
 
   // Trust user intent (settingsEnabled): UI stays "enabled" while watchdog restarts process
-  const syncTunnelStatus = async () => {
+  const syncTunnelStatus = useCallback(async () => {
     try {
       const statusRes = await fetch("/api/tunnel/status", { cache: "no-store" });
       if (!statusRes.ok) return;
@@ -191,15 +201,12 @@ export default function APIPageClient({ machineId }) {
       setTsEnabled(tsEn);
       updateReachable(null, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
     } catch { /* ignore poll errors */ }
-  };
+  }, [updateReachable]);
 
-  const loadSettings = async () => {
-    setTunnelChecking(true);
-    try {
-      const [settingsData, statusRes] = await Promise.all([
-        useSettingsStore.getState().fetchSettings(),
-        fetch("/api/tunnel/status", { cache: "no-store" })
-      ]);
+  const loadSettings = useCallback(() => Promise.all([
+    useSettingsStore.getState().fetchSettings(),
+    fetch("/api/tunnel/status", { cache: "no-store" }),
+  ]).then(async ([settingsData, statusRes]) => {
       if (settingsData) {
         setRequireApiKey(settingsData.requireApiKey || false);
         setRequireLogin(settingsData.requireLogin !== false);
@@ -221,12 +228,9 @@ export default function APIPageClient({ machineId }) {
         setTsEnabled(tsEn);
         updateReachable(null, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
       }
-    } catch (error) {
-      console.log("Error loading settings:", error);
-    } finally {
-      setTunnelChecking(false);
-    }
-  };
+    })
+    .catch(error => console.log("Error loading settings:", error))
+    .finally(() => setTunnelChecking(false)), [updateReachable]);
 
   const handleTunnelDashboardAccess = async (value) => {
     try {
@@ -246,34 +250,33 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const fetchData = async () => {
-    try {
-      const fetchKeys = async () => {
-        const res = await fetch("/api/keys");
-        if (!res.ok) return [];
-        const data = await res.json();
-        return data.keys || [];
-      };
+  const fetchData = useCallback(() => loadKeys()
+    .then(setKeys)
+    .catch(error => console.log("Error fetching data:", error))
+    .finally(() => setLoading(false)), []);
 
-      let existing = await fetchKeys();
-      // Auto-provision a default key for first-time users so the endpoint works out of the box.
-      if (existing.length === 0) {
-        try {
-          const createRes = await fetch("/api/keys", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: "Default Key" }),
-          });
-          if (createRes.ok) existing = await fetchKeys();
-        } catch { /* fall through to empty render */ }
-      }
-      setKeys(existing);
-    } catch (error) {
-      console.log("Error fetching data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    fetchData();
+    loadSettings();
+  }, [fetchData, loadSettings]);
+
+  // Status poll: only while degraded (not yet reachable). Stop once healthy to avoid spam.
+  // Visibility re-check: refresh once when tab becomes visible.
+  useEffect(() => {
+    const anyEnabled = tunnelEnabled || tsEnabled;
+    if (!anyEnabled) return;
+    const tunnelHealthy = !tunnelEnabled || tunnelReachable;
+    const tsHealthy = !tsEnabled || tsReachable;
+    const allHealthy = tunnelHealthy && tsHealthy;
+    const onVisible = () => { if (!document.hidden) syncTunnelStatus(); };
+    document.addEventListener("visibilitychange", onVisible);
+    if (allHealthy) return () => document.removeEventListener("visibilitychange", onVisible);
+    const timer = setInterval(() => { if (!document.hidden) syncTunnelStatus(); }, STATUS_POLL_FAST_MS);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [tunnelEnabled, tsEnabled, tunnelReachable, tsReachable, syncTunnelStatus]);
 
   // u2500u2500u2500 Cloudflare Tunnel handlers
   // Ping tunnel health until reachable. Race multiple URLs (shortlink + direct) — 1 OK is enough.
@@ -615,26 +618,51 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const handleCreateKey = async () => {
-    if (!newKeyName.trim()) return;
-
-    try {
-      const res = await fetch("/api/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
-      });
-      const data = await res.json();
-
-      if (res.ok) {
-        setCreatedKey(data.key);
-        await fetchData();
-        setNewKeyName("");
-        setShowAddModal(false);
-      }
-    } catch (error) {
-      console.log("Error creating key:", error);
-    }
+  const handleRotateKey = ({ id, name, keyVersion }) => {
+    setConfirmState({
+      title: "Rotate key",
+      message: <>
+        <strong data-i18n-skip>{name}</strong><br />
+        The old key will stop working immediately. Update every tool that uses it, including CLI tools and MITM, with the new key. Quotas, spending and permissions stay unchanged.
+      </>,
+      onConfirm: async () => {
+        if (rotationPending.current) return;
+        rotationPending.current = true;
+        setRotating(true);
+        setRotationError("");
+        try {
+          const res = await fetch(`/api/keys/${encodeURIComponent(id)}/rotate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ keyVersion }),
+          });
+          if (res.status === 409) {
+            setVisibleKeys(new Set());
+            try {
+              setKeys(await fetchKeys());
+              setRotationError("This key changed elsewhere. Try again.");
+            } catch {
+              setRotationError("This key changed elsewhere. Reload the page and try again.");
+            }
+            return;
+          }
+          const data = await res.json();
+          if (!res.ok) {
+            setRotationError(data.error || "Failed to rotate key");
+            return;
+          }
+          setVisibleKeys(new Set());
+          setKeys(list => list.map(k => k.id === id ? { ...k, key: data.key, keyVersion: data.keyVersion } : k));
+          setRotatedKey(data.key);
+        } catch {
+          setRotationError("Failed to rotate key");
+        } finally {
+          rotationPending.current = false;
+          setRotating(false);
+          setConfirmState(null);
+        }
+      },
+    });
   };
 
   const handleDeleteKey = async (id) => {
@@ -646,7 +674,7 @@ export default function APIPageClient({ machineId }) {
         try {
           const res = await fetch(`/api/keys/${id}`, { method: "DELETE" });
           if (res.ok) {
-            setKeys(keys.filter((k) => k.id !== id));
+            setKeys(list => list.filter(k => k.id !== id));
             setVisibleKeys(prev => {
               const next = new Set(prev);
               next.delete(id);
@@ -694,9 +722,30 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const maskKey = (fullKey) => {
-    if (!fullKey || fullKey.length <= 10) return fullKey || "";
-    return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
+  const requestToggle = (key, checked) => {
+    if (key.isActive && !checked) {
+      setConfirmState({
+        title: "Pause API Key",
+        message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
+        onConfirm: async () => {
+          setConfirmState(null);
+          handleToggleKey(key.id, checked);
+        }
+      });
+    } else {
+      handleToggleKey(key.id, checked);
+    }
+  };
+
+  const requestRestriction = key => {
+    setConfirmState({
+      title: "Restrict API Key",
+      message: `Restrict API key "${key.name}"?\n\nIt will only be able to call the combos and models you add. Until you add one, it can call nothing.`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        handleUpdateKeyAccess(key.id, { restricted: true, allow: key.access?.allow || [] });
+      }
+    });
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -708,15 +757,6 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
-  const [baseUrl, setBaseUrl] = useState("/v1");
-
-  // Hydration fix: Only access window on client side
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setBaseUrl(`${window.location.origin}/v1`);
-    }
-  }, []);
-
   if (loading) {
     return (
       <div className="flex flex-col gap-8">
@@ -726,7 +766,8 @@ export default function APIPageClient({ machineId }) {
     );
   }
 
-  const currentEndpoint = baseUrl;
+  const currentEndpoint = `${window.location.origin}/v1`;
+  const isRemoteHost = !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 
   return (
     <div className="flex flex-col gap-8">
@@ -975,166 +1016,39 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
-      {/* API Keys */}
-      <Card id="require-api-key">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">vpn_key</span>
-            API Keys
-          </h2>
-          <Button icon="add" onClick={() => setShowAddModal(true)}>
-            Create Key
-          </Button>
-        </div>
+      <ApiKeysPanel
+        keys={keys}
+        requireApiKey={requireApiKey}
+        onRequireKey={handleRequireApiKey}
+        onCreate={() => setShowAddModal(true)}
+        isRemoteHost={isRemoteHost}
+        rotationError={rotationError}
+        rotating={rotating}
+        connections={connections}
+        reloadConnections={reloadConnections}
+        visibleKeys={visibleKeys}
+        toggleKeyVisibility={toggleKeyVisibility}
+        copied={copied}
+        copy={copy}
+        onSaved={(id, fields) => setKeys(list => list.map(key => key.id === id ? { ...key, ...fields } : key))}
+        onToggle={requestToggle}
+        onRotate={handleRotateKey}
+        onDelete={handleDeleteKey}
+        onAccess={handleUpdateKeyAccess}
+        onRestrict={requestRestriction}
+      />
 
-        <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
-          <div>
-            <p className="font-medium">Require API key</p>
-            <p className="text-sm text-text-muted">
-              Requests without a valid key will be rejected
-            </p>
-          </div>
-          <Toggle
-            checked={requireApiKey}
-            onChange={() => handleRequireApiKey(!requireApiKey)}
-          />
-        </div>
-
-        {isRemoteHost && !requireApiKey && (
-          <div className="mb-4 -mt-2">
-            <SecurityWarning message="Endpoint is exposed without an API key." />
-          </div>
-        )}
-
-        {keys.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-              <span className="material-symbols-outlined text-[32px]">vpn_key</span>
-            </div>
-            <p className="text-text-main font-medium mb-1">No API keys yet</p>
-            <p className="text-sm text-text-muted mb-4">Create your first API key to get started</p>
-            <Button icon="add" onClick={() => setShowAddModal(true)}>
-              Create Key
-            </Button>
-          </div>
-        ) : (
-          <div className="flex flex-col">
-            {keys.map((key) => (
-              <div
-                key={key.id}
-                className={`group flex items-start justify-between gap-3 py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
-                  <div className="flex items-center gap-2 mt-1 min-w-0 flex-wrap">
-                    <code className="text-xs text-text-muted font-mono break-all min-w-0">
-                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
-                    </code>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => toggleKeyVisibility(key.id)}
-                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
-                        title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
-                      >
-                        <span className="material-symbols-outlined text-[14px]">
-                          {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => copy(key.key, key.id)}
-                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">
-                          {copied === key.id ? "check" : "content_copy"}
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-text-muted mt-1">
-                    Created {new Date(key.createdAt).toLocaleDateString()}
-                  </p>
-                  {key.isActive === false && (
-                    <p className="text-xs text-orange-500 mt-1">Paused</p>
-                  )}
-                  <KeyAccessControls
-                    apiKey={key}
-                    onChange={(access) => handleUpdateKeyAccess(key.id, access)}
-                    onRequestRestrict={() => setConfirmState({
-                      title: "Restrict API Key",
-                      message: `Restrict API key "${key.name}"?\n\nIt will only be able to call the combos and models you add. Until you add one, it can call nothing.`,
-                      onConfirm: async () => {
-                        setConfirmState(null);
-                        handleUpdateKeyAccess(key.id, { restricted: true, allow: key.access?.allow || [] });
-                      }
-                    })}
-                  />
-                </div>
-                <div className="flex items-center gap-2 shrink-0 pt-0.5">
-                  <Toggle
-                    size="sm"
-                    checked={key.isActive ?? true}
-                    onChange={(checked) => {
-                      if (key.isActive && !checked) {
-                        setConfirmState({
-                          title: "Pause API Key",
-                          message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
-                          onConfirm: async () => {
-                            setConfirmState(null);
-                            handleToggleKey(key.id, checked);
-                          }
-                        });
-                      } else {
-                        handleToggleKey(key.id, checked);
-                      }
-                    }}
-                    title={key.isActive ? "Pause key" : "Resume key"}
-                  />
-                  <button
-                    onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* Add Key Modal */}
-      <Modal
-        isOpen={showAddModal}
-        title="Create API Key"
-        onClose={() => {
-          setShowAddModal(false);
-          setNewKeyName("");
-        }}
-      >
-        <div className="flex flex-col gap-4">
-          <Input
-            label="Key Name"
-            value={newKeyName}
-            onChange={(e) => setNewKeyName(e.target.value)}
-            placeholder="Production Key"
-          />
-          <div className="flex gap-2">
-            <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
-              Create
-            </Button>
-            <Button
-              onClick={() => {
-                setShowAddModal(false);
-                setNewKeyName("");
-              }}
-              variant="ghost"
-              fullWidth
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      {showAddModal && (
+        <CreateKeyModal
+          connections={connections}
+          onClose={() => setShowAddModal(false)}
+          onCreated={key => {
+            setShowAddModal(false);
+            setCreatedKey(key);
+            fetchData();
+          }}
+        />
+      )}
 
       {/* Created Key Modal */}
       <Modal
@@ -1170,6 +1084,24 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
       </Modal>
+
+      {rotatedKey && (
+        <Modal isOpen title="New API key" closeOnOverlay={false} onClose={() => setRotatedKey(null)}>
+          <div className="flex flex-col gap-4">
+            <p id="rotated-key-warning" className="text-sm text-text-main">
+              Save the new key securely now. Treat it as if it will never be shown again.
+            </p>
+            <div className="flex gap-2">
+              <label htmlFor="rotated-key" className="sr-only">New API key</label>
+              <Input id="rotated-key" value={rotatedKey} readOnly autoFocus aria-describedby="rotated-key-warning"
+                className="min-w-0 flex-1 font-mono" />
+              <Button variant="secondary" icon={copied === "rotated_key" ? "check" : "content_copy"}
+                onClick={() => copy(rotatedKey, "rotated_key")}>Copy</Button>
+            </div>
+            <Button onClick={() => setRotatedKey(null)} fullWidth>Close</Button>
+          </div>
+        </Modal>
+      )}
 
       {/* Enable Tunnel Modal */}
       <Modal
@@ -1320,7 +1252,8 @@ export default function APIPageClient({ machineId }) {
       {/* Confirm Modal */}
       <ConfirmModal
         isOpen={!!confirmState}
-        onClose={() => setConfirmState(null)}
+        onClose={() => { if (!rotationPending.current) setConfirmState(null); }}
+        loading={rotating}
         onConfirm={confirmState?.onConfirm}
         title={confirmState?.title || "Confirm"}
         message={confirmState?.message}

@@ -1,3 +1,4 @@
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -12,7 +13,6 @@ const execAsync = promisify(exec);
 
 const getCodexDir = () => path.join(os.homedir(), ".codex");
 const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
-const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
 
 // Flatten confbox-parsed TOML into a writable object, preserving nested tables
 const parsedToWritable = (obj) => obj ?? {};
@@ -92,12 +92,22 @@ export async function GET() {
       });
     }
 
-    const config = await readConfig();
+    const raw = await readConfig();
+    const parsed = raw ? parseTOML(raw) : null;
+    // The panel and connect CLI only read model choices and the active endpoint.
+    const active = parsed?.model_provider;
+    const url = parsed?.model_providers?.[active]?.base_url;
+    const config = parsed ? stringifyTOML({
+      ...(parsed.model && { model: parsed.model }),
+      ...(active && { model_provider: active }),
+      ...(active && url && { model_providers: { [active]: { base_url: url } } }),
+      ...(parsed.agents?.default_subagent_model && { agents: { default_subagent_model: parsed.agents.default_subagent_model } }),
+    }) : null;
 
     return NextResponse.json({
       installed: true,
       config,
-      has9Router: has9RouterConfig(config),
+      has9Router: has9RouterConfig(raw),
       configPath: getCodexConfigPath(),
     });
   } catch (error) {
@@ -111,8 +121,8 @@ export async function POST(request) {
   try {
     const { baseUrl, apiKey, model, subagentModel } = await request.json();
     
-    if (!baseUrl || !apiKey || !model) {
-      return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
+    if (typeof baseUrl !== "string" || !baseUrl.trim() || !model) {
+      return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
 
     const codexDir = getCodexDir();
@@ -126,21 +136,20 @@ export async function POST(request) {
     try {
       const existingConfig = await fs.readFile(configPath, "utf-8");
       parsed = parsedToWritable(parseTOML(existingConfig));
-    } catch { /* No existing config */ }
+    } catch (err) { if (err.code !== "ENOENT") throw err; }
 
-    // Update only 9Router related fields (api_key goes to auth.json, not config.toml)
     parsed.model = model;
     parsed.model_provider = "9router";
-
-    // Update or create 9router provider section (no api_key - Codex reads from auth.json)
-    // Ensure /v1 suffix is added only once
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    // Custom providers ignore auth.json - the key must travel as a static header
+    const url = baseUrl.replace(/\/+$/, "");
+    const normalizedBaseUrl = url.endsWith("/v1") ? url : url + "/v1";
+    const previous = parsed.model_providers?.["9router"];
+    const stored = previous?.http_headers?.Authorization?.match(/^Bearer (.+)$/i)?.[1];
+    const selected = resolveCliApiKey(apiKey, normalizedBaseUrl, previous?.base_url, stored);
     setNestedSection(parsed, "model_providers.9router", {
       name: "9Router",
       base_url: normalizedBaseUrl,
       wire_api: "responses",
-      http_headers: { Authorization: `Bearer ${apiKey}` },
+      http_headers: { Authorization: `Bearer ${selected}` },
     });
 
     // Subagent model is a scalar under [agents]; agents.<role> now means a custom role
@@ -157,6 +166,7 @@ export async function POST(request) {
       configPath,
     });
   } catch (error) {
+    if (error instanceof CliKeySelectionError) return NextResponse.json({ error: error.message }, { status: 400 });
     console.log("Error updating codex settings:", error);
     return NextResponse.json({ error: "Failed to update codex settings" }, { status: 500 });
   }
@@ -198,22 +208,6 @@ export async function DELETE() {
     // Write updated config
     const configContent = stringifyTOML(parsed);
     await fs.writeFile(configPath, configContent);
-
-    // Remove OPENAI_API_KEY from auth.json
-    const authPath = getCodexAuthPath();
-    try {
-      const existingAuth = await fs.readFile(authPath, "utf-8");
-      const authData = JSON.parse(existingAuth);
-      delete authData.OPENAI_API_KEY;
-      delete authData.auth_mode;
-
-      // Write back or delete if empty
-      if (Object.keys(authData).length === 0) {
-        await fs.unlink(authPath);
-      } else {
-        await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
-      }
-    } catch { /* No auth file */ }
 
     return NextResponse.json({
       success: true,

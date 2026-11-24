@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
 
@@ -8,7 +9,7 @@ import { createProviderConnection } from "@/models";
  *
  * Body: { apiKey, uid?, baseUrl? }
  */
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const { apiKey, uid, baseUrl, mimoPassToken, mimoUserId, mimoCUserId, region } = await request.json();
 
@@ -148,3 +149,5 @@ export async function POST(request) {
     );
   }
 }
+
+export const POST = withProviderAudit(postHandler);

@@ -1,7 +1,8 @@
 "use server";
+import { parseYAML, stringifyYAML } from "confbox";
 
 import { NextResponse } from "next/server";
-import { resolveCliApiKey } from "../resolveApiKey.js";
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -49,20 +50,6 @@ const has9RouterInYml = (content) => {
   return content.includes("9router:") || content.includes("localhost:20128");
 };
 
-// Build standard 9Router provider block for models.yml
-const buildOmpProviderYaml = (baseUrl, apiKey) => {
-  const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-  const key = apiKey || "";
-  return `  ${PROVIDER_ID}:
-    baseUrl: ${normalizedBaseUrl}
-    apiKey: ${key}
-    api: openai-completions
-    authHeader: true
-    disableStrictTools: true
-    discovery:
-      type: proxy`;
-};
-
 export async function GET() {
   try {
     const installed = await checkOmpInstalled();
@@ -101,25 +88,15 @@ export async function POST(request) {
       return NextResponse.json({ error: { message: "baseUrl is required" } }, { status: 400 });
     }
 
-    const resolvedKey = await resolveCliApiKey(apiKey);
-
+    const config = parseYAML(await readModelsYml()) || {};
+    config.providers ??= {};
+    const previous = config.providers[PROVIDER_ID];
+    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : baseUrl + "/v1";
+    const resolvedKey = resolveCliApiKey(apiKey, normalizedBaseUrl, previous?.baseUrl, previous?.apiKey);
+    config.providers[PROVIDER_ID] = { ...previous, baseUrl: normalizedBaseUrl, apiKey: resolvedKey,
+      api: "openai-completions", authHeader: true, disableStrictTools: true, discovery: { type: "proxy" } };
+    const ymlContent = stringifyYAML(config);
     await fs.mkdir(getOmpDir(), { recursive: true });
-
-    let ymlContent = await readModelsYml();
-    const providerBlock = buildOmpProviderYaml(baseUrl, resolvedKey);
-
-    // Remove existing 9router provider if present
-    const regex = new RegExp(`\\s*${PROVIDER_ID}:[\\s\\S]*?(?=\\n\\s*\\w+:|$)`, "g");
-    ymlContent = ymlContent.replace(regex, "");
-
-    if (!ymlContent.trim()) {
-      ymlContent = `providers:\n${providerBlock}\n`;
-    } else if (ymlContent.includes("providers:")) {
-      ymlContent = ymlContent.replace(/providers:/, `providers:\n${providerBlock}`);
-    } else {
-      ymlContent = `${ymlContent.trim()}\n\nproviders:\n${providerBlock}\n`;
-    }
-
     await fs.writeFile(getOmpModelsYmlPath(), ymlContent, "utf-8");
 
     // Best-effort update to agent.db if better-sqlite3 or node:sqlite is present
@@ -156,6 +133,7 @@ export async function POST(request) {
       configPath: getOmpModelsYmlPath(),
     });
   } catch (err) {
+    if (err instanceof CliKeySelectionError) return NextResponse.json({ error: { message: err.message } }, { status: 400 });
     return NextResponse.json({ error: { message: err.message } }, { status: 500 });
   }
 }

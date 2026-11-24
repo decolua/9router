@@ -31,8 +31,7 @@ function renderHeader(port, keys, tunnel) {
   if (!keys || keys.length === 0) {
     lines.push(`Key:      ${COLORS.dim}No API keys yet${COLORS.reset}`);
   } else {
-    lines.push(`Key:      ${COLORS.cyan}${keys[0].key}${COLORS.reset}`);
-    keys.slice(1).forEach(k => lines.push(`          ${COLORS.cyan}${k.key}${COLORS.reset}`));
+    lines.push(`Keys:     ${keys.length} configured`);
   }
   return lines.join("\n");
 }
@@ -42,7 +41,7 @@ async function refreshHeaderBg(port) {
   fetchingHeader = true;
   try {
     const [keysResult, tunnelResult] = await Promise.all([
-      api.getApiKeys(),
+      api.getApiKeys({ summary: true }),
       api.getTunnelStatus()
     ]);
     const keys = keysResult.success ? (keysResult.data.keys || []) : [];

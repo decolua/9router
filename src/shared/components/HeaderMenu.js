@@ -33,7 +33,7 @@ MenuItem.propTypes = {
   danger: PropTypes.bool,
 };
 
-export default function HeaderMenu({ onLogout }) {
+export default function HeaderMenu({ onLogout, admin }) {
   const [isOpen, setIsOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [shutdownOpen, setShutdownOpen] = useState(false);
@@ -42,6 +42,7 @@ export default function HeaderMenu({ onLogout }) {
   const menuRef = useRef(null);
 
   const handleShutdown = async () => {
+    if (!admin) return;
     setIsShuttingDown(true);
     try {
       await fetch("/api/version/shutdown", { method: "POST" });
@@ -89,12 +90,12 @@ export default function HeaderMenu({ onLogout }) {
               label="Theme"
               onClick={() => { toggleTheme(); close(); }}
             />
-            <MenuItem
+            {admin && <MenuItem
               icon="power_settings_new"
               label="Shutdown"
               danger
               onClick={() => { close(); setShutdownOpen(true); }}
-            />
+            />}
             <MenuItem
               icon="logout"
               label="Logout"
@@ -122,5 +123,6 @@ export default function HeaderMenu({ onLogout }) {
 }
 
 HeaderMenu.propTypes = {
+  admin: PropTypes.bool,
   onLogout: PropTypes.func.isRequired,
 };

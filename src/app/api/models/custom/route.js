@@ -1,3 +1,4 @@
+import { validModelLimit } from "@/lib/modelCatalogCaps";
 import { NextResponse } from "next/server";
 import { getCustomModels, addCustomModel, deleteCustomModel } from "@/models";
 import { CAPACITY_META, isSttTransport } from "@/shared/constants/models";
@@ -10,6 +11,9 @@ function sanitizeCaps(caps) {
   const clean = {};
   for (const key of Object.keys(CAPACITY_META)) {
     if (typeof caps[key] === "boolean") clean[key] = caps[key];
+  }
+  for (const key of ["contextWindow", "maxOutput"]) {
+    if (validModelLimit(caps[key])) clean[key] = caps[key];
   }
   return Object.keys(clean).length ? clean : null;
 }

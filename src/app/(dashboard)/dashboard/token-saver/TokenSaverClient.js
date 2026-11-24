@@ -1,16 +1,44 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { COMPRESSION_PROFILES } from "open-sse/config/compressionProfiles.js";
 import { Card, Button, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
+import { getCurrentLocale, onLocaleChange, translate } from "@/i18n/runtime";
 import {
   WENYAN_LOCALES,
   CAVEMAN_LEVELS,
   PONYTAIL_LEVELS,
 } from "../endpoint/endpointConstants";
 
+const patchSetting = async (patch) => {
+  try {
+    const response = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    return response.ok;
+  } catch (error) {
+    console.log("Error updating setting:", error);
+    return false;
+  }
+};
+
+const profileHelp = {
+  off: "Input compression is off.",
+  chat: "Compress conversation history, including user messages.",
+  agent: "Use RTK for tool output and Headroom for conversation history.",
+  dev: "Shorten plain assistant prose. Preserve code, patches, paths and tool results.",
+  custom: "Choose compression settings manually.",
+};
+
 export default function TokenSaverClient() {
+  const [profile, setProfile] = useState("custom");
+  const [profileBusy, setProfileBusy] = useState(true);
+  const [profileError, setProfileError] = useState("");
+  const [compressUsers, setCompressUsers] = useState(false);
+  const manual = profile === "custom" && !profileBusy;
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
@@ -61,14 +89,9 @@ export default function TokenSaverClient() {
   const [showPxpipeModal, setShowPxpipeModal] = useState(false);
   const [pxpipeActionLoading, setPxpipeActionLoading] = useState(false);
   const [pxpipeActionError, setPxpipeActionError] = useState("");
-  const [locale, setLocale] = useState("en");
+  const locale = useSyncExternalStore(onLocaleChange, getCurrentLocale, () => "en");
 
   const { copied, copy } = useCopyToClipboard();
-
-  useEffect(() => {
-    setLocale(getCurrentLocale());
-    return onLocaleChange(() => setLocale(getCurrentLocale()));
-  }, []);
 
   const isWenyanLocale = WENYAN_LOCALES.includes(locale);
   const visibleCavemanLevels = isWenyanLocale
@@ -78,21 +101,35 @@ export default function TokenSaverClient() {
   useEffect(() => {
     const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel);
     if (current?.wenyan && !isWenyanLocale) {
-      setCavemanLevel("ultra");
-      patchSetting({ cavemanLevel: "ultra" });
+      let active = true;
+      patchSetting({ cavemanLevel: "ultra" }).then(ok => {
+        if (active && ok) setCavemanLevel("ultra");
+      });
+      return () => { active = false; };
     }
   }, [isWenyanLocale, cavemanLevel]);
 
-  const patchSetting = async (patch) => {
+  const applyCompressionSettings = useCallback((data) => {
+    setProfile(data.compressionProfile || "custom");
+    setRtkEnabledState(data.rtkEnabled !== false);
+    setHeadroomEnabled(!!data.headroomEnabled);
+    setCompressUsers(!!data.headroomCompressUserMessages);
+    setHeadroomTimeoutMs(data.headroomTimeoutMs ?? 3000);
+    setPxpipeEnabled(!!data.pxpipeEnabled);
+  }, []);
+
+  const selectProfile = async (value) => {
+    setProfileBusy(true);
+    setProfileError("");
     try {
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
+      const res = await fetch("/api/settings", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ compressionProfile: value }),
       });
-    } catch (error) {
-      console.log("Error updating setting:", error);
-    }
+      if (!res.ok) throw new Error("Could not save compression profile");
+      applyCompressionSettings(await res.json());
+    } catch (err) { setProfileError(err.message); }
+    finally { setProfileBusy(false); }
   };
 
   const handleRtkEnabled = async (value) => {
@@ -123,8 +160,9 @@ export default function TokenSaverClient() {
   const handleHeadroomUrlBlur = async () => {
     const next = headroomUrl.trim() || "http://localhost:8787";
     setHeadroomUrl(next);
-    await patchSetting({ headroomUrl: next });
-    refreshHeadroomStatus();
+    const saved = await patchSetting({ headroomUrl: next });
+    setHeadroomActionError(saved ? "" : "Could not save URL. Use a loopback or public HTTP(S) address.");
+    if (saved) refreshHeadroomStatus();
   };
 
   const refreshHeadroomStatus = useCallback(async () => {
@@ -328,7 +366,7 @@ export default function TokenSaverClient() {
     if (extra === "ml") setKompress(value);
     const key = extra === "code" ? "headroomCodeAware" : "headroomKompress";
     await patchSetting({ [key]: value });
-    if (!headroomStatus.running) return;
+    if (!headroomStatus.managedPid) return;
     setRestartingProxy(true);
     try {
       const res = await fetch("/api/headroom/restart", { method: "POST" });
@@ -340,7 +378,7 @@ export default function TokenSaverClient() {
     } finally {
       setRestartingProxy(false);
     }
-  }, [headroomStatus.running, refreshHeadroomStatus]);
+  }, [headroomStatus.managedPid, refreshHeadroomStatus]);
 
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
@@ -437,10 +475,9 @@ export default function TokenSaverClient() {
         const res = await fetch("/api/settings");
         if (res.ok) {
           const data = await res.json();
-          setRtkEnabledState(data.rtkEnabled !== false);
-          setHeadroomEnabled(!!data.headroomEnabled);
+          applyCompressionSettings(data);
+          setProfileBusy(false);
           setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
-          if (typeof data.headroomTimeoutMs === "number") setHeadroomTimeoutMs(data.headroomTimeoutMs);
           setCodeAware(data.headroomCodeAware === true);
           setKompress(data.headroomKompress !== false);
           setCavemanEnabled(!!data.cavemanEnabled);
@@ -450,7 +487,6 @@ export default function TokenSaverClient() {
           setCustomPromptEnabled(!!data.customPromptEnabled);
           setCustomPrompt(data.customPrompt || "");
           setReaAllowEnabled(!!data.reaAllowEnabled);
-          setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
           // PRD: run the PXPIPE health check automatically when the page opens
@@ -459,18 +495,12 @@ export default function TokenSaverClient() {
       } catch {}
     };
     loadSettings();
-  }, [refreshHeadroomStatus, refreshPxpipeStatus, runPxpipeHealth]);
+  }, [applyCompressionSettings, refreshHeadroomStatus, refreshPxpipeStatus, runPxpipeHealth]);
 
   const headroomRunning = !!headroomStatus.running;
   const headroomStatusLabel = headroomStatus.loading
     ? "Checking…"
-    : headroomRunning
-      ? "Running"
-      : headroomStatus.localUrl !== false && !headroomStatus.installed
-        ? "Not installed"
-        : headroomStatus.localUrl !== false
-          ? "Stopped"
-          : "External";
+    : ({ running: "Running", external: "Externally managed", stopped: "Stopped" })[headroomStatus.state] || "Unreachable";
   const headroomLocalUrl = headroomStatus.localUrl !== false;
   const headroomCanStart = !!headroomStatus.canStart;
   const headroomManaged =
@@ -504,6 +534,17 @@ export default function TokenSaverClient() {
             Token Saver
           </h2>
         </div>
+        <label htmlFor="compression-profile" className="flex flex-wrap items-center justify-between gap-2 py-3">
+          Compression profile
+          <select id="compression-profile" name="compressionProfile" aria-describedby="compression-help" className="rounded border border-border bg-surface p-2" value={profile}
+            disabled={profileBusy} onChange={e => selectProfile(e.target.value)}>
+            {["custom", ...Object.keys(COMPRESSION_PROFILES)].map(value => (
+              <option key={value} value={value}>{value === "custom" ? translate("Custom") : value}</option>
+            ))}
+          </select>
+        </label>
+        <p id="compression-help" className="text-sm text-text-muted">{profileHelp[profile]}</p>
+        {profileError && <p role="alert">{profileError}</p>}
         <div className="flex items-center justify-between pt-2 pb-4 border-b border-border gap-4">
           <div className="min-w-0 flex-1">
             <p className="font-medium">
@@ -522,6 +563,7 @@ export default function TokenSaverClient() {
             </p>
           </div>
           <Toggle
+            disabled={!manual}
             checked={rtkEnabled}
             onChange={() => handleRtkEnabled(!rtkEnabled)}
           />
@@ -558,6 +600,7 @@ export default function TokenSaverClient() {
             </p>
           </div>
           <Toggle
+            disabled={!manual}
             checked={headroomEnabled}
             onChange={() => handleHeadroomEnabled(!headroomEnabled)}
           />
@@ -857,7 +900,7 @@ export default function TokenSaverClient() {
           </div>
           <Toggle
             checked={pxpipeEnabled}
-            disabled={!pxpipeStatus.installed}
+            disabled={!pxpipeStatus.installed || !manual}
             onChange={() => handlePxpipeEnabled(!pxpipeEnabled)}
           />
         </div>
@@ -898,13 +941,13 @@ export default function TokenSaverClient() {
               className="font-mono text-sm"
             />
             <p className="text-xs text-text-muted">
-              Use a local proxy for Start/Stop, or an external Docker sidecar
-              like http://headroom:8787.
+              Use loopback for local Start/Stop, or enter the public address of an externally managed proxy.
             </p>
           </div>
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium">Timeout (ms)</p>
             <Input
+              disabled={!manual}
               value={String(headroomTimeoutMs)}
               onChange={(e) => setHeadroomTimeoutMs(e.target.value)}
               onBlur={handleHeadroomTimeoutBlur}
@@ -915,6 +958,14 @@ export default function TokenSaverClient() {
               Request timeout in milliseconds. Defaults to 3000 ms.
             </p>
           </div>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={compressUsers} disabled={!manual}
+              onChange={e => {
+                setCompressUsers(e.target.checked);
+                patchSetting({ headroomCompressUserMessages: e.target.checked });
+              }} />
+            Compress user messages
+          </label>
           {headroomManaged ? (
             <Button
               onClick={handleHeadroomStop}

@@ -1,11 +1,13 @@
 "use client";
 
+import { useDashboardRole } from "@/shared/hooks/useDashboardRole";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, ZedAuthModal, XiaomiMimoAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, ZedAuthModal, XiaomiMimoAuthModal, IFlowCookieModal, GitLabAuthModal, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
@@ -17,6 +19,7 @@ import { applyQoderModelNames, getProviderCustomModelRows } from "@/shared/utils
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
+import { StrategyForm, WeightForm } from "../components/AccountRouting";
 import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
@@ -53,6 +56,19 @@ export default function ProviderDetailPage() {
   const providerId = params.id;
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
+  const isAdmin = useDashboardRole().role === "admin";
+  const [connectionHealth, setConnectionHealth] = useState({});
+  useEffect(() => {
+    const abort = new AbortController();
+    const options = { signal: abort.signal, cache: "no-store" };
+    async function loadHealth() {
+      if (!isAdmin) return {};
+      const response = await fetch("/api/providers/health", options);
+      return response.ok ? Object.fromEntries((await response.json()).connections.map(c => [c.id, c])) : {};
+    }
+    loadHealth().catch(() => ({})).then(rows => { if (!abort.signal.aborted) setConnectionHealth(rows); });
+    return () => abort.abort();
+  }, [connections, isAdmin]);
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -384,49 +400,6 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error updating provider node:", error);
     }
-  };
-
-  const saveProviderStrategy = async (strategy, stickyLimit) => {
-    try {
-      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      const current = settingsData.providerStrategies || {};
-
-      // Build override: null strategy means remove override, use global
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") {
-        override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
-      }
-
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) {
-        delete updated[providerId];
-      } else {
-        updated[providerId] = override;
-      }
-
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: updated }),
-      });
-    } catch (error) {
-      console.log("Error saving provider strategy:", error);
-    }
-  };
-
-  const handleRoundRobinToggle = (enabled) => {
-    const strategy = enabled ? "round-robin" : null;
-    const sticky = enabled ? (providerStickyLimit || "1") : providerStickyLimit;
-    if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
-    setProviderStrategy(strategy);
-    saveProviderStrategy(strategy, sticky);
-  };
-
-  const handleStickyLimitChange = (value) => {
-    setProviderStickyLimit(value);
-    saveProviderStrategy("round-robin", value);
   };
 
   const saveThinkingConfig = async (mode) => {
@@ -1069,6 +1042,7 @@ export default function ProviderDetailPage() {
             </div>
             <div className="flex-1 min-w-0">
               <ConnectionRow
+                health={connectionHealth[conn.id]}
                 connection={conn}
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
@@ -1110,6 +1084,8 @@ export default function ProviderDetailPage() {
                 onDelete={() => handleDelete(conn.id)}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
               />
+              {isAdmin && <WeightForm key={JSON.stringify([conn.id,conn.weight])} connection={conn}
+                onSaved={weight => setConnections(prev => prev.map(c => c.id === conn.id ? {...c, weight} : c))} />}
             </div>
           </div>
         ))}
@@ -1599,27 +1575,9 @@ export default function ProviderDetailPage() {
                   )}
                 </>
               )}
-              {/* Round Robin toggle */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-text-muted font-medium">Round Robin</span>
-                <Toggle
-                  checked={providerStrategy === "round-robin"}
-                  onChange={handleRoundRobinToggle}
-                />
-                {providerStrategy === "round-robin" && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-text-muted">Sticky:</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={providerStickyLimit}
-                      onChange={(e) => handleStickyLimitChange(e.target.value)}
-                      placeholder="1"
-                      className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                    />
-                  </div>
-                )}
-              </div>
+              {isAdmin && <StrategyForm key={JSON.stringify([providerId,providerStrategy,providerStickyLimit])}
+                providerId={providerId} initial={providerStrategy} sticky={providerStickyLimit}
+                onSaved={(value, limit) => { setProviderStrategy(value); setProviderStickyLimit(String(limit || 1)); }} />}
             </div>
           </div>
 

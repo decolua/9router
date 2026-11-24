@@ -8,7 +8,7 @@
 // - Only the newest KEEP_BACKUPS are kept; older ones are pruned automatically.
 import fs from "node:fs";
 import path from "node:path";
-import { BACKUPS_DIR, ensureDirs } from "./paths.js";
+import { BACKUPS_DIR } from "./paths.js";
 import { timestampSlug, getAppVersion } from "./version.js";
 
 const KEEP_BACKUPS = 3;
@@ -17,12 +17,12 @@ const KEEP_BACKUPS = 3;
 const BACKUP_EXCLUDE_TABLES = ["requestDetails"];
 
 export function makeBackupDir(label) {
-  ensureDirs();
-  const ver = getAppVersion();
+  // Create the backup root inside the migration's required-backup guard.
+  fs.mkdirSync(BACKUPS_DIR, { recursive: true, mode: 0o700 });
+  // A dotted version inside the slug looks like a JWT to the log redactor.
+  const ver = getAppVersion().replaceAll(".", "-");
   const slug = `${label}-${ver}-${timestampSlug()}`;
-  const dir = path.join(BACKUPS_DIR, slug);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+  return fs.mkdtempSync(path.join(BACKUPS_DIR, slug + "-"));
 }
 
 export function backupFile(srcPath, destDir, destName = null) {
@@ -38,14 +38,17 @@ export function backupFile(srcPath, destDir, destName = null) {
 // observability log, so the backup stays small regardless of DB size.
 export function backupDbLite(adapter, destDir, destName = "data.sqlite") {
   const dest = path.join(destDir, destName);
-  try { fs.rmSync(dest, { force: true }); } catch {}
+  if (adapter.backupLite) {
+    adapter.backupLite(dest, BACKUP_EXCLUDE_TABLES);
+    return dest;
+  }
   const escaped = dest.replace(/'/g, "''");
 
   adapter.exec(`ATTACH DATABASE '${escaped}' AS bak`);
   try {
     const excluded = new Set(BACKUP_EXCLUDE_TABLES);
     const tables = adapter
-      .all(`SELECT name, sql FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
+      .all(`SELECT name, sql FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY (name='apiKeys') DESC`)
       .filter((t) => !excluded.has(t.name));
 
     adapter.transaction(() => {
@@ -55,6 +58,9 @@ export function backupDbLite(adapter, destDir, destName = "data.sqlite") {
         adapter.exec(createSql);
         adapter.exec(`INSERT INTO bak.${t.name} SELECT * FROM main.${t.name}`);
       }
+      if (tables.some(t => t.name === "apiKeys") &&
+          adapter.get("SELECT (SELECT count(*) FROM bak.apiKeys) = (SELECT count(*) FROM main.apiKeys) AS ok").ok !== 1)
+        throw new Error("Incomplete gateway key backup");
     });
   } finally {
     try { adapter.exec("DETACH DATABASE bak"); } catch {}

@@ -62,7 +62,7 @@ export function validateKeyAccessInput(input) {
     return { ok: false, error: "access must be an object { restricted, allow }" };
   }
   const extra = Object.keys(input).filter((k) => k !== "restricted" && k !== "allow");
-  if (extra.length) return { ok: false, error: `access: unexpected field(s) ${extra.join(", ")}` };
+  if (extra.length) return { ok: false, error: "access: unexpected field(s)" };
   if (typeof input.restricted !== "boolean") {
     return { ok: false, error: "access.restricted must be a boolean" };
   }

@@ -23,9 +23,11 @@ const VIEW_MODES = [
   { value: "cost", label: "Cost" },
 ];
 
+export const REQUEST_COLOR = "#14b8a6";
+
 const VIEW_CONFIG = {
   tokens:   { dataKey: "tokens",   color: "#6366f1", gradId: "gradTokens",   formatter: fmtCompactTokens, label: "Tokens" },
-  requests: { dataKey: "requests", color: "#14b8a6", gradId: "gradRequests", formatter: fmtRequests, label: "Requests" },
+  requests: { dataKey: "requests", color: REQUEST_COLOR, gradId: "gradRequests", formatter: fmtRequests, label: "Requests" },
   cost:     { dataKey: "cost",     color: "#f59e0b", gradId: "gradCost",     formatter: fmtCost,     label: "Cost" },
 };
 
@@ -86,8 +88,8 @@ export default function UsageChart({ period = "7d" }) {
                 <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gradRequests" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
+                <stop offset="5%" stopColor={REQUEST_COLOR} stopOpacity={0.25} />
+                <stop offset="95%" stopColor={REQUEST_COLOR} stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gradCost" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />

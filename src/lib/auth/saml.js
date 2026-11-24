@@ -179,6 +179,19 @@ export function generateSamlMetadata(origin, settings) {
  * @param {object} settings
  * @returns {string}
  */
+// Only attributes asserted as email qualify for elevation; display-name fallbacks
+// such as an arbitrary NameID or UPN are not evidence of an email address.
+export function samlRoleAttributes(profile, settings) {
+  const pick = key => profile?.[key] ?? profile?.attributes?.[key];
+  const emailValue = [settings.samlAttributeEmail, "email", "emailAddress", "mail",
+    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"].filter(Boolean).map(pick).find(Boolean);
+  return {
+    email: Array.isArray(emailValue) ? emailValue[0] : emailValue,
+    groups: pick(settings.samlAttributeGroups || "groups") ??
+      pick("http://schemas.microsoft.com/ws/2008/06/identity/claims/groups"),
+  };
+}
+
 export function pickSamlEmail(profile = {}, settings = {}) {
   if (!profile) return "";
 

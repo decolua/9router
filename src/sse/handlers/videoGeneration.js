@@ -1,3 +1,4 @@
+import { dispatchMedia } from "@/lib/observability/mediaDispatch.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -139,7 +140,7 @@ export async function handleVideoCreate(request, action) {
 
   // noAuth providers — executor-driven generation, no credential needed
   if (NO_AUTH_VIDEO_PROVIDERS.has(provider)) {
-    const result = await handleVideoProxyCore({
+    const result = await dispatchMedia(handleVideoProxyCore, {
       provider,
       action,
       rawBody: forwardBody,
@@ -174,7 +175,7 @@ export async function handleVideoCreate(request, action) {
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleVideoProxyCore({
+    const result = await dispatchMedia(handleVideoProxyCore, {
       provider,
       action,
       rawBody: forwardBody,
@@ -238,7 +239,7 @@ export async function handleVideoGet(request, requestId) {
 
   const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-  const result = await handleVideoProxyCore({
+  const result = await dispatchMedia(handleVideoProxyCore, {
     provider,
     requestId,
     credentials: refreshedCredentials,

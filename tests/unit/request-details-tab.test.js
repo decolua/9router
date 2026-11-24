@@ -85,6 +85,7 @@ describe("request details — tab crash-risk cases", () => {
   });
 
   it("oversized field → stored truncated + reparseable (no circular)", async () => {
+    await db.updateSettings({ debugBodyLoggingUntil: new Date(Date.now() + 60000).toISOString() });
     const huge = "x".repeat(20 * 1024);
     await saveDetail({
       id: "trunc-1", provider: "openai", model: "gpt-4",
@@ -97,6 +98,7 @@ describe("request details — tab crash-risk cases", () => {
     // Truncated field is a plain object safe for JSON.stringify in the drawer
     expect(() => JSON.stringify(got)).not.toThrow();
     expect(got.request._truncated).toBe(true);
+    await db.updateSettings({ debugBodyLoggingUntil: null });
   });
 
   it("missing tokens/timestamp on row → getInputTokens-style access safe", async () => {
@@ -135,8 +137,8 @@ describe("backupDbLite — excludes requestDetails, keeps critical data", () => 
     expect(fs.existsSync(dest)).toBe(true);
 
     // Open backup and assert requestDetails is empty, settings present
-    const Database = (await import("better-sqlite3")).default;
-    const bak = new Database(dest);
+    const { DatabaseSync } = await import("node:sqlite");
+    const bak = new DatabaseSync(dest, { readOnly: true });
     try {
       // requestDetails is fully excluded — table must not exist in the backup
       const rdTable = bak.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='requestDetails'").get();

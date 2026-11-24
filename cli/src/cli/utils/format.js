@@ -17,7 +17,7 @@ function truncate(text, maxLength) {
  * @returns {string} Masked key
  */
 function maskKey(key) {
-  if (!key || key.length < 8) {
+  if (!key || key.length <= 8) {
     return "***";
   }
   const firstChars = key.substring(0, 4);

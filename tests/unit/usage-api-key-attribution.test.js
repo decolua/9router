@@ -46,6 +46,24 @@ describe("Usage stats API key attribution", () => {
     const stats = await db.getUsageStats("24h");
     const apiKeyEntries = Object.values(stats.byApiKey);
 
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const store = await getAdapter();
+    const refs = store.all("SELECT apiKey FROM usageHistory");
+    expect(refs.every(r => /^usage:[0-9a-f]{64}$/.test(r.apiKey))).toBe(true);
+    for (const secret of [apiKeyA, apiKeyB]) {
+      expect(JSON.stringify(store.all("SELECT data FROM usageDaily"))).not.toContain(secret);
+      expect(JSON.stringify(stats)).not.toContain(secret);
+    }
+    // Simulate a legacy raw identifier in both pre-upgrade storage formats.
+    const [{ apiKey: ref }] = refs;
+    store.run("UPDATE usageHistory SET apiKey = ? WHERE apiKey = ?", [apiKeyA, ref]);
+    store.run("UPDATE usageDaily SET data = replace(data, ?, ?)", [ref, apiKeyA]);
+    for (const period of ["24h", "all"]) {
+      const mixed = await db.getUsageStats(period);
+      expect(Object.keys(mixed.byApiKey)).toHaveLength(2);
+      expect(JSON.stringify(mixed)).not.toContain(apiKeyA);
+    }
+
     expect(apiKeyEntries).toHaveLength(2);
 
     expect(

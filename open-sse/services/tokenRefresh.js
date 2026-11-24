@@ -263,7 +263,7 @@ export async function getAllAccessTokens(userInfo, log) {
   return results;
 }
 
-export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
+export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null, onAttemptError = null) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     if (attempt > 0) {
       const delay = attempt * 1000;
@@ -275,6 +275,7 @@ export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
       const result = await refreshFn();
       if (result) return result;
     } catch (error) {
+      onAttemptError?.(error);
       log?.warn?.("TOKEN_REFRESH", `Attempt ${attempt + 1}/${maxRetries} failed: ${error.message}`);
     }
   }

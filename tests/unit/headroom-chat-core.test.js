@@ -58,6 +58,60 @@ describe("handleChatCore Headroom diagnostics", () => {
     });
   });
 
+  it("dev compresses prose while code, diffs, paths and tool code arrive byte-identical", async () => {
+    const code = "```js\r\n  const şehir = 'İ';  \r\n```";
+    const patch = "diff --git a/a b/a\n@@ -1 +1 @@\n-old\n+new ";
+    const messages = [
+      { role: "user", content: code }, { role: "assistant", content: patch },
+      { role: "assistant", content: "Read src/app/main.js" },
+      { role: "assistant", content: "There are many words here describing previous work." },
+      { role: "assistant", tool_calls: [{ id: "tool1", type: "function", function: { name: "read", arguments: "{}" } }], content: null },
+      { role: "tool", tool_call_id: "tool1", content: "  return value;\r\n" },
+      { role: "user", content: "Next" },
+    ];
+    global.fetch = vi.fn(async (_url, init) => {
+      expect(JSON.parse(init.body).messages).toEqual([messages[3]]);
+      return Response.json({ messages: [{ role: "assistant", content: "Done." }] });
+    });
+    const { mergeWithDefaults } = await import("@/lib/db/repos/settingsRepo");
+    await handleChatCore({
+      ...mergeWithDefaults({ compressionProfile: "dev", rtkEnabled: true, pxpipeEnabled: true }),
+      body: { stream: false, model: "gpt-4o", messages }, modelInfo: { provider: "openai", model: "gpt-4o" },
+      credentials: { apiKey: "test", providerSpecificData: {} }, log: { info: vi.fn(), debug: vi.fn() },
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+    const actual = executeMock.mock.calls[0][0].body.messages;
+    expect(actual[3].content).toBe("Done.");
+    for (const i of [0, 1, 2, 5]) expect(Buffer.from(actual[i].content)).toEqual(Buffer.from(messages[i].content));
+  });
+
+  it("dev never submits Claude tool_result or code fences to the compressor", async () => {
+    const { compressDevProse } = await import("../../open-sse/rtk/headroom.js");
+    const code = "const x = 1;  \r\n";
+    const tool = { role: "user", content: [{ type: "tool_result", tool_use_id: "call1", content: [{ type: "text", text: code }] }] };
+    const body = { messages: [tool, { role: "assistant", content: "```js\n" + code + "```" },
+      { role: "assistant", content: "Some previous thoughts." }] };
+    const original = JSON.stringify(body.messages.slice(0, 2));
+    global.fetch = vi.fn(async (_, init) => {
+      expect(JSON.parse(init.body).messages).toEqual([{ role: "assistant", content: "Some previous thoughts." }]);
+      return Response.json({ messages: [{ role: "assistant", content: "Done." }] });
+    });
+    await compressDevProse(body, { url: "http://localhost:8787", diagnostics: {} });
+    expect(body.messages[2].content).toBe("Done.");
+    expect(Buffer.from(JSON.stringify(body.messages.slice(0, 2)))).toEqual(Buffer.from(original));
+  });
+
+  it.each([
+    ["off", false, false, false], ["chat", true, true, false], ["agent", true, false, true],
+    ["dev", true, false, false], ["custom", false, true, true],
+  ])("%s resolves the effective compression settings", async (profile, headroomEnabled, headroomCompressUserMessages, rtkEnabled) => {
+    const { mergeWithDefaults } = await import("@/lib/db/repos/settingsRepo");
+    const raw = { compressionProfile: profile, headroomTimeoutMs: 7000, rtkEnabled: true, pxpipeEnabled: true, headroomCompressUserMessages: true };
+    expect(mergeWithDefaults(raw)).toMatchObject({ headroomEnabled, headroomCompressUserMessages, rtkEnabled,
+      headroomTimeoutMs: profile === "custom" ? 7000 : 3000, pxpipeEnabled: profile === "custom" });
+    expect(mergeWithDefaults({ ...raw, compressionProfile: "custom" })).toMatchObject({ headroomTimeoutMs: 7000, rtkEnabled: true, pxpipeEnabled: true });
+  });
+
   it("logs why Headroom was skipped on chat completions", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
 

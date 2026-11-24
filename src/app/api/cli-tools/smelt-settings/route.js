@@ -1,7 +1,8 @@
 "use server";
 
+import { publicToolConfig } from "../publicToolConfig.js";
 import { NextResponse } from "next/server";
-import { resolveCliApiKey } from "../resolveApiKey.js";
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -61,7 +62,7 @@ export async function GET() {
 
     return NextResponse.json({
       installed: true,
-      config,
+      config: publicToolConfig(config),
       has9Router: has9RouterConfig(config),
       configPath: getSmeltConfigPath(),
     });
@@ -97,7 +98,7 @@ export async function POST(request) {
     const updated = {
       ...existing,
       baseUrl: normalizedBaseUrl,
-      apiKey: await resolveCliApiKey(apiKey),
+      apiKey: resolveCliApiKey(apiKey, normalizedBaseUrl, existing?.baseUrl, existing?.apiKey),
       model: model || existing.model || "provider/model-id",
       _managedBy: "9router",
     };
@@ -110,6 +111,7 @@ export async function POST(request) {
       configPath,
     });
   } catch (err) {
+    if (err instanceof CliKeySelectionError) return NextResponse.json({ error: { message: err.message } }, { status: 400 });
     return NextResponse.json({ error: { message: err.message } }, { status: 500 });
   }
 }

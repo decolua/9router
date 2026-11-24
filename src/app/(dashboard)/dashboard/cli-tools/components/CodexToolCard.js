@@ -38,12 +38,6 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   }, []);
 
   useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey && !codexStatus?.config) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey, codexStatus?.config]);
-
-  useEffect(() => {
     if (initialStatus) setCodexStatus(initialStatus);
   }, [initialStatus]);
 
@@ -146,9 +140,8 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   useEffect(() => {
     const config = codexStatus?.config;
     if (config) {
-      const { baseUrl, apiKey } = getCurrentCodexProviderSettings(config);
+      const { baseUrl } = getCurrentCodexProviderSettings(config);
       setCustomBaseUrl(baseUrl);
-      setSelectedApiKey(apiKey);
 
       const modelMatch = config.match(/^model\s*=\s*"([^"]+)"/m);
       if (modelMatch) setSelectedModel(modelMatch[1]);
@@ -194,23 +187,19 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     setApplying(true);
     setMessage(null);
     try {
-      // Use sk_9router for localhost if no key, otherwise use selected key
-      const keyToUse = (selectedApiKey && selectedApiKey.trim())
-        ? selectedApiKey
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
-
       const res = await fetch("/api/cli-tools/codex-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyToUse,
+          apiKey: selectedApiKey.trim(),
           model: selectedModel,
           subagentModel: subagentModel || selectedModel
         }),
       });
       const data = await res.json();
       if (res.ok) {
+        setSelectedApiKey("");
         // Remember the endpoint so it stays selectable next time
         rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied successfully!" });
@@ -366,7 +355,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <BaseUrlSelect
                     value={customBaseUrl || getDisplayUrl()}
-                    onChange={setCustomBaseUrl}
+                    onChange={url => { if (url !== customBaseUrl) setSelectedApiKey(""); setCustomBaseUrl(url); }}
                     requiresExternalUrl={tool.requiresExternalUrl}
                     tunnelEnabled={tunnelEnabled}
                     tunnelPublicUrl={tunnelPublicUrl}
@@ -393,7 +382,7 @@ default_subagent_model = "${effectiveSubagentModel}"
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect keepExisting value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Model */}
@@ -447,7 +436,7 @@ default_subagent_model = "${effectiveSubagentModel}"
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={(!selectedApiKey && (cloudEnabled && apiKeys.length > 0)) || !selectedModel} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={restoring} loading={restoring}>

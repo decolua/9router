@@ -22,6 +22,7 @@ const EXCLUDE_PATTERNS = [
   ".env.*.local",
   "*.log",          // Log files
   "tmp",            // Temp files
+  ".build-home",    // Build-time HOME: its DB and encryption key must never ship
   ".DS_Store",      // macOS files
 ];
 

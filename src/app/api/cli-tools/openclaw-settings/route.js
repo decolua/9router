@@ -1,5 +1,6 @@
 "use server";
 
+import { publicToolConfig } from "../publicToolConfig.js";
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -103,8 +104,8 @@ export async function GET() {
 
     return NextResponse.json({
       installed: true,
-      settings,
-      agents: enrichedAgents,
+      settings: publicToolConfig(settings),
+      agents: publicToolConfig(enrichedAgents),
       has9Router: has9RouterConfig(settings),
       settingsPath: getOpenClawSettingsPath(),
     });

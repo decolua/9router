@@ -1,7 +1,8 @@
 "use server";
 
+import { publicToolConfig } from "../publicToolConfig.js";
 import { NextResponse } from "next/server";
-import { resolveCliApiKey } from "../resolveApiKey.js";
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -49,7 +50,7 @@ export async function GET() {
 
     return NextResponse.json({
       installed: true,
-      config,
+      config: publicToolConfig(config),
       has9Router: has9RouterConfig(config),
       configPath: getConfigPath(),
       currentModel: entry?.models?.[0]?.id || null,
@@ -82,7 +83,8 @@ export async function POST(request) {
     } catch { /* No existing config */ }
 
     const endpointUrl = `${baseUrl}/chat/completions#models.ai.azure.com`;
-    const keyToUse = await resolveCliApiKey(apiKey);
+    const previous = config.find(e => e.name === "9Router");
+    const keyToUse = resolveCliApiKey(apiKey, endpointUrl, previous?.models?.[0]?.url, previous?.apiKey);
 
     const newEntry = {
       name: "9Router",
@@ -115,6 +117,7 @@ export async function POST(request) {
       configPath,
     });
   } catch (error) {
+    if (error instanceof CliKeySelectionError) return NextResponse.json({ error: { message: error.message } }, { status: 400 });
     console.log("Error updating copilot settings:", error);
     return NextResponse.json({ error: "Failed to update copilot settings" }, { status: 500 });
   }

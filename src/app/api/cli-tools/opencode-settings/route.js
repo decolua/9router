@@ -1,7 +1,8 @@
 "use server";
 
+import { publicToolConfig } from "../publicToolConfig.js";
 import { NextResponse } from "next/server";
-import { resolveCliApiKey } from "../resolveApiKey.js";
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import { ALIAS_TO_ID } from "@/shared/constants/providers";
 import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
@@ -93,7 +94,7 @@ export async function GET() {
 
     return NextResponse.json({
       installed: true,
-      config,
+      config: publicToolConfig(config),
       has9Router: has9RouterConfig(config),
       configPath: getConfigPath(),
         opencode: {
@@ -133,7 +134,7 @@ export async function POST(request) {
     } catch { /* No existing config */ }
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const keyToUse = await resolveCliApiKey(apiKey);
+    const keyToUse = resolveCliApiKey(apiKey, normalizedBaseUrl, config.provider?.["9router"]?.options?.baseURL, config.provider?.["9router"]?.options?.apiKey);
     const effectiveSubagentModel = subagentModel || modelsArray[0];
 
     // Ensure provider object
@@ -192,6 +193,7 @@ export async function POST(request) {
       configPath,
     });
   } catch (error) {
+    if (error instanceof CliKeySelectionError) return NextResponse.json({ error: { message: error.message } }, { status: 400 });
     console.log("Error applying opencode settings:", error);
     return NextResponse.json({ error: "Failed to apply settings" }, { status: 500 });
   }

@@ -1,3 +1,4 @@
+import { dispatchMedia } from "@/lib/observability/mediaDispatch.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -132,7 +133,7 @@ export async function handleSystemone(request) {
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleSystemoneCore({
+    const result = await dispatchMedia(handleSystemoneCore, {
       body,
       modelInfo: { provider, model, ...(customUpstreamModelId ? { upstreamModelId: customUpstreamModelId } : {}) },
       credentials: refreshedCredentials,

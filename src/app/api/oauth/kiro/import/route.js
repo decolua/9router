@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
@@ -8,7 +9,7 @@ import { createProviderConnection } from "@/models";
  * For IDC (organization) tokens, accepts clientId/clientSecret/region so the
  * token can be refreshed via the regional AWS OIDC endpoint.
  */
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const { refreshToken, clientId, clientSecret, region, authMethod, profileArn } = await request.json();
 
@@ -64,3 +65,5 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export const POST = withProviderAudit(postHandler);

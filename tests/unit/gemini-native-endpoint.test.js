@@ -24,6 +24,12 @@ vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
 }));
 
+// Required keys that pass authentication must also exist at policy lookup.
+const clientKeys = vi.hoisted(() => new Set(["router-client-key", "client-router-key"]));
+vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({
+  getApiKeyByKey: async (key) => clientKeys.has(key) ? { access: { restricted: false } } : null,
+}));
+
 const { GET } = await import("../../src/app/api/v1beta/models/route.js");
 const { POST } = await import("../../src/app/api/v1beta/models/[...path]/route.js");
 
@@ -60,7 +66,7 @@ describe("Gemini native v1beta endpoint", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSettings.mockResolvedValue({ requireApiKey: true });
-    mocks.isValidApiKey.mockResolvedValue(true);
+    mocks.isValidApiKey.mockImplementation(async (key) => clientKeys.has(key));
     mocks.getProviderCredentials.mockResolvedValue({
       apiKey: "real-gemini-key",
       connectionId: "gemini-conn",

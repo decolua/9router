@@ -1,7 +1,8 @@
 "use server";
 
+import { publicToolConfig } from "../publicToolConfig.js";
 import { NextResponse } from "next/server";
-import { resolveCliApiKey } from "../resolveApiKey.js";
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -87,7 +88,7 @@ export async function GET() {
     const settings = parseGrokBuildConfig(await readConfigToml());
     return NextResponse.json({
       installed: true,
-      settings,
+      settings: publicToolConfig(settings),
       has9Router: has9RouterConfig(settings),
       configPath: getGrokConfigPath(),
     });
@@ -107,9 +108,11 @@ export async function POST(request) {
 
     await fs.mkdir(getGrokDir(), { recursive: true });
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const toml = applyGrokBuildConfig(await readConfigToml(), {
+    const current = await readConfigToml();
+    const previous = parseGrokBuildConfig(current).model;
+    const toml = applyGrokBuildConfig(current, {
       baseUrl: normalizedBaseUrl,
-      apiKey: await resolveCliApiKey(apiKey),
+      apiKey: resolveCliApiKey(apiKey, normalizedBaseUrl, previous?.base_url, previous?.api_key),
       model: selectedModel,
       contextWindow: normalizeContextWindow(contextWindow, selectedModel),
       subagentModels: normalizeSubagentModels(subagentModels),
@@ -123,6 +126,7 @@ export async function POST(request) {
       modelSlot: "9router",
     });
   } catch (error) {
+    if (error instanceof CliKeySelectionError) return NextResponse.json({ error: { message: error.message } }, { status: 400 });
     console.log("Error updating grok-build settings:", error);
     return NextResponse.json({ error: "Failed to update grok-build settings" }, { status: 500 });
   }

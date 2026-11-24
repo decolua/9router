@@ -92,12 +92,6 @@ export default function ClaudeToolCard({
   const configStatus = getConfigStatus();
 
   useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
     if (initialStatus) {
       setClaudeStatus(initialStatus);
       setExaMcpEnabled(!!initialStatus.exaMcpEnabled);
@@ -164,11 +158,6 @@ export default function ClaudeToolCard({
           }
         }
       });
-      // Restore key from settings.json; ApiKeySelect matches it against saved presets
-      const tokenFromFile = env.ANTHROPIC_AUTH_TOKEN;
-      if (tokenFromFile) {
-        setSelectedApiKey(tokenFromFile);
-      }
     }
   }, [claudeStatus, apiKeys, tool.defaultModels, onModelMappingChange]);
 
@@ -202,14 +191,7 @@ export default function ClaudeToolCard({
     try {
       const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl() };
 
-      // Get key from dropdown, fallback to first key or sk_9router for localhost
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
-
-      if (keyToUse) {
-        env.ANTHROPIC_AUTH_TOKEN = keyToUse;
-      }
+      env.ANTHROPIC_AUTH_TOKEN = selectedApiKey.trim();
 
       tool.defaultModels.forEach((model) => {
         const targetModel = modelMappings[model.alias];
@@ -227,6 +209,7 @@ export default function ClaudeToolCard({
       });
       const data = await res.json();
       if (res.ok) {
+        setSelectedApiKey("");
         // Remember the endpoint so it stays selectable next time
         rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied successfully!" });
@@ -369,7 +352,7 @@ export default function ClaudeToolCard({
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <BaseUrlSelect
                     value={customBaseUrl || getDisplayUrl()}
-                    onChange={setCustomBaseUrl}
+                    onChange={url => { if (url !== customBaseUrl) setSelectedApiKey(""); setCustomBaseUrl(url); }}
                     requiresExternalUrl={tool.requiresExternalUrl}
                     tunnelEnabled={tunnelEnabled}
                     tunnelPublicUrl={tunnelPublicUrl}
@@ -394,7 +377,7 @@ export default function ClaudeToolCard({
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect keepExisting value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Model Mappings */}

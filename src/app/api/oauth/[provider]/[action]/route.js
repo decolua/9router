@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import {
@@ -92,7 +93,7 @@ async function completeXaiManualCode(code, state) {
 
 // GET /api/oauth/[provider]/authorize - Generate auth URL
 // GET /api/oauth/[provider]/device-code - Request device code (for device_code flow)
-export async function GET(request, { params }) {
+async function getHandler(request, { params }) {
   try {
     const { provider, action } = await params;
     const { searchParams } = new URL(request.url);
@@ -314,7 +315,7 @@ export async function GET(request, { params }) {
 
 // POST /api/oauth/[provider]/exchange - Exchange code for tokens and save
 // POST /api/oauth/[provider]/poll - Poll for token (device_code flow)
-export async function POST(request, { params }) {
+async function postHandler(request, { params }) {
   try {
     const { provider, action } = await params;
     let body;
@@ -631,3 +632,6 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export const GET = withProviderAudit(getHandler);
+export const POST = withProviderAudit(postHandler);

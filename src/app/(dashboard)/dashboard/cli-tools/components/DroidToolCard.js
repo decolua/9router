@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
@@ -25,27 +25,29 @@ export default function DroidToolCard({
   tailscaleEnabled,
   tailscaleUrl,
 }) {
-  const [droidStatus, setDroidStatus] = useState(initialStatus || null);
-  const [checkingDroid, setCheckingDroid] = useState(false);
+  const [localStatus, setDroidStatus] = useState(null);
+  const droidStatus = localStatus ?? initialStatus;
+  const checkingDroid = !droidStatus;
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [modelList, setModelList] = useState([]);
+  const [selection, setSelection] = useState(null);
+  const [keyInputVersion, setKeyInputVersion] = useState(0);
+  const [editedModels, setModelList] = useState(null);
+  const modelList = editedModels ?? droidStatus?.settings?.customModels?.map(m => m.model) ?? [];
   const [modelInput, setModelInput] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const hasInitializedModel = useRef(false);
+  const [customBaseUrl, setCustomBaseUrl] = useState(null);
 
-  const currentBaseUrl = droidStatus?.settings?.customModels?.find((m) => m.id?.startsWith("custom:9Router"))?.baseUrl || "";
+  // Status exposes only managed models and their display fields.
+  const currentConfig = droidStatus?.settings?.customModels?.[0];
+  const currentBaseUrl = currentConfig?.baseUrl || "";
 
   const getConfigStatus = () => {
     if (!droidStatus?.installed) return null;
-    // Check for any 9Router model entry (support multi-model: custom:9Router-0, custom:9Router-1, ...)
-    const currentConfig = droidStatus.settings?.customModels?.find(m => m.id?.startsWith("custom:9Router"));
     if (!currentConfig) return "not_configured";
     return matchKnownEndpoint(currentConfig.baseUrl, { tunnelPublicUrl, tailscaleUrl, cloudUrl: cloudEnabled ? CLOUD_URL : null }) ? "configured" : "other";
   };
@@ -53,87 +55,46 @@ export default function DroidToolCard({
   const configStatus = getConfigStatus();
 
   useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setDroidStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded) {
-      if (!droidStatus) checkDroidStatus();
-      fetchModelAliases();
-    }
+    if (!isExpanded) return;
+    const fetchModelAliases = async () => {
+      try {
+        const res = await fetch("/api/models/alias");
+        const data = await res.json();
+        if (res.ok) setModelAliases(data.aliases || {});
+      } catch {
+        console.log("Error fetching model aliases");
+      }
+    };
+    fetchModelAliases();
   }, [isExpanded]);
 
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
+  const checkDroidStatus = useCallback(() => {
+    return fetch("/api/cli-tools/droid-settings")
+      .then(res => res.json())
+      .then(setDroidStatus, () => setDroidStatus({ error: "Failed to check settings" }));
+  }, []);
 
-  // Pre-fill model list from existing config (supports multi-model)
   useEffect(() => {
-    if (droidStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const existingModels = (droidStatus.settings?.customModels || [])
-        .filter(m => m.id?.startsWith("custom:9Router"))
-        .sort((a, b) => (a.index || 0) - (b.index || 0))
-        .map(m => m.model);
-      if (existingModels.length > 0) {
-        setModelList(existingModels);
-      } else {
-        // Legacy: single model stored as custom:9Router-0
-        const legacy = droidStatus.settings?.customModels?.find(m => m.id === "custom:9Router-0");
-        if (legacy?.model) {
-          setModelList([legacy.model]);
-        }
-      }
-    }
-  }, [droidStatus]);
+    if (isExpanded && !droidStatus) checkDroidStatus();
+  }, [isExpanded, droidStatus, checkDroidStatus]);
 
-  const checkDroidStatus = async () => {
-    setCheckingDroid(true);
-    try {
-      const res = await fetch("/api/cli-tools/droid-settings");
-      const data = await res.json();
-      setDroidStatus(data);
-    } catch (error) {
-      setDroidStatus({ installed: false, error: error.message });
-    } finally {
-      setCheckingDroid(false);
-    }
-  };
-
-  const getEffectiveBaseUrl = () => {
-    const url = customBaseUrl || baseUrl;
-    return url.endsWith("/v1") ? url : `${url}/v1`;
-  };
-
-  const getDisplayUrl = () => {
-    const url = customBaseUrl || baseUrl;
-    return url.endsWith("/v1") ? url : `${url}/v1`;
-  };
+  const url = (customBaseUrl ?? baseUrl ?? "").trim().replace(/\/+$/, "");
+  const endpoint = !url || url.endsWith("/v1") ? url : url + "/v1";
+  const selectedApiKey = selection?.endpoint === endpoint ? selection.key : "";
+  const setSelectedApiKey = key => setSelection(key ? { endpoint, key } : null);
 
   const addModel = () => {
     const val = modelInput.trim();
     if (!val || modelList.includes(val)) return;
-    setModelList((prev) => [...prev, val]);
+    setModelList([...modelList, val]);
     setModelInput("");
   };
 
-  const removeModel = (id) => setModelList((prev) => prev.filter((m) => m !== id));
+  const removeModel = (id) => setModelList(modelList.filter((m) => m !== id));
 
   const handleModelSelect = (model) => {
     if (!model.value || modelList.includes(model.value)) return;
-    setModelList((prev) => [...prev, model.value]);
+    setModelList([...modelList, model.value]);
     setModalOpen(false);
   };
 
@@ -141,24 +102,22 @@ export default function DroidToolCard({
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
-
       const res = await fetch("/api/cli-tools/droid-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyToUse,
+          baseUrl: endpoint,
+          apiKey: selectedApiKey.trim(),
           models: modelList,
           activeModel: modelList[0] || "",
         }),
       });
       const data = await res.json();
       if (res.ok) {
+        setSelectedApiKey("");
+        setKeyInputVersion(v => v + 1);
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(endpoint, { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkDroidStatus();
       } else {
@@ -192,16 +151,14 @@ export default function DroidToolCard({
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+    const keyToUse = selectedApiKey.trim() || "<API_KEY_FROM_DASHBOARD>";
 
     const settingsContent = {
       customModels: modelList.map((m, i) => ({
         model: m,
         id: `custom:9Router-${i}`,
         index: i,
-        baseUrl: getEffectiveBaseUrl(),
+        baseUrl: endpoint,
         apiKey: keyToUse,
         displayName: m,
         maxOutputTokens: 131072,
@@ -253,7 +210,11 @@ export default function DroidToolCard({
             </div>
           )}
 
-          {!checkingDroid && droidStatus && !droidStatus.installed && (
+          {droidStatus?.error && (
+            <p role="alert" className="text-sm text-red-600">{droidStatus.error}</p>
+          )}
+
+          {!checkingDroid && droidStatus?.installed === false && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <div className="flex items-start gap-3">
@@ -297,8 +258,11 @@ export default function DroidToolCard({
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <BaseUrlSelect
-                    value={customBaseUrl || getDisplayUrl()}
-                    onChange={setCustomBaseUrl}
+                    value={customBaseUrl ?? endpoint}
+                    onChange={url => {
+                      if (url !== customBaseUrl) setSelectedApiKey("");
+                      setCustomBaseUrl(url);
+                    }}
                     requiresExternalUrl={tool.requiresExternalUrl}
                     tunnelEnabled={tunnelEnabled}
                     tunnelPublicUrl={tunnelPublicUrl}
@@ -309,12 +273,12 @@ export default function DroidToolCard({
                 </div>
 
                 {/* Current configured */}
-                {droidStatus?.settings?.customModels?.find(m => m.id?.startsWith("custom:9Router"))?.baseUrl && (
+                {currentBaseUrl && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
                     <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                     <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
-                      {droidStatus.settings.customModels.find(m => m.id?.startsWith("custom:9Router")).baseUrl}
+                      {currentBaseUrl}
                     </span>
                   </div>
                 )}
@@ -323,7 +287,7 @@ export default function DroidToolCard({
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect key={`${endpoint}:${keyInputVersion}`} keepExisting value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Models */}
@@ -379,7 +343,7 @@ export default function DroidToolCard({
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={modelList.length === 0} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!endpoint || modelList.length === 0} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!droidStatus?.has9Router} loading={restoring}>

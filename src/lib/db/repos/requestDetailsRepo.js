@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { BODY_FIELDS, detailMetadata, redactLogValue } from "../../observability/logPrivacy.js";
+import { DAY_MS } from "../logRetention.js";
+import { currentInference } from "../../observability/requestContext.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
@@ -5,77 +9,27 @@ const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
-const CONFIG_CACHE_TTL_MS = 5000;
-
-let cachedConfig = null;
-let cachedConfigTs = 0;
-
-async function getObservabilityConfig() {
-  if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
-  try {
-    const { getSettings } = await import("./settingsRepo.js");
-    const settings = await getSettings();
-    const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
-    if (envRequestLogs !== undefined) {
-      const enabled = envRequestLogs.toLowerCase() === "true";
-      cachedConfig = {
-        enabled,
-        maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-        batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-        flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-        maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
-      };
-      cachedConfigTs = Date.now();
-      return cachedConfig;
-    }
-    const envFallback = process.env.OBSERVABILITY_ENABLED !== "false";
-    const uiFlag = typeof settings.enableObservability === "boolean";
-    const enabled = uiFlag
-      ? settings.enableObservability
-      : envFallback;
-
-    cachedConfig = {
-      enabled,
-      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-      batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-      flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-      maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
-    };
-  } catch {
-    cachedConfig = {
-      enabled: false,
-      maxRecords: DEFAULT_MAX_RECORDS,
-      batchSize: DEFAULT_BATCH_SIZE,
-      flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
-      maxJsonSize: DEFAULT_MAX_JSON_SIZE,
-    };
-  }
-  cachedConfigTs = Date.now();
-  return cachedConfig;
+// Configuration is read in the writer's transaction, including cross-process revocation.
+function configFor(db) {
+  const settings = parseJson(db.get("SELECT data FROM settings WHERE id=1")?.data, {});
+  const numeric = (key, env, fallback) => {
+    const value = Number(settings[key] ?? process.env[env] ?? fallback);
+    return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+  };
+  return {
+    enabled: process.env.ENABLE_REQUEST_LOGS !== undefined ? process.env.ENABLE_REQUEST_LOGS.toLowerCase() === "true"
+      : settings.enableObservability ?? process.env.OBSERVABILITY_ENABLED !== "false",
+    maxRecords: numeric("observabilityMaxRecords", "OBSERVABILITY_MAX_RECORDS", DEFAULT_MAX_RECORDS),
+    batchSize: numeric("observabilityBatchSize", "OBSERVABILITY_BATCH_SIZE", DEFAULT_BATCH_SIZE),
+    flushIntervalMs: numeric("observabilityFlushIntervalMs", "OBSERVABILITY_FLUSH_INTERVAL_MS", DEFAULT_FLUSH_INTERVAL_MS),
+    maxJsonSize: numeric("observabilityMaxJsonSize", "OBSERVABILITY_MAX_JSON_SIZE", DEFAULT_MAX_JSON_SIZE / 1024) * 1024,
+    until: Date.parse(settings.debugBodyLoggingUntil) > Date.now() ? settings.debugBodyLoggingUntil : null,
+  };
 }
 
 let writeBuffer = [];
 let flushTimer = null;
 let isFlushing = false;
-
-function sanitizeHeaders(headers) {
-  if (!headers || typeof headers !== "object") return {};
-  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token", "api-key"];
-  const sanitized = { ...headers };
-  for (const key of Object.keys(sanitized)) {
-    if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) delete sanitized[key];
-  }
-  return sanitized;
-}
-
-export const __test__ = { sanitizeHeaders };
-
-function generateDetailId(model) {
-  const timestamp = new Date().toISOString();
-  const random = Math.random().toString(36).substring(2, 8);
-  const modelPart = model ? model.replace(/[^a-zA-Z0-9-]/g, "-") : "unknown";
-  return `${timestamp}-${random}-${modelPart}`;
-}
 
 function truncateField(obj, maxSize) {
   const str = JSON.stringify(obj || {});
@@ -94,33 +48,17 @@ async function flushToDatabase() {
     while (writeBuffer.length > 0) {
       const items = writeBuffer.splice(0, writeBuffer.length);
       const db = await getAdapter();
-      const config = await getObservabilityConfig();
-
       db.transaction(() => {
-        for (const item of items) {
-          if (!item.id) item.id = generateDetailId(item.model);
-          if (!item.timestamp) item.timestamp = new Date().toISOString();
-          if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
-
-          const record = {
-            id: item.id,
-            provider: item.provider || null,
-            model: item.model || null,
-            connectionId: item.connectionId || null,
-            timestamp: item.timestamp,
-            status: item.status || null,
-            latency: item.latency || {},
-            tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-            pxpipe: item.pxpipe || undefined,
-          };
-
+        const config = configFor(db);
+        if (!config.enabled && !config.until) return;
+        for (const { metadata, bodies, until } of items) {
+          const capture = bodies && until === config.until && Date.parse(until) > Date.now();
+          if (!capture && !config.enabled) continue;
+          const record = capture ? { ...metadata, ...bodies } : metadata;
+          const expires = capture ? new Date(Date.parse(until) + DAY_MS).toISOString() : null;
           db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
+            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data, bodyExpiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data, bodyExpiresAt = excluded.bodyExpiresAt`,
+            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record), expires]
           );
         }
 
@@ -141,16 +79,24 @@ async function flushToDatabase() {
 }
 
 export async function saveRequestDetail(detail) {
-  const config = await getObservabilityConfig();
-  if (!config.enabled) {return;}
+  const trace = currentInference();
+  const db = await getAdapter();
+  const config = configFor(db);
+  if (!config.enabled && !config.until) return;
 
-  writeBuffer.push(detail);
+  const metadata = detailMetadata({
+    ...detail, id: trace?.requestId || detail.id || randomUUID(), timestamp: detail.timestamp || new Date().toISOString(),
+    errorCategory: detail.errorCategory ?? trace?.failure?.category,
+  });
+  const bodies = config.until ? Object.fromEntries(BODY_FIELDS.filter(k => detail[k] != null)
+    .map(k => [k, truncateField(redactLogValue(detail[k]), config.maxJsonSize)])) : null;
+  writeBuffer.push({ metadata, bodies, until: config.until });
 
   // Trigger immediate flush if batch threshold reached.
   // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
   if (writeBuffer.length >= config.batchSize) {
     if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));
+    await flushToDatabase();
   } else if (!flushTimer) {
     flushTimer = setTimeout(() => {
       flushTimer = null;
@@ -164,6 +110,7 @@ export async function getRequestDetails(filter = {}) {
   const conds = [];
   const params = [];
 
+  if (filter.requestId) { conds.push("id = ?"); params.push(filter.requestId); }
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.connectionId) { conds.push("connectionId = ?"); params.push(filter.connectionId); }

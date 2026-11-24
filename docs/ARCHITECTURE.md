@@ -517,7 +517,7 @@ Runtime visibility sources:
 - console logs from `src/sse/utils/logger.js`
 - per-request usage aggregates in `usage.json`
 - textual request status log in `log.txt`
-- optional deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
+- SQLite request metadata by default. Only an authenticated admin may enable temporary, redacted body capture; `ENABLE_REQUEST_LOGS` controls metadata only.
 - dashboard usage endpoints (`/api/usage/*`) for UI consumption
 
 ## Security-Sensitive Boundaries

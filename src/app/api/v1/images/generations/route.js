@@ -1,3 +1,4 @@
+import { inferenceRoute } from "@/lib/observability/inferenceRoute.js";
 import { handleImageGeneration } from "@/sse/handlers/imageGeneration.js";
 
 export async function OPTIONS() {
@@ -11,6 +12,4 @@ export async function OPTIONS() {
 }
 
 /** POST /v1/images/generations - OpenAI-compatible image generation endpoint */
-export async function POST(request) {
-  return await handleImageGeneration(request);
-}
+export const POST = inferenceRoute(handleImageGeneration);

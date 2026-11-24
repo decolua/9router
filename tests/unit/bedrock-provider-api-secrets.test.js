@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -76,7 +77,12 @@ describe("Bedrock connection API secrets", () => {
       const stored = await getStoredConnection(id);
       expect(stored.providerSpecificData.sessionToken).toBe(SESSION_TOKEN);
 
-      const listed = await listConnections();
+      const { createDashboardAuthToken } = await import("@/lib/auth/dashboardSession");
+      const admin = await createDashboardAuthToken({ role: "admin" });
+      const listed = await listConnections(new NextRequest("https://9router.local/api/providers", {
+        headers: { cookie: "auth_token=" + admin },
+      }));
+      expect(listed.status).toBe(200);
       const detail = await getConnection(
         new Request(`https://9router.local/api/providers/${id}`),
         { params: Promise.resolve({ id }) },

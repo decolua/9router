@@ -1,3 +1,7 @@
+import { requireDashboardAdmin } from "@/dashboardGuard";
+import { getPinnedKeysByConnection } from "@/lib/db/index.js";
+import { withProviderAudit } from "@/lib/observability/providerAudit";
+import { validWeight } from "@/shared/constants/accountRouting";
 import { NextResponse } from "next/server";
 import {
   getProviderConnections,
@@ -48,9 +52,15 @@ async function normalizeProxyPoolId(proxyPoolId) {
 }
 
 // GET /api/providers - List all connections
-export async function GET() {
+export async function GET(request) {
   try {
-    const connections = await getProviderConnections();
+    const denied = await requireDashboardAdmin(request);
+    if (denied) return denied;
+
+    const [connections, keysByConnection] = await Promise.all([
+      getProviderConnections(),
+      getPinnedKeysByConnection(),
+    ]);
 
     // Build nodeNameMap for compatible providers (id → name)
     let nodeNameMap = {};
@@ -67,13 +77,16 @@ export async function GET() {
       const name = isCompatible
         ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
+      const pinnedKeys = keysByConnection.get(c.id) || [];
       return {
         ...toProviderConnectionResponse(c),
+        pinnedKeyCount: pinnedKeys.length,
+        pinnedKeys,
         name,
       };
     });
 
-    return NextResponse.json({ connections: safeConnections });
+    return NextResponse.json({ connections: safeConnections }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.log("Error fetching providers:", error);
     return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
@@ -81,9 +94,12 @@ export async function GET() {
 }
 
 // POST /api/providers - Create new connection (API Key only, OAuth via separate flow)
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const body = await request.json();
+    if (body.weight !== undefined && !validWeight(body.weight)) {
+      return NextResponse.json({ error: "Weight must be an integer from 1 to 100" }, { status: 400 });
+    }
     const provider = normalizeProviderId(body.provider);
     const { apiKey, name, displayName, priority, globalPriority, defaultModel, testStatus } = body;
     const proxyConfig = normalizeProxyConfig(body);
@@ -179,6 +195,7 @@ export async function POST(request) {
       authType: isWebCookieProvider ? "cookie" : "apikey",
       name: connectionName,
       apiKey: apiKey || "",
+      weight: body.weight,
       priority: priority || 1,
       globalPriority: globalPriority || null,
       defaultModel: defaultModel || null,
@@ -205,3 +222,5 @@ export async function POST(request) {
     return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
   }
 }
+
+export const POST = withProviderAudit(postHandler);

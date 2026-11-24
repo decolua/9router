@@ -2,44 +2,35 @@ import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
 import { DATA_DIR } from "@/lib/dataDir.js";
-import { findHeadroomBinary, findPython310, HEADROOM_COMPRESSION_EXTRAS, EXTRA_MARKERS, getInstalledHeadroomExtras } from "./detect.js";
+import { DEFAULT_HEADROOM_URL, probeProxyRunning, findHeadroomBinary, findPython310, HEADROOM_COMPRESSION_EXTRAS, EXTRA_MARKERS, getInstalledHeadroomExtras } from "./detect.js";
+
+import { validateHeadroomUrl, isLoopbackHeadroomUrl } from "./transport.js";
 
 const HEADROOM_DIR = path.join(DATA_DIR, "headroom");
-const PID_FILE = path.join(HEADROOM_DIR, "proxy.pid");
 const LOG_FILE = path.join(HEADROOM_DIR, "proxy.log");
 const INSTALL_LOG_FILE = path.join(HEADROOM_DIR, "install.log");
-const DEFAULT_PORT = 8787;
 const STARTUP_TIMEOUT_MS = 8000;
 
 function ensureDir() {
   if (!fs.existsSync(HEADROOM_DIR)) fs.mkdirSync(HEADROOM_DIR, { recursive: true });
 }
 
-function readPid() {
-  try {
-    if (fs.existsSync(PID_FILE)) return parseInt(fs.readFileSync(PID_FILE, "utf8"), 10);
-  } catch { /* ignore */ }
-  return null;
+// Route chunks share one owner. A detached proxy surviving a gateway restart
+// becomes external: a PID file alone cannot prove who owns a recycled PID.
+const owner = globalThis.__9routerHeadroom ??= { child: null, origin: null, queue: Promise.resolve() };
+
+function serialize(work) {
+  const result = owner.queue.then(work);
+  owner.queue = result.catch(() => {});
+  return result;
 }
 
-function writePid(pid) {
-  ensureDir();
-  fs.writeFileSync(PID_FILE, String(pid));
+function ownerAt(url) {
+  return owner.origin === validateHeadroomUrl(url).origin ? owner.child : null;
 }
 
-function clearPid() {
-  try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
-}
-
-// process.kill throws if pid is dead — use this to probe.
-export function isPidAlive(pid) {
-  if (!pid || typeof pid !== "number") return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
-export function getManagedPid() {
-  const pid = readPid();
-  return pid && isPidAlive(pid) ? pid : null;
+export function getManagedPid(url) {
+  return ownerAt(url)?.pid || null;
 }
 
 // Build proxy CLI flags for the active compression extras. `[code]` (AST
@@ -52,101 +43,81 @@ function extrasProxyArgs({ codeAware, kompress } = {}) {
   return args;
 }
 
-export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = false, kompress = true } = {}) {
-  const safePort = Number(port) > 0 && Number(port) < 65536 ? Number(port) : DEFAULT_PORT;
-  const binary = findHeadroomBinary();
-  if (!binary) {
-    const err = new Error("Headroom CLI not installed");
-    err.code = "NOT_INSTALLED";
-    throw err;
-  }
+function failure(code, message) {
+  return Object.assign(new Error(message), { code });
+}
 
-  const existing = getManagedPid();
-  if (existing) return { pid: existing, alreadyRunning: true };
+async function start({ url = DEFAULT_HEADROOM_URL, codeAware = false, kompress = true } = {}) {
+  const base = validateHeadroomUrl(url);
+  const healthy = await probeProxyRunning(url);
+  const pid = getManagedPid(url);
+  if (healthy) return { state: pid ? "running" : "external", pid, alreadyRunning: true };
+  if (!isLoopbackHeadroomUrl(url)) throw failure("EXTERNAL_PROXY", "External Headroom proxy unreachable");
+  if (owner.child) throw failure("UNREACHABLE", "Managed Headroom proxy exists; check its URL and log");
+  const binary = findHeadroomBinary();
+  if (!binary) throw failure("NOT_INSTALLED", "Headroom CLI not installed");
 
   ensureDir();
-  // spawn stdio requires fd numbers, not WriteStream objects.
   const outFd = fs.openSync(LOG_FILE, "a");
-
-  const args = ["proxy", "--port", String(safePort), ...extrasProxyArgs({ codeAware, kompress })];
-  const child = spawn(binary, args, {
-    stdio: ["ignore", outFd, outFd],
-    detached: true,
-    windowsHide: true,
-    env: { ...process.env },
-  });
-
-  if (!child.pid) {
-    fs.closeSync(outFd);
-    const err = new Error("Failed to spawn headroom proxy");
-    err.code = "SPAWN_FAILED";
-    throw err;
-  }
-
-  child.unref();
-  writePid(child.pid);
-
-  // Wait until the process either stays alive briefly (success) or exits fast (failure).
-  await new Promise((resolve, reject) => {
-    const startupTimer = setTimeout(() => {
-      if (isPidAlive(child.pid)) resolve();
-      else reject(new Error("headroom proxy exited during startup — see proxy.log"));
-    }, STARTUP_TIMEOUT_MS);
-
-    child.once("exit", (code) => {
-      clearTimeout(startupTimer);
-      clearPid();
-      fs.closeSync(outFd);
-      const e = new Error(`headroom proxy exited early (code=${code}) — see proxy.log`);
-      e.code = "EARLY_EXIT";
-      reject(e);
-    });
-  });
-
-  // Close parent's copy of the fd; child retains its own after unref.
-  fs.closeSync(outFd);
-
-  return { pid: child.pid, alreadyRunning: false };
-}
-
-export function stopHeadroomProxy() {
-  const pid = getManagedPid();
-  if (!pid) return { stopped: false, reason: "not_running" };
+  const port = base.port || (base.protocol === "https:" ? "443" : "80");
+  let child;
   try {
-    process.kill(pid, "SIGTERM");
-    // Give it a moment, then force if still alive.
-    setTimeout(() => {
-      if (isPidAlive(pid)) {
-        try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
-      }
-    }, 2000);
-    clearPid();
-    return { stopped: true, pid };
-  } catch (e) {
-    clearPid();
-    const err = new Error(`Failed to stop headroom proxy: ${e.message}`);
-    err.code = "STOP_FAILED";
-    throw err;
+    child = spawn(binary, ["proxy", "--port", port, ...extrasProxyArgs({ codeAware, kompress })], {
+      stdio: ["ignore", outFd, outFd], detached: true, windowsHide: true,
+    });
+  } finally {
+    fs.closeSync(outFd);
   }
+  owner.child = child;
+  owner.origin = base.origin;
+  const exited = new Promise((_, reject) => {
+    const release = (error) => {
+      if (owner.child === child) {
+        owner.child = null;
+        owner.origin = null;
+      }
+      reject(error);
+    };
+    child.once("error", () => release(failure("SPAWN_FAILED", "Failed to spawn Headroom proxy")));
+    child.once("exit", (code) => release(failure("EARLY_EXIT", `Headroom proxy exited early (code=${code}) - see proxy.log`)));
+  });
+  child.unref();
+  const deadline = Date.now() + STARTUP_TIMEOUT_MS;
+  do {
+    await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 200))]);
+    if (await Promise.race([exited, probeProxyRunning(url)])) {
+      return { state: "running", pid: child.pid, alreadyRunning: false };
+    }
+  } while (Date.now() < deadline);
+  throw failure("UNREACHABLE", "Managed Headroom proxy did not become healthy - see proxy.log");
 }
 
-// Stop the managed proxy (if any), wait for the pid to die, then start again
-// with the given flags. Used when toggling active extras that require a restart.
-export async function restartHeadroomProxy(opts = {}) {
-  const pid = getManagedPid();
-  if (pid) {
-    try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
-    // Wait up to ~3s for graceful exit, force-kill if still alive.
-    for (let i = 0; i < 30 && isPidAlive(pid); i++) {
-      await new Promise((r) => setTimeout(r, 100));
+async function stop(url) {
+  const child = ownerAt(url);
+  if (!child) return { stopped: false, reason: "not_managed" };
+  // Use the retained ChildProcess handle only. Never signal a PID read from disk.
+  const exited = new Promise(resolve => child.once("exit", () => resolve(true)));
+  child.kill("SIGTERM");
+  if (!await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 2000, false))])) {
+    if (owner.child === child) child.kill("SIGKILL");
+    if (!await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 1000, false))])) {
+      throw failure("STOP_FAILED", "Headroom proxy did not stop");
     }
-    if (isPidAlive(pid)) {
-      try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
-      await new Promise((r) => setTimeout(r, 300));
-    }
-    clearPid();
   }
-  return startHeadroomProxy(opts);
+  return { stopped: true, pid: child.pid };
+}
+
+export function startHeadroomProxy(options) {
+  return serialize(() => start(options));
+}
+export function stopHeadroomProxy(url = DEFAULT_HEADROOM_URL) {
+  return serialize(() => stop(url));
+}
+export function restartHeadroomProxy(options) {
+  return serialize(async () => {
+    await stop(options.url);
+    return start(options);
+  });
 }
 
 export function getHeadroomLogTail(maxLines = 200) {

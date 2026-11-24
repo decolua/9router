@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { getModelAliases, setModelAlias, getCustomModels } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
-import { getProviderAlias, ALIAS_TO_ID } from "@/shared/constants/providers";
-import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getProviderAlias } from "@/shared/constants/providers";
+import { catalogCapsResolver, catalogProviderId } from "@/lib/modelCatalogCaps";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
+
+function modelLabel(value, fallback) {
+  return typeof value === "string" && value ? value : fallback;
+}
 
 // GET /api/models - Get models with aliases
 export async function GET() {
@@ -12,23 +16,25 @@ export async function GET() {
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
 
+    const customRows = await getCustomModels();
+    const resolveCaps = catalogCapsResolver(customRows);
     const models = AI_MODELS
       .filter((m) => {
-        const alias = getProviderAlias(m.provider) || m.provider;
+        const alias = getProviderAlias(catalogProviderId(m.provider)) || m.provider;
         const list = disabled[alias] || disabled[m.provider] || [];
         return !list.includes(m.model);
       })
       .map((m) => {
         const fullModel = `${m.provider}/${m.model}`;
-        const providerAlias = getProviderAlias(m.provider) || m.provider;
+        const providerAlias = getProviderAlias(catalogProviderId(m.provider)) || m.provider;
         const routedModel = `${providerAlias}/${m.model}`;
-        const c = getCapabilitiesForModel(m.provider, m.model);
+        const c = resolveCaps(m.provider, m.model);
         const thinkingLevels = getThinkingLevels(m.provider, m.model);
         return {
           ...m,
           fullModel,
           routedModel,
-          alias: modelAliases[fullModel] || m.model,
+          alias: modelLabel(modelAliases[fullModel], m.model),
           // Same per-model set /v1/models already publishes, so CLI-tool cards can
           // seed thinking levels instead of guessing them (Pi, opencode).
           ...(Array.isArray(thinkingLevels) && thinkingLevels.length > 0 ? { thinking_levels: thinkingLevels } : {}),
@@ -53,31 +59,30 @@ export async function GET() {
     // provider-scoped entries and falls back to the generic patterns.
     const seenFull = new Set(models.map((m) => m.fullModel));
     const seenRouted = new Set(models.map((m) => m.routedModel));
-    const customModels = (await getCustomModels()).filter((m) => {
-      if (!m?.id || (m.kind || m.type || "llm") !== "llm") return false;
+    const customModels = customRows.filter((m) => {
+      if (!modelLabel(m?.id, "") || !modelLabel(m?.providerAlias, "") || (m.kind || m.type || "llm") !== "llm") return false;
       if (seenRouted.has(`${m.providerAlias}/${m.id}`)) return false;
       return !seenFull.has(`${m.providerAlias}/${m.id}`);
     });
     for (const m of customModels) {
       const fullModel = `${m.providerAlias}/${m.id}`;
-      const providerId = ALIAS_TO_ID[m.providerAlias] || m.providerAlias;
-      const c = getCapabilitiesForModel(providerId, m.id);
+      const providerId = catalogProviderId(m.providerAlias);
+      const c = resolveCaps(providerId, m.id);
       const thinkingLevels = getThinkingLevels(providerId, m.id);
       models.push({
         provider: m.providerAlias,
         model: m.id,
-        name: m.name || m.id,
+        name: modelLabel(m.name, m.id),
         fullModel,
         routedModel: fullModel,
-        alias: modelAliases[fullModel] || m.id,
+        alias: modelLabel(modelAliases[fullModel], m.id),
         ...(Array.isArray(thinkingLevels) && thinkingLevels.length > 0 ? { thinking_levels: thinkingLevels } : {}),
         caps: {
-          vision: c.vision,
-          search: c.search,
-          reasoning: c.reasoning,
+          vision: typeof m.caps?.vision === "boolean" ? m.caps.vision : c.vision,
+          search: typeof m.caps?.search === "boolean" ? m.caps.search : c.search,
+          reasoning: typeof m.caps?.reasoning === "boolean" ? m.caps.reasoning : c.reasoning,
           contextWindow: c.contextWindow,
           maxOutput: c.maxOutput,
-          ...(m.caps || {}),
         },
       });
     }

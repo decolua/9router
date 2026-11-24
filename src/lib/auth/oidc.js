@@ -55,6 +55,9 @@ export async function getOidcRuntimeConfig() {
   const issuerUrl = trimTrailingSlashes(settings.oidcIssuerUrl);
   return {
     issuerUrl,
+    sessionEpoch: settings.sessionEpoch,
+    ssoAdminEmails: settings.ssoAdminEmails,
+    ssoAdminGroups: settings.ssoAdminGroups,
     clientId: settings.oidcClientId.trim(),
     clientSecret: settings.oidcClientSecret.trim(),
     scopes: normalizeScopes(settings.oidcScopes),

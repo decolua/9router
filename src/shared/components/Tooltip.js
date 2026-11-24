@@ -25,6 +25,8 @@ export default function Tooltip({ text, children, position = "top", color }) {
     <div
       ref={anchorRef}
       className="relative inline-flex"
+      onFocus={handleMouseEnter}
+      onBlur={() => setStyle(null)}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={() => setStyle(null)}
     >

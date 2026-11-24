@@ -1,3 +1,4 @@
+import { inferenceRoute } from "@/lib/observability/inferenceRoute.js";
 import { handleEmbeddings } from "@/sse/handlers/embeddings.js";
 
 /**
@@ -16,6 +17,4 @@ export async function OPTIONS() {
 /**
  * POST /v1/embeddings - OpenAI-compatible embeddings endpoint
  */
-export async function POST(request) {
-  return await handleEmbeddings(request);
-}
+export const POST = inferenceRoute(handleEmbeddings);

@@ -40,7 +40,7 @@ export default function LoginPage() {
 
         if (res.ok) {
           const data = await res.json();
-          if (data.authenticated === true || data.requireLogin === false) {
+          if (data.authenticated === true || data.role === "admin") {
             window.location.assign("/dashboard");
             return;
           }

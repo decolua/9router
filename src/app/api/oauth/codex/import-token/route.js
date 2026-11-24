@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
@@ -9,7 +10,7 @@ import { extractCodexAccountInfo } from "@/lib/oauth/providers";
  *
  * Body: { accessToken: string, name?: string }
  */
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const { accessToken, name } = await request.json();
 
@@ -94,3 +95,5 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export const POST = withProviderAudit(postHandler);

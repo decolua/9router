@@ -1,3 +1,4 @@
+import { audit } from "@/lib/observability/audit";
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
@@ -18,7 +19,7 @@ function isTunnelRequest(request, settings) {
   return (tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost);
 }
 
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const ip = getClientIp(request);
     const lock = checkLock(ip);
@@ -88,7 +89,7 @@ export async function POST(request) {
       }
 
       const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request);
+      await setDashboardAuthCookie(cookieStore, request, { role: "admin" }, settings);
 
       return NextResponse.json({ success: true, mustChangePassword: false }, { headers: NO_STORE_HEADERS });
     }
@@ -108,4 +109,10 @@ export async function POST(request) {
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+export async function POST(request) {
+  const response = await postHandler(request);
+  await audit(request, "login", { identity: response.ok ? { actor: "password-admin", actorRole: "admin" } : { actor: "anonymous", actorRole: "anonymous" }, result: response.ok ? "success" : "failure" });
+  return response;
 }

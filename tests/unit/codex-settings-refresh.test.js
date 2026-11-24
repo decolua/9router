@@ -16,7 +16,7 @@ describe("Codex settings refresh", () => {
     expect(routeSource).not.toContain('"use server";');
     expect(routeSource).toContain('export const dynamic = "force-dynamic";');
     expect(cardSource).toContain('fetch("/api/cli-tools/codex-settings", { cache: "no-store" })');
-    expect(cardSource).toContain("setSelectedApiKey(apiKey);");
+    expect(cardSource).not.toContain("setSelectedApiKey(apiKey);");
     expect(cardSource).toContain("setCustomBaseUrl(baseUrl);");
   });
 

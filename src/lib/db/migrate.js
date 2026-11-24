@@ -1,3 +1,8 @@
+import { detailMetadata } from "../observability/logPrivacy.js";
+import { redactDailyKeys, usageIdentity } from "./helpers/usageFingerprint.js";
+import { encryptKey, initializeEncryption } from "./helpers/keyEncryption.js";
+import { finishKeyCleanup } from "./migrations/006-encrypted-gateway-keys.js";
+import { keyVerifier, syncVerifierSecret } from "./helpers/keyVerifier.js";
 import fs from "node:fs";
 import path from "node:path";
 import { LEGACY_FILES, DB_DIR } from "./paths.js";
@@ -7,6 +12,7 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { FatalStartupError } from "./fatalStartupError.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -54,25 +60,30 @@ function isFreshDb(adapter) {
 }
 
 // ─── Versioned migrations runner (skip-version safe) ─────────────────────
-function runVersionedMigrations(adapter) {
-  // Bootstrap _meta first so we can read schemaVersion
-  adapter.exec(buildCreateTableSql("_meta", TABLES._meta));
+function supportedVersion(adapter, name, target) {
+  const raw = getMetaSync(adapter, name, "0");
+  if (!/^\d+$/.test(raw) || Number(raw) > target)
+    throw new FatalStartupError(`Unsupported ${name}; expected a version between 0 and ${target}`);
+  return Number(raw);
+}
 
-  const current = parseInt(getMetaSync(adapter, "schemaVersion", "0"), 10) || 0;
-  const target = latestVersion();
-  if (current >= target) return { applied: 0, from: current, to: current };
-
+function runVersionedMigrations(adapter, current) {
+  if (current === latestVersion()) return;
   const pending = MIGRATIONS.filter((m) => m.version > current);
-  let lastApplied = current;
+  const columns = adapter.all("PRAGMA table_info(apiKeys)").map(c => c.name);
   for (const m of pending) {
-    adapter.transaction(() => {
-      m.up(adapter);
-      setMetaSync(adapter, "schemaVersion", m.version);
+    const stamp = () => setMetaSync(adapter, "schemaVersion", m.version);
+    if (m.managesTransaction) m.up(adapter, stamp);
+    else adapter.transaction(() => {
+      // An unstamped old DB may lack the column indexed by today's 001.
+      if (m.version === 1 && columns.includes("key") && !columns.includes("key_verifier")) adapter.exec("ALTER TABLE apiKeys ADD COLUMN key_verifier TEXT");
+      // 001 uses today's TABLES on a fresh installation. 005 only applies
+      // to the historical plaintext layout (its backfill selects "key").
+      if (m.version !== 5 || adapter.all("PRAGMA table_info(apiKeys)").some(c => c.name === "key")) m.up(adapter);
+      stamp();
     });
-    lastApplied = m.version;
     console.log(`[DB][migrate] applied #${m.version} ${m.name}`);
   }
-  return { applied: pending.length, from: current, to: lastApplied };
 }
 
 // ─── Auto-sync (additive only): add missing tables/columns/indexes ───────
@@ -113,7 +124,9 @@ function importLegacyMain(adapter, data) {
   if (!data || typeof data !== "object") return;
 
   if (data.settings) {
-    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
+    const settings = { ...data.settings };
+    delete settings.debugBodyLoggingUntil;
+    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(settings)]);
   }
 
   importWithAssertion(adapter, "providerConnections", data.providerConnections || [], (c) => {
@@ -142,8 +155,8 @@ function importLegacyMain(adapter, data) {
 
   importWithAssertion(adapter, "apiKeys", data.apiKeys || [], (k) => {
     adapter.run(
-      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
+      `INSERT OR REPLACE INTO apiKeys(id, key_ciphertext, key_verifier, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      [k.id, encryptKey(adapter, k.id, 1, k.key), keyVerifier(k.key), k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
     );
   }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
 
@@ -177,7 +190,7 @@ function importLegacyUsage(adapter, data) {
       `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         e.timestamp || new Date().toISOString(),
-        e.provider || null, e.model || null, e.connectionId || null, e.apiKey || null, e.endpoint || null,
+        e.provider || null, e.model || null, e.connectionId || null, usageIdentity(e.apiKey), e.endpoint || null,
         t.prompt_tokens || t.input_tokens || 0,
         t.completion_tokens || t.output_tokens || 0,
         e.cost || 0,
@@ -188,6 +201,7 @@ function importLegacyUsage(adapter, data) {
     );
   }
   for (const [dateKey, day] of Object.entries(data.dailySummary || {})) {
+    redactDailyKeys(day);
     adapter.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [dateKey, stringifyJson(day)]);
   }
   if (typeof data.totalRequestsLifetime === "number") {
@@ -205,9 +219,10 @@ function importLegacyDisabled(adapter, data) {
 function importLegacyDetails(adapter, data) {
   if (!data || !Array.isArray(data.records)) return;
   for (const r of data.records) {
+    const m = detailMetadata({ ...r, timestamp: r.timestamp || new Date().toISOString() });
     adapter.run(
       `INSERT OR REPLACE INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-      [r.id, r.timestamp || new Date().toISOString(), r.provider || null, r.model || null, r.connectionId || null, r.status || null, stringifyJson(r)]
+      [m.id, m.timestamp, m.provider, m.model, m.connectionId, m.status, stringifyJson(m)]
     );
   }
 }
@@ -215,42 +230,51 @@ function importLegacyDetails(adapter, data) {
 // ─── Main entry ──────────────────────────────────────────────────────────
 export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
-  _migratedAdapters.add(adapter);
+
 
   // Capture freshness BEFORE migrations stamp _meta (otherwise we'd misclassify
   // a brand-new DB as non-fresh once schemaVersion is written).
   const fresh = isFreshDb(adapter);
 
-  // Prune stale backups every boot so old oversized backups shrink to KEEP.
-  pruneOldBackups();
-
-  // Bootstrap _meta so we can read the stored backup schema version below
-  // (runVersionedMigrations also ensures this, but we need it earlier here).
+  // Check both version stamps before pruning backups or changing existing tables.
   adapter.exec(buildCreateTableSql("_meta", TABLES._meta));
 
   // Detect a pending schema change via the central SCHEMA_VERSION const.
   // A lightweight backup is taken BEFORE any schema mutation below.
-  const storedSchemaVer = parseInt(getMetaSync(adapter, "backupSchemaVersion", "0"), 10) || 0;
+  const storedSchemaVer = supportedVersion(adapter, "backupSchemaVersion", SCHEMA_VERSION);
   const schemaChanging = !fresh && storedSchemaVer < SCHEMA_VERSION;
-  if (schemaChanging) {
+  const current = supportedVersion(adapter, "schemaVersion", latestVersion());
+  const required = MIGRATIONS.some(m => m.requiresBackup && m.version > current)
+    && adapter.all("PRAGMA table_info(apiKeys)").some(c => c.name === "key");
+  if (schemaChanging || required) {
+    let backupDir;
     try {
-      const backupDir = makeBackupDir(`schema-${storedSchemaVer}-to-${SCHEMA_VERSION}`);
+      backupDir = makeBackupDir(`schema-${storedSchemaVer}-to-${SCHEMA_VERSION}`);
       backupDbLite(adapter, backupDir);
       pruneOldBackups();
       console.log(`[DB][migrate] pre-schema backup ${storedSchemaVer} → ${SCHEMA_VERSION}: ${backupDir}`);
     } catch (e) {
+      if (backupDir) {
+        try { fs.rmSync(backupDir, { recursive: true, force: true }); }
+        catch (cleanupError) { console.warn("[DB][migrate] partial backup cleanup failed:", cleanupError.message); }
+      }
+      if (required) throw new FatalStartupError("Required pre-schema backup failed; gateway key migration stopped", { cause: e });
       console.warn(`[DB][migrate] pre-schema backup failed (continuing): ${e.message}`);
     }
-  }
+  } else pruneOldBackups();
 
   // 1. Always run versioned migrations chain (skip-version safe)
-  const migInfo = runVersionedMigrations(adapter);
+  runVersionedMigrations(adapter, current);
+  finishKeyCleanup(adapter);
 
   // 2. Additive sync (auto add missing columns/indexes declared in TABLES)
   syncSchemaFromTables(adapter);
 
+  adapter.transaction(() => initializeEncryption(adapter));
+  syncVerifierSecret(adapter);
+
   // Stamp the schema version we just reached so future boots skip re-backup.
-  setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
+  if (storedSchemaVer !== SCHEMA_VERSION) setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
 
   // 3. One-time legacy JSON import (only if DB was fresh on entry)
   const alreadyImported = fs.existsSync(MIGRATED_MARKER);
@@ -263,7 +287,9 @@ export async function runMigrationOnce(adapter) {
   if (fresh && hasLegacy && !alreadyImported) {
     const t0 = Date.now();
     const backupDir = makeBackupDir("migrate-from-json");
-    for (const f of Object.values(LEGACY_FILES)) backupFile(f, backupDir);
+    for (const f of Object.values(LEGACY_FILES)) {
+      if (f !== LEGACY_FILES.details) backupFile(f, backupDir); // Do not create another raw body archive.
+    }
 
     try {
       adapter.transaction(() => {
@@ -285,6 +311,7 @@ export async function runMigrationOnce(adapter) {
 
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
     pruneOldBackups();
+    _migratedAdapters.add(adapter);
     console.log(`[DB][migrate] JSON → SQLite in ${Date.now() - t0}ms | legacy JSON kept at DATA_DIR | backup: ${backupDir}`);
     return;
   }
@@ -294,4 +321,5 @@ export async function runMigrationOnce(adapter) {
   const newVer = getAppVersion();
   const oldVer = getMetaSync(adapter, "appVersion", null);
   if (oldVer !== newVer) setMetaSync(adapter, "appVersion", newVer);
+  _migratedAdapters.add(adapter);
 }

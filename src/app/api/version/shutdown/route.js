@@ -1,8 +1,11 @@
+import { managedUpdateConflict } from "@/lib/managedInstall";
 import { NextResponse } from "next/server";
 import { killAppProcesses } from "@/lib/appUpdater";
 
 // Shutdown app to release file locks for manual update
 export async function POST() {
+  const conflict = managedUpdateConflict();
+  if (conflict) return conflict;
   try {
     await killAppProcesses();
   } catch { /* best effort */ }

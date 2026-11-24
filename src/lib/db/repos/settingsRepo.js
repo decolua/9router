@@ -1,5 +1,9 @@
+import { endCaptureWindow } from "../logRetention.js";
+import { COMPRESSION_PROFILES, isCompressionProfile } from "../../../../open-sse/config/compressionProfiles.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+
+import { nextSessionEpoch } from "../../auth/dashboardRoles.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -24,6 +28,9 @@ const DEFAULT_SETTINGS = {
     videoInput: { enabled: false, roundRobin: false, models: [] },
   },
   requireLogin: true,
+  sessionEpoch: 0,
+  ssoAdminEmails: [],
+  ssoAdminGroups: [],
   requireApiKey: true,
   tunnelDashboardAccess: true,
   authMode: "password",
@@ -39,8 +46,10 @@ const DEFAULT_SETTINGS = {
   samlLoginLabel: "Sign in with SAML SSO",
   samlAttributeEmail: "email",
   samlAttributeName: "name",
-  enableObservability: false,
-  observabilityMaxRecords: 1000,
+  enableObservability: process.env.OBSERVABILITY_ENABLED !== "false",
+  debugBodyLoggingUntil: null,
+  auditRetentionDays: 180,
+  observabilityMaxRecords: 200,
   observabilityBatchSize: 20,
   observabilityFlushIntervalMs: 5000,
   observabilityMaxJsonSize: 5,
@@ -49,6 +58,7 @@ const DEFAULT_SETTINGS = {
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   dnsToolEnabled: {},
+  compressionProfile: "custom",
   rtkEnabled: true,
   headroomEnabled: false,
   headroomUrl: DEFAULT_HEADROOM_URL,
@@ -103,7 +113,8 @@ export function mergeWithDefaults(raw) {
       }
     }
   }
-  return merged;
+  if (!isCompressionProfile(merged.compressionProfile)) merged.compressionProfile = "custom";
+  return Object.assign(merged, COMPRESSION_PROFILES[merged.compressionProfile]);
 }
 
 export async function getSettings() {
@@ -112,13 +123,26 @@ export async function getSettings() {
 }
 
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)
-export async function updateSettings(updates) {
+export async function updateSettings(updates, { revokeSessions = false, providerRouting } = {}) {
   const db = await getAdapter();
   let next;
   db.transaction(function () {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
-    next = { ...current, ...updates };
+    next = { ...current, ...updates, sessionEpoch: current.sessionEpoch ?? 0 };
+    if (providerRouting) {
+      const { provider, strategy, stickyLimit } = providerRouting;
+      const strategies = { ...current.providerStrategies };
+      const override = { ...strategies[provider] };
+      delete override.fallbackStrategy;
+      delete override.stickyRoundRobinLimit;
+      if (strategy) override.fallbackStrategy = strategy;
+      if (strategy === "round-robin") override.stickyRoundRobinLimit = stickyLimit;
+      if (Object.keys(override).length) strategies[provider] = override;
+      else delete strategies[provider];
+      next.providerStrategies = strategies;
+    }
+    if (revokeSessions || Object.hasOwn(updates, "password")) next.sessionEpoch = nextSessionEpoch(current);
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],
@@ -143,5 +167,19 @@ export async function getCloudUrl() {
 }
 
 export async function exportSettings() {
-  return await readRaw();
+  // Epoch belongs to this installation, not to a portable settings dump.
+  const settings = await readRaw();
+  delete settings.sessionEpoch;
+  delete settings.debugBodyLoggingUntil;
+  return settings;
+}
+
+// Closing the old window and publishing its replacement must commit together.
+export async function updateDebugCaptureWindow(until) {
+  const db = await getAdapter();
+  db.transaction(() => {
+    endCaptureWindow(db);
+    db.run(`INSERT INTO settings(id,data) VALUES(1,json_object('debugBodyLoggingUntil',?))
+      ON CONFLICT(id) DO UPDATE SET data=json_set(settings.data,'$.debugBodyLoggingUntil',?)`, [until, until]);
+  });
 }

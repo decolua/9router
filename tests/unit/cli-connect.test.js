@@ -218,7 +218,7 @@ describe("connect run()", () => {
     return vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
       const u = String(url);
       if (u.endsWith("/api/auth/login")) return json({ success: true });
-      if (u.endsWith("/api/keys")) return json({ keys: [{ name: `cli-${os.hostname()}`, key: MY_KEY, isActive: true }] });
+      if (u.endsWith("/api/keys?view=summary")) return json({ keys: [{ name: `cli-${os.hostname()}`, key: MY_KEY, isActive: true }] });
       if (u.endsWith("/api/cli-tools/claude-settings")) {
         return json({ installed: true, settings: { env: {
           ANTHROPIC_BASE_URL: "http://127.0.0.1:20128/v1",
@@ -234,6 +234,67 @@ describe("connect run()", () => {
       return json({});
     });
   }
+
+  function keyList(rows) {
+    const spy = mockServer();
+    const fallback = spy.getMockImplementation();
+    return spy.mockImplementation((url, options) => {
+      if (String(url).endsWith("/api/keys?view=summary")) return Response.json({ keys: rows });
+      if (String(url).endsWith("/api/keys") && options?.method === "POST") return Response.json({ key: MY_KEY }, { status: 201 });
+      return fallback(url, options);
+    });
+  }
+
+  const args = ["http://gw.test", "--password", "x", "--tools", "claude"];
+  it.each([
+    [[], []], [null, ["--create-key"]],
+    [[{ name: "known", isActive: false }], ["--key-name", "known", "--create-key"]],
+    [[{ name: "known", isActive: true }], ["--key-name", "known"]],
+    [[{ name: "known", key: "sk-mask...mask" }], ["--key-name", "known"]],
+  ])("does not issue a new key or damage config on unusable metadata: %j", async (rows, flags) => {
+    const [file] = await tool("claude").apply(CTX);
+    const before = fs.readFileSync(file);
+    const spy = keyList(rows);
+    await expect(connect.run([...args, ...flags])).rejects.toThrow();
+    expect(fs.readFileSync(file)).toEqual(before);
+    expect(spy.mock.calls.some(([u]) => String(u).endsWith("/api/keys"))).toBe(false);
+  });
+
+  it("creates once only on explicit request for an unused name", async () => {
+    const spy = keyList([]);
+    expect(await connect.run([...args, "--create-key"])).toBe(0);
+    expect(spy.mock.calls.filter(([u, o]) => String(u).endsWith("/api/keys") && o.method === "POST")).toHaveLength(1);
+    expect((await tool("claude").show()).apiKey).toBe(MY_KEY);
+  });
+
+  it("keeps the tool credential for the same server without consulting a key list", async () => {
+    await tool("claude").apply({ ...CTX, baseUrl: args[0] });
+    const spy = mockServer();
+    expect(await connect.run([...args, "--keep-local-key", "--opus", "changed"])).toBe(0);
+    const state = await tool("claude").show();
+    expect(state.apiKey).toBe(CTX.apiKey);
+    expect(state.models.opus).toBe("changed");
+    expect(spy.mock.calls.some(([u]) => String(u).includes("/api/keys"))).toBe(false);
+  });
+
+  it.each(["other origin", "other tool key"])("preflights all configs before sending a local credential: %s", async kind => {
+    const [file] = await tool("claude").apply({ ...CTX, baseUrl: args[0] });
+    await tool("codex").apply({ ...CTX, baseUrl: kind === "other origin" ? "https://elsewhere.test" : args[0], apiKey: MY_KEY });
+    const before = fs.readFileSync(file);
+    const spy = mockServer();
+    await expect(connect.run([args[0], "--password", "x", "--tools", "claude,codex", "--keep-local-key"])).rejects.toThrow();
+    expect(fs.readFileSync(file)).toEqual(before);
+    expect(spy.mock.calls.some(([,o]) => o?.headers?.Authorization)).toBe(false);
+  });
+
+  it("leaves a tool untouched when validation of its saved key fails", async () => {
+    const [file] = await tool("claude").apply({ ...CTX, baseUrl: args[0] });
+    const before = fs.readFileSync(file);
+    const spy = mockServer(), fallback = spy.getMockImplementation();
+    spy.mockImplementation((url, opt) => String(url).endsWith("/v1/models") ? new Response(null, { status: 403 }) : fallback(url, opt));
+    await expect(connect.run([...args, "--keep-local-key"])).rejects.toThrow(/not written/);
+    expect(fs.readFileSync(file)).toEqual(before);
+  });
 
   it("takes models from the server — nothing hardcoded", async () => {
     mockServer();
@@ -339,7 +400,7 @@ describe("connect run()", () => {
       const u = String(url);
       const json = (b, h) => Promise.resolve(new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json", ...h } }));
       if (u.endsWith("/api/auth/login")) return json({ success: true }, { "set-cookie": "auth_token=t" });
-      if (u.endsWith("/api/keys")) return json({ keys: [{ name: `cli-${os.hostname()}`, key: MY_KEY, isActive: true }] });
+      if (u.endsWith("/api/keys?view=summary")) return json({ keys: [{ name: `cli-${os.hostname()}`, key: MY_KEY, isActive: true }] });
       if (u.includes("/api/cli-tools/")) return Promise.resolve(new Response("nope", { status: 500 }));
       return json({ data: [] });
     });

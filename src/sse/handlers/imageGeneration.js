@@ -1,3 +1,4 @@
+import { dispatchMedia } from "@/lib/observability/mediaDispatch.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -70,7 +71,7 @@ export async function handleImageGeneration(request) {
   if (!body.prompt) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
 
   // Per-key access control: requested target, before combo expansion.
-  const keyAccessDenied = await enforceKeyAccess(await getKeyAccessContext(request), modelStr);
+  const keyAccessDenied = await enforceKeyAccess(await getKeyAccessContext(request, settings), modelStr);
   if (keyAccessDenied) return keyAccessDenied;
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
@@ -102,7 +103,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
-    const result = await handleImageGenerationCore({
+    const result = await dispatchMedia(handleImageGenerationCore, {
       body,
       modelInfo: { provider, model },
       credentials: null,
@@ -145,7 +146,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       continue;
     }
 
-    const result = await handleImageGenerationCore({
+    const result = await dispatchMedia(handleImageGenerationCore, {
       body,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,

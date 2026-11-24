@@ -1,3 +1,4 @@
+import { audit, sessionActor } from "@/lib/observability/audit";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
@@ -6,12 +7,14 @@ import {
   isSamlConfigured,
   pickSamlDisplayName,
   pickSamlEmail,
+  samlRoleAttributes,
   validateSamlResponse,
 } from "@/lib/auth/saml.js";
+import { ssoRole } from "@/lib/auth/dashboardRoles";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 
-export async function POST(request) {
+async function callback(request, outcome) {
   const settings = await getSettings();
   const origin = getSamlBaseUrl(request, settings);
   const ip = getClientIp(request);
@@ -53,11 +56,15 @@ export async function POST(request) {
 
     recordSuccess(ip);
 
-    await setDashboardAuthCookie(cookieStore, request, {
+    const { email, groups } = samlRoleAttributes(profile, settings);
+    const claims = {
+      role: ssoRole(settings, email, groups),
       saml: true,
       samlEmail,
       samlName,
-    });
+    };
+    await setDashboardAuthCookie(cookieStore, request, claims, settings);
+    outcome.identity = sessionActor(claims);
 
     return NextResponse.redirect(new URL("/dashboard", origin));
   } catch (error) {
@@ -65,5 +72,14 @@ export async function POST(request) {
     return NextResponse.redirect(
       new URL(`/login?error=${encodeURIComponent(error.message || "saml_acs_failed")}`, origin)
     );
+  }
+}
+
+export async function POST(request) {
+  const outcome = {};
+  try { return await callback(request, outcome); }
+  finally {
+    await audit(request, "login", { identity: outcome.identity ?? { actor: "saml", actorRole: "anonymous" },
+      result: outcome.identity ? "success" : "failure" });
   }
 }

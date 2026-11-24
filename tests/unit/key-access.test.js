@@ -11,6 +11,7 @@ const fx = vi.hoisted(() => ({
   nodes: [{ id: "openai-compatible-chat-n1", type: "openai-compatible", prefix: "mock" }],
   aliases: { fast: "openai/model-a", bee: "openai/model-b" },
   keys: {},
+  requireApiKey: true,
 }));
 
 vi.mock("@/lib/localDb", () => ({
@@ -20,6 +21,7 @@ vi.mock("@/lib/localDb", () => ({
 }));
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getCombos: async () => fx.combos }));
 vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({ getApiKeyByKey: async (k) => fx.keys[k] || null }));
+vi.mock("@/lib/db/repos/settingsRepo.js", () => ({ getSettings: async () => ({ requireApiKey: fx.requireApiKey }) }));
 vi.mock("@/sse/utils/logger.js", () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }));
 
 const engine = await import("../../src/sse/services/keyAccess.js");
@@ -43,6 +45,7 @@ async function status(k, model) {
 
 beforeEach(() => {
   fx.keys = {};
+  fx.requireApiKey = true;
   key("open", { restricted: false, allow: [] });
   key("combo", { restricted: true, allow: ["main"] }); // case differs from combo "Main" on purpose
   key("b", { restricted: true, allow: ["openai/MODEL-B"] });
@@ -53,9 +56,18 @@ beforeEach(() => {
 });
 
 describe("unrestricted passthrough", () => {
-  it("no key, unknown key and unrestricted key all yield no context (today's behaviour)", async () => {
+  it("allows chat and lists all models for the dashboard placeholder when keys are optional", async () => {
+    fx.requireApiKey = false;
+    const ctx = await ctxFor("sk_9router");
+    expect(ctx).toBeNull();
+    expect(await engine.enforceKeyAccess(ctx, "openai/model-a")).toBeNull();
+    const models = [{ id: "Main", owned_by: "combo" }, { id: "openai/model-a", owned_by: "openai" }];
+    expect(await engine.filterModelsListForKey(ctx, models)).toEqual(models);
+    expect(await status("sk-empty", "openai/model-a")).toBe(403);
+  });
+  it("no key and unrestricted key pass; a bearer revoked since admission cannot call a model", async () => {
     expect(await ctxFor(null)).toBeNull();
-    expect(await ctxFor("sk-nope")).toBeNull();
+    expect(await status("sk-nope", "openai/model-a")).toBe(403);
     expect(await ctxFor("sk-open")).toBeNull();
     for (const m of ["Main", "openai/model-a", "fast", "anything/at-all"]) {
       expect(await status("sk-open", m)).toBe(200);

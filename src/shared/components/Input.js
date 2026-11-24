@@ -36,6 +36,7 @@ export default function Input({
           placeholder={placeholder}
           value={value}
           onChange={onChange}
+          required={required}
           disabled={disabled}
           className={cn(
             "w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px]",

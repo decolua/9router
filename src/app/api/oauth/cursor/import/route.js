@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { CursorService } from "@/lib/oauth/services/cursor";
 import { createProviderConnection } from "@/models";
@@ -10,7 +11,7 @@ import { createProviderConnection } from "@/models";
  * - accessToken: string - Access token from cursorAuth/accessToken
  * - machineId: string - Machine ID from storage.serviceMachineId
  */
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const { accessToken, machineId } = await request.json();
 
@@ -98,3 +99,5 @@ export async function GET() {
     ],
   });
 }
+
+export const POST = withProviderAudit(postHandler);

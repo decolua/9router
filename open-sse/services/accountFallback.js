@@ -143,10 +143,15 @@ export function getModelLockKey(model) {
  * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
  */
 export function isModelLockActive(connection, model) {
-  const key = getModelLockKey(model);
-  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
-  if (!expiry) return false;
-  return new Date(expiry).getTime() > Date.now();
+  return !!routingLockUntil(connection, model);
+}
+
+// An account is usable when all locks applicable to this request have expired.
+export function routingLockUntil(connection, model) {
+  const expiries = [connection[getModelLockKey(model)], connection[MODEL_LOCK_ALL],
+    connection.rateLimitedUntil, connection.unavailableUntil].map(value => Date.parse(value)).filter(Number.isFinite);
+  const until = Math.max(...expiries);
+  return until > Date.now() ? new Date(until).toISOString() : null;
 }
 
 /**

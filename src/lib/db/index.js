@@ -1,4 +1,12 @@
+import { writeKeyConnections } from "./repos/keyConnectionsRepo.js";
+import { publicKeyOwnership } from "../../shared/utils/keyOwnership.js";
+import { endCaptureWindow } from "./logRetention.js";
+import { nextSessionEpoch } from "../auth/dashboardRoles.js";
+import { decryptKey, encryptKey } from "./helpers/keyEncryption.js";
+import { keyVerifier } from "./helpers/keyVerifier.js";
 // Public API barrel — all DB functions
+import { requestLimits, REQUEST_WINDOWS } from "@/shared/utils/requestWindows.js";
+import { validateKeyPolicy } from "@/shared/utils/keyPolicy.js";
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { keyAccessFromColumns, keyAccessToColumns, validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
@@ -6,7 +14,7 @@ import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
 
 // Settings
 export {
-  getSettings, updateSettings, isCloudEnabled, getCloudUrl, exportSettings,
+  getSettings, updateSettings, updateDebugCaptureWindow, isCloudEnabled, getCloudUrl, exportSettings,
 } from "./repos/settingsRepo.js";
 
 // Provider connections
@@ -30,8 +38,9 @@ export {
 } from "./repos/proxyPoolsRepo.js";
 
 // API keys
+export { getPinnedKeysByConnection, KeyConnectionError } from "./repos/keyConnectionsRepo.js";
 export {
-  getApiKeys, getApiKeyById, getApiKeyByKey, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeySummaries, getApiKeyById, getApiKeyByKey, createApiKey, updateApiKey, deleteApiKey, validateApiKey, admitApiKey,
 } from "./repos/apiKeysRepo.js";
 
 // Combos
@@ -69,6 +78,12 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
+export { insertAuditEntry, listAuditEntries } from "./repos/auditRepo.js";
+export { getProviderSummary, getProviderHealthRows, writeConnectionObservation } from "./repos/providerHealthRepo.js";
+export { BUDGET_REQUEST_TIMEOUT_MS, getBudgetLedger, validBudgetUsage } from "./repos/budgetLedger.js";
+export { getNotificationsRepo } from "./repos/notificationsRepo.js";
+export { getUsageReports } from "./repos/usageAnalyticsRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();
@@ -79,7 +94,25 @@ export async function exportDb() {
     providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
-    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt, access: keyAccessFromColumns(r.accessRestricted, r.accessAllow) })),
+    apiKeys: db.all(`SELECT * FROM apiKeys`).map(row => ({
+      id: row.id,
+      ...publicKeyOwnership(row),
+      key: decryptKey(db, row),
+      name: row.name,
+      machineId: row.machineId,
+      isActive: row.isActive === 1,
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt,
+      budget: row.budget ? JSON.parse(row.budget) : null,
+      ...requestLimits(row),
+      requestCounters: Object.fromEntries(REQUEST_WINDOWS.map(window => [
+        window.name,
+        { bucket: row[window.bucket], used: row[window.used] },
+      ])),
+      access: keyAccessFromColumns(row.accessRestricted, row.accessAllow),
+      allowedConnections: JSON.parse(row.allowedConnections ?? "[]"),
+      connectionProviders: JSON.parse(row.connectionProviders ?? "{}"),
+    })),
     combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
     modelAliases: {},
     customModels: [],
@@ -102,7 +135,19 @@ export async function importDb(payload) {
   const db = await getAdapter();
 
   db.transaction(() => {
-    // Wipe all tables (keep _meta)
+    // A settings dump omits financial history. Never replenish a metered key by
+    // restoring its policy without its ledger; use a full SQLite backup.
+    if ((payload.apiKeys || []).some(k => k.budget != null) ||
+        db.get("SELECT 1 AS found FROM apiKeys WHERE budget IS NOT NULL LIMIT 1") ||
+        db.get("SELECT 1 AS found FROM budgetReservations LIMIT 1")) {
+      throw new Error("Metered keys require a full SQLite backup/restore");
+    }
+    if (db.get("SELECT 1 FROM retiredKeyFingerprints LIMIT 1")) {
+      throw new Error("Rotated keys require a full SQLite backup/restore");
+    }
+    const epoch = nextSessionEpoch(parseJson(db.get("SELECT data FROM settings WHERE id = 1")?.data, {}));
+    endCaptureWindow(db);
+    // Replace configuration, preserving local history.
     db.run(`DELETE FROM settings`);
     db.run(`DELETE FROM providerConnections`);
     db.run(`DELETE FROM providerNodes`);
@@ -112,9 +157,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
 
     // Settings
-    if (payload.settings) {
-      db.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(payload.settings)]);
-    }
+    db.run(`INSERT INTO settings(id, data) VALUES(1, ?)`, [stringifyJson({ ...payload.settings, debugBodyLoggingUntil: null, sessionEpoch: epoch })]);
 
     for (const c of payload.providerConnections || []) {
       const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
@@ -146,11 +189,25 @@ export async function importDb(payload) {
         if (!checked.ok) throw new Error(`apiKeys ${k.id}: ${checked.error}`);
         access = checked.value;
       }
+      const policy = validateKeyPolicy(k);
+      if (policy.error) throw new Error(policy.error);
       const cols = keyAccessToColumns(access);
       db.run(
-        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-        [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString(), cols.accessRestricted, cols.accessAllow]
+        `INSERT OR REPLACE INTO apiKeys(id, key_ciphertext, key_verifier, name, machineId, isActive, createdAt, accessRestricted, accessAllow, rpmLimit, hourlyRequestLimit, dailyRequestLimit, monthlyRequestLimit, expiresAt, description, owner, project) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [k.id, encryptKey(db, k.id, 1, k.key), keyVerifier(k.key), k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString(), cols.accessRestricted, cols.accessAllow, policy.value.rpmLimit ?? null, policy.value.hourlyRequestLimit ?? null, policy.value.dailyRequestLimit ?? null, policy.value.monthlyRequestLimit ?? null, policy.value.expiresAt ?? null, policy.value.description ?? null, policy.value.owner ?? null, policy.value.project ?? null]
       );
+      if (k.allowedConnections !== undefined) {
+        writeKeyConnections(db, k.id, k.allowedConnections, k.connectionProviders);
+      }
+      if (k.requestCounters !== undefined) {
+        for (const w of REQUEST_WINDOWS) {
+          const counter = k.requestCounters?.[w.name];
+          if (!counter || !Number.isSafeInteger(counter.bucket) || counter.bucket < -1 ||
+              counter.bucket > w.at(253402300799999) || !Number.isSafeInteger(counter.used) || counter.used < 0 ||
+              (counter.bucket === -1 && counter.used !== 0)) throw new Error("Invalid request counter: " + w.name);
+          db.run(`UPDATE apiKeys SET ${w.bucket}=?, ${w.used}=? WHERE id=?`, [counter.bucket, counter.used, k.id]);
+        }
+      }
     }
     for (const c of payload.combos || []) {
       db.run(

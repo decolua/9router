@@ -11,6 +11,7 @@
 - **Token Saver**: add the REA allow prompt toggle — strips the built-in security-policy paragraphs from CLI system prompts and appends shared REA guidance for every wire format (claude/openai/responses/gemini/kiro); fail-open, idempotent and off by default.
 
 ## Fixes
+- **Chat Completions**: end translated streams with one `data: [DONE]` even when the Responses upstream ends with `response.completed` alone.
 - **Kiro**: identify as Kiro IDE 1.4.154 on inference, token refresh, model catalog, usage, profile lookup and API-key validation — Kiro's client-version gate rejected the old `kiro-ide/1.0.0` / `KiroIDE-0.10.32` identities with "This version of Kiro is no longer supported" (#5613). All callers now share one identity builder, so they cannot drift apart again.
 - **Antigravity**: correct the model ids and thinking tiers — Carbon, Argon and Hydrogen default to high and Claude 5.5 to medium, Sonnet/Opus 5.5 gain their `max` tiers, the Gemini 4 Neon family is added, and quota lookups, MITM slots and CLI menus follow the new ids.
 - **Antigravity**: align the client identity with the live Hub (2.33.0) and keep the incoming User-Agent shape, so `antigravity/hub/<version>` keeps its `hub/` segment and platform suffix; streaming calls carry `Accept: text/event-stream` again.

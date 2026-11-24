@@ -12,7 +12,12 @@ function invalidate() {
 }
 
 async function getUserPricing() {
-  return await pricingKv.getAll();
+  const providers = await pricingKv.getAll();
+  // Keep the editable /api/pricing contract numeric-only.
+  for (const models of Object.values(providers)) {
+    for (const rates of Object.values(models)) delete rates.updatedAt;
+  }
+  return providers;
 }
 
 export async function getPricing() {
@@ -49,11 +54,27 @@ export async function getPricing() {
 }
 
 export async function getPricingForModel(provider, model) {
-  if (!model) return null;
-  const userPricing = await getUserPricing();
-  if (provider && userPricing[provider]?.[model]) return userPricing[provider][model];
+  if (!provider && model) {
+    const { getPricingForModel: resolveConst } = await import("open-sse/providers/pricing.js");
+    return resolveConst(provider, model);
+  }
+  return (await getUsageTariff(provider, model)).rates;
+}
+
+// Version is the revision date of the bundled catalog, not the request date.
+const catalog = { source: "default", version: "2026-11-23" };
+const unpriced = { ...catalog, matched: false };
+
+export async function getUsageTariff(provider, model) {
+  if (!provider || !model) return { rates: null, pricing: unpriced };
+  const models = await pricingKv.get(provider);
+  if (models && Object.hasOwn(models, model)) {
+    const { updatedAt, ...rates } = models[model];
+    return { rates, pricing: updatedAt ? { source: "user", updatedAt } : { source: "user", version: "legacy" } };
+  }
   const { getPricingForModel: resolveConst } = await import("open-sse/providers/pricing.js");
-  return resolveConst(provider, model);
+  const rates = resolveConst(provider, model);
+  return { rates, pricing: rates ? catalog : unpriced };
 }
 
 // Atomic merge inside transaction (per-provider read-modify-write)
@@ -65,7 +86,7 @@ export async function updatePricing(pricingData) {
       const current = row ? (parseJson(row.value, {}) || {}) : {};
       const merged = { ...current };
       for (const [model, pricing] of Object.entries(models)) {
-        merged[model] = pricing;
+        merged[model] = { ...pricing, updatedAt: new Date().toISOString() };
       }
       db.run(
         `INSERT INTO kv(scope, key, value) VALUES('pricing', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,

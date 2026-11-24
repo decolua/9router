@@ -1,10 +1,23 @@
 import { defineConfig } from "vitest/config";
+import { transformWithOxc } from "vite";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
+// Dashboard components are JSX in .js files (Next compiles them that way);
+// Vite only parses JSX in .jsx, so compile these before import analysis.
+const jsxInJs = {
+  name: "dashboard-jsx-in-js",
+  enforce: "pre",
+  transform(code, id) {
+    if (!/\/src\/(app|shared)\/.*\.js$/.test(id)) return null;
+    return transformWithOxc(code, id, { lang: "jsx", jsx: { runtime: "automatic" } });
+  },
+};
+
 export default defineConfig({
+  plugins: [jsxInJs],
   test: {
     environment: "node",
     globals: true,

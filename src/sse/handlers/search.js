@@ -1,3 +1,4 @@
+import { dispatchMedia } from "@/lib/observability/mediaDispatch.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -138,7 +139,7 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
   // No-auth providers (e.g. searxng) bypass credential lookup
   if (resolvedProvider.noAuth) {
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
-    const result = await handleSearchCore({
+    const result = await dispatchMedia(handleSearchCore, {
       body: coreBody,
       provider: resolvedProvider,
       providerConfig,
@@ -201,7 +202,7 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
 
     const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
 
-    const result = await handleSearchCore({
+    const result = await dispatchMedia(handleSearchCore, {
       body: coreBody,
       provider: resolvedProvider,
       providerConfig,

@@ -1,3 +1,4 @@
+import { audit } from "@/lib/observability/audit";
 import { NextResponse } from "next/server";
 import {
   getMitmStatus,
@@ -114,6 +115,7 @@ export async function POST(request) {
       try {
         const normalized = normalizeMitmRouterBaseUrlInput(mitmRouterBaseUrl);
         await updateSettings({ mitmRouterBaseUrl: normalized });
+        await audit(request, "settings.update", { fields: ["mitmRouterBaseUrl"] });
       } catch (e) {
         return NextResponse.json(
           { error: e.message || "Invalid MITM router URL" },
