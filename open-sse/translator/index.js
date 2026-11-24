@@ -142,6 +142,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     applyThinking(targetFormat, model, result, provider, thinkingIntent);
   }
 
+  // The unified thinking normalizer uses Chat Completions' reasoning_effort
+  // for OpenAI-shaped targets; the Responses endpoint requires reasoning.effort.
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && result.reasoning_effort !== undefined) {
+    result.reasoning = { ...(result.reasoning && typeof result.reasoning === "object" ? result.reasoning : {}), effort: result.reasoning_effort };
+    delete result.reasoning_effort;
+  }
+
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {
