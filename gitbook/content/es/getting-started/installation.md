@@ -404,7 +404,7 @@ pm2 startup
 docker pull 9router/9router:latest
 
 docker run -d \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   -e JWT_SECRET="your-secure-secret" \
   -e INITIAL_PASSWORD="your-password" \
   -v 9router-data:/root/.9router \
