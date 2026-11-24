@@ -5,6 +5,7 @@ import {
   KEY_ACCESS_MAX_ENTRY_LENGTH,
   KEY_ACCESS_UNRESTRICTED,
 } from "@/shared/constants/keyAccess.js";
+import { validateKeyLimitInput } from "@/shared/utils/keyLimit.js";
 
 /**
  * Normalize an allow list: keep strings only, trim, drop empties, de-duplicate
@@ -77,4 +78,24 @@ export function validateKeyAccessInput(input) {
     return { ok: false, error: `access.allow entries must be at most ${KEY_ACCESS_MAX_ENTRY_LENGTH} characters` };
   }
   return { ok: true, value: { restricted: input.restricted, allow: normalizeAllowList(allow) } };
+}
+
+/**
+ * Validate a limit change against the key it will live on. `access` is the key's
+ * access AFTER this request. `getStatus` is getLimitStatus from the engine,
+ * injected so this stays testable. Clearing (null) is always allowed.
+ * @returns {Promise<{ ok: true, value: object|null } | { ok: false, error: string }>}
+ */
+export async function validateLimitForKey(limitInput, key, access, getStatus) {
+  const checked = validateKeyLimitInput(limitInput);
+  if (!checked.ok) return checked;
+  if (checked.value === null) return checked;
+  const status = await getStatus({ access, limit: null, key: key.key });
+  if (status.unbounded) {
+    return { ok: false, error: "A cost limit needs a restricted key: an unrestricted key can reach every model, including unpriced ones" };
+  }
+  if (!status.eligible) {
+    return { ok: false, error: `A cost limit cannot be set because this key can access unpriced models: ${status.unpriced.join(", ")}` };
+  }
+  return checked;
 }
