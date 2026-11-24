@@ -866,6 +866,7 @@ export function parseQuotaData(provider, data) {
 
       case "opendesign-go":
       case "deeprelay":
+      case "tokenharbor":
       case "synthetic":
         // Gateway quota rows: windows carry remainingPercentage; wallet/spend
         // rows also carry a currency unit and an explicit unlimited flag.

@@ -27,6 +27,7 @@ import { getGlmUsage } from "./usage/glm.js";
 import { getCommandCodeUsage } from "./usage/commandcode.js";
 import { getSyntheticUsage } from "./usage/synthetic.js";
 import { getDeepRelayUsage } from "./usage/deeprelay.js";
+import { getTokenHarborUsage } from "./usage/tokenharbor.js";
 import { getOpenDesignUsage } from "./usage/opendesign.js";
 import {
   getIflowUsage,
@@ -74,6 +75,7 @@ const USAGE_HANDLERS = {
   commandcode: (c) => getCommandCodeUsage(c.apiKey, c.proxyOptions),
   synthetic: (c) => getSyntheticUsage(c.apiKey, c.proxyOptions),
   deeprelay: (c) => getDeepRelayUsage(c.apiKey, c.proxyOptions),
+  tokenharbor: (c) => getTokenHarborUsage(c.apiKey, c.proxyOptions),
   // OpenDesign Go reads quota with the control-plane key from
   // `providerSpecificData`, never the runtime apiKey (sk-amr cannot see quota).
   "opendesign-go": (c) => getOpenDesignUsage(c),
