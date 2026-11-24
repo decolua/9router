@@ -11,6 +11,19 @@ import { GrokCliExecutor, _resetGrokCliTurnStore } from "../../open-sse/executor
 import { translateRequest } from "../../open-sse/translator/index.js";
 
 describe("openai ↔ responses multi-turn reasoning", () => {
+  it("openai→responses preserves an explicit prompt cache key", () => {
+    const out = openaiToOpenAIResponsesRequest(
+      "gpt-example",
+      {
+        messages: [{ role: "user", content: "hello" }],
+        prompt_cache_key: "stable-cache-key",
+      },
+      true,
+      null
+    );
+    expect(out.prompt_cache_key).toBe("stable-cache-key");
+  });
+
   it("openai→responses re-emits reasoning item with summary + encrypted_content", () => {
     const body = {
       model: "grok-4.5",
