@@ -387,6 +387,31 @@ function resolveGeminiWebCookie(credentials) {
     .join("; ");
 }
 
+export function mergeRotatedGoogleCookies(originalCookie, contextCookies) {
+  const merged = new Map();
+  for (const { name, value } of parseCookies(originalCookie || "")) {
+    merged.set(name, value);
+  }
+  for (const c of contextCookies || []) {
+    if (!c?.name || typeof c.value !== "string" || !c.value) continue;
+    if (c.domain && !c.domain.endsWith("google.com")) continue;
+    merged.set(c.name, c.value);
+  }
+  return Array.from(merged.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
+}
+
+async function syncRotatedCookies(context, credentials, originalCookie) {
+  if (!context || !credentials) return;
+  const cookies = await context.cookies().catch(() => null);
+  if (!Array.isArray(cookies) || cookies.length === 0) return;
+  const nextCookie = mergeRotatedGoogleCookies(originalCookie, cookies);
+  if (nextCookie && nextCookie !== originalCookie) {
+    credentials.apiKey = nextCookie;
+  }
+}
+
 function errorResponse(status, error, extraHeaders = {}) {
   return new Response(JSON.stringify({ error }), {
     status,
@@ -519,6 +544,7 @@ export class GeminiWebExecutor extends BaseExecutor {
       // The composer selector is the readiness check. A fixed sleep ran even
       // when the editor was already there, and still raced a slow load.
       await waitForGeminiComposer(page, readQuota);
+      await syncRotatedCookies(context, credentials, cookie);
 
       // Verify the requested Gemini UI mode is actually active BEFORE anything
       // is typed. `gemini-3.1-pro` is the mode gemini.google.com/app already
@@ -649,6 +675,7 @@ export class GeminiWebExecutor extends BaseExecutor {
                 controller.enqueue(encoder.encode(SSE_DONE));
                 controller.close();
               } finally {
+                await syncRotatedCookies(streamContext, credentials, cookie);
                 await streamPage.close().catch(() => {});
                 await streamContext.close().catch(() => {});
                 const { releaseGeminiBrowser } = await import("./gemini-web/browserLease.js");
@@ -734,6 +761,7 @@ export class GeminiWebExecutor extends BaseExecutor {
       // Close this request's context. The Chromium process stays warm until it
       // has been idle.
       try {
+        await syncRotatedCookies(context, credentials, cookie);
         await context?.close();
       } catch {
         /* ignore close errors */
@@ -769,6 +797,7 @@ export class GeminiWebExecutor extends BaseExecutor {
         const page = await context.newPage();
         const readQuota = await openGeminiApp(page);
         const inputEl = await waitForGeminiComposer(page, readQuota);
+        await syncRotatedCookies(context, credentials, cookie);
         await inputEl.click();
         await page.keyboard.insertText(buildImagePrompt(prompt, size));
         await page.waitForTimeout(300);
@@ -777,6 +806,7 @@ export class GeminiWebExecutor extends BaseExecutor {
         results.push(media);
       } finally {
         try {
+          await syncRotatedCookies(context, credentials, cookie);
           await context?.close();
         } catch {
           /* ignore close errors */

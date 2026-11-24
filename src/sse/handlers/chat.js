@@ -355,6 +355,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         await clearAccountError(credentials.connectionId, credentials, model);
         // "Consecutive" strikes: a success clears the breaker for this pair.
         clearAntigravityStrikes(credentials.connectionId, model);
+        if (refreshedCredentials.apiKey && refreshedCredentials.apiKey !== credentials.apiKey) {
+          await updateProviderCredentials(credentials.connectionId, { apiKey: refreshedCredentials.apiKey });
+        }
       }
     });
 

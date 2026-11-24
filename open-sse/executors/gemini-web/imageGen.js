@@ -21,12 +21,14 @@ const READ_IMAGE_STATE = `(() => {
         src: i.currentSrc || i.src || '',
         w: i.naturalWidth || 0,
         h: i.naturalHeight || 0,
+        complete: Boolean(i.complete),
       }))
     : [];
   return {
     count: msgs.length,
     generating: !!document.querySelector('[data-test-id="thinking-overlay-content"], button[aria-label*="Stop" i]'),
     images: imgs.filter((i) => i.src && !i.src.includes('gstatic') && i.w > 0),
+    failedImages: imgs.filter((i) => i.src && !i.src.includes('gstatic') && i.complete && i.w === 0),
   };
 })()`;
 
@@ -89,31 +91,58 @@ export function buildImagePrompt(prompt, size) {
   return `Generate an image${hints}: ${prompt}`;
 }
 
+const GEMINI_IMAGE_HOST_RE = /^https:\/\/lh3\.google(?:usercontent)?\.com\/(?:gg|rd-gg(?:-dl)?)\//i;
+
 /**
  * Wait for the generated image inside the reply that follows the just-sent
  * message and return it as base64. Completion: an <img> with a real
  * (non-gstatic, loaded) source is present and the turn is no longer working.
  */
-export async function waitForGeminiImage(page, { timeoutMs = IMAGE_TIMEOUT_MS, signal }) {
+export async function waitForGeminiImage(page, { timeoutMs = IMAGE_TIMEOUT_MS, pollIntervalMs = POLL_INTERVAL_MS, signal } = {}) {
   const started = Date.now();
   let sawActivity = false;
+  let imageHttpError = null;
 
-  while (true) {
-    if (signal?.aborted) throw new Error("Request aborted");
-    if (Date.now() - started > timeoutMs) throw new Error("Gemini image generation timed out");
-    await sleep(POLL_INTERVAL_MS);
-
-    const st = await readImageState(page);
-    if (st.count > 0 || st.generating) sawActivity = true;
-    if (!sawActivity && Date.now() - started > FIRST_TOKEN_TIMEOUT_MS) {
-      throw new Error("no first sign of activity from Gemini");
+  const onResponse = (res) => {
+    if (imageHttpError) return;
+    const url = typeof res?.url === "function" ? res.url() : "";
+    const status = typeof res?.status === "function" ? res.status() : 0;
+    if (status >= 400 && GEMINI_IMAGE_HOST_RE.test(url)) {
+      imageHttpError =
+        status === 403
+          ? `Gemini generated the image, but Google returned 403 Forbidden when downloading it (${url})`
+          : `Gemini generated the image, but image download failed with HTTP ${status} (${url})`;
     }
+  };
+  page.on?.("response", onResponse);
 
-    const ready = st.images.filter((i) => i.w >= MIN_IMAGE_EDGE);
-    if (ready.length > 0 && !st.generating) {
-      const image = ready[ready.length - 1];
-      const media = await fetchImageAsBase64(page, image.src);
-      return { ...media, width: image.w, height: image.h };
+  try {
+    while (true) {
+      if (signal?.aborted) throw new Error("Request aborted");
+      if (Date.now() - started > timeoutMs) throw new Error("Gemini image generation timed out");
+      await sleep(pollIntervalMs);
+
+      const st = await readImageState(page);
+      if (st.count > 0 || st.generating) sawActivity = true;
+      if (!sawActivity && Date.now() - started > FIRST_TOKEN_TIMEOUT_MS) {
+        throw new Error("no first sign of activity from Gemini");
+      }
+
+      const ready = st.images.filter((i) => i.w >= MIN_IMAGE_EDGE);
+      if (ready.length > 0 && !st.generating) {
+        const image = ready[ready.length - 1];
+        const media = await fetchImageAsBase64(page, image.src);
+        return { ...media, width: image.w, height: image.h };
+      }
+
+      if (imageHttpError && (!st.generating || st.failedImages?.length > 0)) {
+        throw new Error(imageHttpError);
+      }
+      if (st.failedImages?.length > 0 && !st.generating && st.images.length === 0) {
+        throw new Error("Gemini generated the image, but the browser failed to load it (naturalWidth=0)");
+      }
     }
+  } finally {
+    page.off?.("response", onResponse);
   }
 }
