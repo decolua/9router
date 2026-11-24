@@ -16,12 +16,21 @@ const KNOWN_MODELS = [
 const DEFAULT_MODEL = KNOWN_MODELS[0] || FALLBACK_MODEL;
 const DEFAULT_VOICE = "Kore";
 
+// Gemini model ids all end in -tts; anything else is a voice name.
+// This keeps custom/not-yet-catalogued TTS models usable instead of being
+// misread as a voice and rejected upstream.
+const MODEL_ID_PATTERN = /^gemini-[a-z0-9.\-]+-tts$/i;
+
 // Parse "model/voice" — if input doesn't match a known TTS model, treat it as voice with default model
 function parseGeminiModelVoice(input) {
   if (!input) return { modelId: DEFAULT_MODEL, voiceId: DEFAULT_VOICE };
   for (const id of KNOWN_MODELS) {
     if (input === id) return { modelId: id, voiceId: DEFAULT_VOICE };
     if (input.startsWith(`${id}/`)) return { modelId: id, voiceId: input.slice(id.length + 1) };
+  }
+  const [head, ...rest] = input.split("/");
+  if (MODEL_ID_PATTERN.test(head)) {
+    return { modelId: head, voiceId: rest.join("/") || DEFAULT_VOICE };
   }
   return { modelId: DEFAULT_MODEL, voiceId: input };
 }

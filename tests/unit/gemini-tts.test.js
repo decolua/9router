@@ -80,6 +80,26 @@ describe("Gemini TTS", () => {
     expect(sent.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe("Puck");
   });
 
+  it("treats an unknown *-tts id as a model, not a voice", async () => {
+    mockGeminiAudioResponse();
+
+    const result = await handleTtsCore({
+      provider: "gemini",
+      model: "gemini-3.8-flash-tts",
+      input: "Hello from Gemini",
+      credentials: { apiKey: "test-key" },
+      responseFormat: "json",
+    });
+
+    expect(result.success).toBe(true);
+    expect(global.fetch.mock.calls[0][0]).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent?key=test-key"
+    );
+
+    const sent = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(sent.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe("Kore");
+  });
+
   it("exposes current Gemini TTS models in the TTS catalog", () => {
     const entries = buildTtsProviderModels();
 
