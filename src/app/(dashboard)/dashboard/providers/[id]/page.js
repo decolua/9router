@@ -70,6 +70,7 @@ export default function ProviderDetailPage() {
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
   const [headerImgError, setHeaderImgError] = useState(false);
+  const [headerUseGenericIcon, setHeaderUseGenericIcon] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
@@ -1393,14 +1394,20 @@ export default function ProviderDetailPage() {
   }
 
   // Determine icon path: OpenAI Compatible providers use specialized icons
+  // Compatible nodes try /providers/<node id>.png first, then the generic icon
   const getHeaderIconPath = () => {
+    const generic = getGenericCompatibleIconPath();
+    if (generic) return (!headerUseGenericIcon && getProviderIconSrc(providerInfo.id)) || generic;
+    return getProviderIconSrc(providerInfo.id);
+  };
+  const getGenericCompatibleIconPath = () => {
     if (isOpenAICompatible && providerInfo.apiType) {
       return providerInfo.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
     }
     if (isAnthropicCompatible) {
       return "/providers/anthropic-m.png";
     }
-    return getProviderIconSrc(providerInfo.id);
+    return null;
   };
 
   return (
@@ -1433,6 +1440,10 @@ export default function ProviderDetailPage() {
                 sizes="48px"
                 onError={() => {
                   markProviderIconMissing(providerInfo.id);
+                  if (getGenericCompatibleIconPath() && !headerUseGenericIcon) {
+                    setHeaderUseGenericIcon(true);
+                    return;
+                  }
                   setHeaderImgError(true);
                 }}
               loading="lazy"
