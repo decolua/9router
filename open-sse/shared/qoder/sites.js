@@ -12,12 +12,13 @@
  *              from constants.js; rsaPublicKey currently shared by all sites)
  *   deviceFlow device-flow specifics: redirectUri (null ⇒ omit redirect_uri)
  *   catalog    model catalog fallback (503) and site-specific model list path
- *   usage      quota endpoint kind: "quotaApi" (default) or "accountContext"
+ *   usage      quota endpoint: kind "quotaApi" (default) or "accountContext";
+ *              path overrides the account-context endpoint (kind only)
  *   pat        whether personal access tokens (pt-…) are supported
  *   enterprise enterprise deployable marker (login requires a domain input)
  */
 
-import { QODER_RSA_PUBLIC_KEY } from "./constants.js";
+import { QODER_RSA_PUBLIC_KEY, qoderInferenceBase } from "./constants.js";
 
 export const QODER_SITE_QODER = Object.freeze({
   id: "qoder",
@@ -61,10 +62,41 @@ export const QODER_SITE_QODER_CN = Object.freeze({
   enterprise: Object.freeze({ enabled: false }),
 });
 
+export const QODER_SITE_QWENWORK = Object.freeze({
+  id: "qwenwork",
+  bases: {
+    chat: "https://gateway.qwenwork.cn",
+    chatAlt: "https://gateway.qwenwork.cn",
+    openApi: "https://gateway.qwenwork.cn",
+    center: "https://gateway.qwenwork.cn",
+    login: "https://gateway.qwenwork.cn/device/selectAccounts",
+    website: "https://qwenwork.cn",
+  },
+  cosy: Object.freeze({
+    // QwenWork's desktop client (QwenWorkCN.app) sends these COSY values;
+    // rsaPublicKey is the same RSA key as Qoder's.
+    clientType: "6",
+    ideVersion: "1.1.59",
+    rsaPublicKey: QODER_RSA_PUBLIC_KEY,
+  }),
+  deviceFlow: Object.freeze({ redirectUri: "qwenwork-cn://" }),
+  catalog: Object.freeze({ fallbackModels: null }),
+  usage: Object.freeze({
+    kind: "accountContext",
+    path: "/api/v1/adapter/user/account-context?include=user,plan,quota",
+  }),
+  pat: false, // gateway.qwenwork.cn has no /api/v1/jobToken/exchange
+  enterprise: Object.freeze({ enabled: false }),
+  // Params from magpie-community/plugins PR #319 (qwenwork site). Public
+  // cloud personal accounts; the enterprise VPC deployable is a separate
+  // "qwenwork-enterprise" site (later task).
+});
+
 /** All Qoder-family sites, keyed by provider id. */
 export const QODER_SITES = Object.freeze({
   qoder: QODER_SITE_QODER,
   "qoder-cn": QODER_SITE_QODER_CN,
+  qwenwork: QODER_SITE_QWENWORK,
 });
 
 /** Site object for a provider id; unknown ids fall back to Qoder intl. */
@@ -72,7 +104,17 @@ export function qoderSiteOf(providerId) {
   return QODER_SITES[providerId] || QODER_SITE_QODER;
 }
 
-/** True when the provider id belongs to the Qoder family (has a site entry). */
+
+/**
+ * Inference base URL for a site's credential. Qoder intl keeps the
+ * job-token (jt-…) split (api2 vs api3 — see qoderInferenceBase in
+ * constants.js); every other site is a single gateway that serves all
+ * token kinds, so its chat base is the answer outright.
+ */
+export function qoderInferenceBaseForSite(credentials, site) {
+  if (site && site.id !== "qoder") return site.bases.chat;
+  return qoderInferenceBase(credentials);
+}
 export function isQoderFamilyProvider(providerId) {
   return Object.prototype.hasOwnProperty.call(QODER_SITES, providerId);
 }

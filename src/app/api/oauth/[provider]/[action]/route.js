@@ -266,6 +266,7 @@ export async function GET(request, { params }) {
         "codebuddy-intl",
         "qoder",
         "qoder-cn",
+        "qwenwork",
         "grok-cli",
         "muse",
         "glm",
@@ -565,7 +566,7 @@ export async function POST(request, { params }) {
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
         result = await pollForToken(provider, deviceCode, null, extraData);
-      } else if (provider === "qoder" || provider === "qoder-cn") {
+      } else if (provider === "qoder" || provider === "qoder-cn" || provider === "qwenwork") {
         // Qoder needs both the PKCE verifier (codeVerifier) and the machineId
         // captured at device-code time (extraData._qoderMachineId) so
         // mapTokens can persist it for COSY signing.

@@ -34,6 +34,8 @@ import {
   getVercelAiGatewayUsage,
   getQoderUsage,
 } from "./usage/misc.js";
+import { U } from "./usage/shared.js";
+import { getQwenworkUsage } from "./usage/qwenwork.js";
 
 /**
  * Get usage data for a provider connection
@@ -50,6 +52,7 @@ const USAGE_HANDLERS = {
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   qoder: (c) => getQoderUsageFor(c),
   "qoder-cn": (c) => getQoderUsageFor(c),
+  qwenwork: (c) => getQwenworkUsage(c.accessToken, U("qwenwork").url, c.proxyOptions),
   iflow: (c) => getIflowUsage(c.accessToken),
   ollama: (c) => getOllamaUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   // OAuth connections store the coding-plan key on accessToken (no apiKey)

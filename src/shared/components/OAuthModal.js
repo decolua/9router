@@ -290,6 +290,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "codebuddy-intl",
         "qoder",
         "qoder-cn",
+        "qwenwork",
         "grok-cli",
         "muse",
         "glm",
@@ -330,7 +331,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _authMethod: data._authMethod,
               _startUrl: data._startUrl,
             }
-          : (provider === "qoder" || provider === "qoder-cn")
+          : (provider === "qoder" || provider === "qoder-cn" || provider === "qwenwork")
           ? {
               _qoderNonce: data._qoderNonce,
               _qoderMachineId: data._qoderMachineId,
