@@ -249,7 +249,20 @@ async function launchBrowser(options) {
   }
 }
 
-function parseCookieString(raw, domain) {
+const COOKIE_ATTR_NAMES = new Set([
+  "path",
+  "domain",
+  "expires",
+  "max-age",
+  "secure",
+  "httponly",
+  "samesite",
+]);
+
+export function parseCookieString(raw, domain) {
+  const domainStr = String(domain || "");
+  const bareDomain = domainStr.replace(/^\./, "");
+  const dottedDomain = bareDomain ? `.${bareDomain}` : "";
   return raw
     .split(";")
     .map((p) => p.trim())
@@ -260,10 +273,11 @@ function parseCookieString(raw, domain) {
       const name = pair.slice(0, eq).trim();
       const value = pair.slice(eq + 1).trim();
       if (!name || !value) return null;
+      if (COOKIE_ATTR_NAMES.has(name.toLowerCase())) return null;
       return {
         name,
         value,
-        domain: domain.startsWith(".") ? domain : `.${domain}`,
+        domain: name.startsWith("__Host-") ? bareDomain : (domainStr.startsWith(".") ? domainStr : dottedDomain),
         path: "/",
         expires: -1,
         httpOnly: false,
