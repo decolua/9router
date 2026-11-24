@@ -148,3 +148,65 @@ export function formatProviderError(error, provider, model, statusCode) {
   const causeStr = causeCode || causeMsg ? ` (cause: ${[causeCode, causeMsg].filter(Boolean).join(": ")})` : "";
   return `[${code}]: ${message}${causeStr}`;
 }
+
+// Names undici raises when a request is aborted by AbortSignal.timeout().
+const UPSTREAM_TIMEOUT_NAMES = new Set(["TimeoutError", "AbortError"]);
+// Codes meaning the peer never answered in time.
+const UPSTREAM_TIMEOUT_CODES = new Set([
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+]);
+// Codes meaning the peer could not be reached at all (DNS, TCP, TLS).
+const UPSTREAM_UNREACHABLE_CODES = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EPIPE",
+  "UND_ERR_SOCKET",
+  "CERT_HAS_EXPIRED",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+]);
+
+/**
+ * Classify a thrown fetch failure against an upstream provider so a route can
+ * answer honestly instead of falling back to a blanket 500.
+ *
+ * A timeout or a refused/reset connection is the *upstream's* problem, not ours:
+ * reporting it as `500 internal server error` tells the caller nothing and hides
+ * a dead provider behind our own health. 504/502 name the real fault.
+ *
+ * @param {Error & {cause?: {code?: string}}} error - the value thrown by fetch
+ * @returns {{status: number, code: string, message: string}}
+ */
+export function classifyUpstreamError(error) {
+  const name = error?.name || "";
+  const code = error?.code || error?.cause?.code || "";
+
+  if (UPSTREAM_TIMEOUT_NAMES.has(name) || UPSTREAM_TIMEOUT_CODES.has(code)) {
+    return {
+      status: 504,
+      code: "UPSTREAM_TIMEOUT",
+      message: `Upstream provider timed out (${code || name})`,
+    };
+  }
+
+  if (UPSTREAM_UNREACHABLE_CODES.has(code)) {
+    return {
+      status: 502,
+      code: "UPSTREAM_UNREACHABLE",
+      message: `Upstream provider unreachable (${code})`,
+    };
+  }
+
+  return {
+    status: 500,
+    code: "UPSTREAM_FETCH_FAILED",
+    message: error?.message || "Failed to reach upstream provider",
+  };
+}
