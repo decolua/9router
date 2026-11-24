@@ -109,13 +109,13 @@ describe("aggregateComboCapabilities — context/output limits", () => {
     expect(caps.contextWindow).toBe(262144);
   });
 
-  it("maxOutput is the maximum across all models", () => {
+  it("maxOutput is the minimum across all models", () => {
     // mimo-v2.5: 131072; kimi-k2.5 (*kimi*k2* pattern): 262144
     const caps = aggregateComboCapabilities([
       "opencode-go/mimo-v2.5",
       "opencode-go/kimi-k2.5",
     ]);
-    expect(caps.maxOutput).toBe(262144);
+    expect(caps.maxOutput).toBe(131072);
   });
 });
 

@@ -80,4 +80,25 @@ describe("/v1/models combo limits", () => {
       capabilities: { contextWindow: 200000 },
     });
   });
+
+  it.each([
+    ["flat", ["ocg/mimo-v2.5", "ocg/kimi-k2.5"]],
+    ["reversed", ["ocg/kimi-k2.5", "ocg/mimo-v2.5"]],
+    ["nested", ["larger-output-combo", "ocg/mimo-v2.5"]],
+  ])("publishes consistent minimum output limits for a %s combo", async (_label, seats) => {
+    const models = await modelsWithCombo("opencode-go", "mimo-v2.5", [
+      { name: "larger-output-combo", models: ["ocg/kimi-k2.5"] },
+      { name: "mixed-output-combo", models: seats },
+    ]);
+    const combo = models.find((model) => model.id === "mixed-output-combo");
+
+    expect(combo).toMatchObject({
+      max_completion_tokens: 16000,
+      capabilities: { maxOutput: 16000 },
+    });
+    for (const entry of models.filter((model) => model.owned_by === "combo")) {
+      expect(entry.capabilities.maxOutput).toBe(entry.max_completion_tokens);
+      expect(entry.capabilities.contextWindow).toBe(entry.context_length);
+    }
+  });
 });
