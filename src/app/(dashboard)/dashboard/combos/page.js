@@ -980,7 +980,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
       {/* Model pool list/table */}
       {models.length === 0 ? (
         <div className="mt-3 py-2 text-center text-xs text-text-muted italic">
-          No models in pool (will fallback to {DEFAULT_FALLBACK_MODEL})
+          {`No models in pool (will fallback to ${DEFAULT_FALLBACK_MODEL})`}
         </div>
       ) : (
         <div className="mt-3 overflow-hidden rounded-lg border border-border/50">
