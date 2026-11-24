@@ -343,14 +343,16 @@ describe("PR #1175 - porcelain regression deeper", () => {
     expect(filter).toBe(gitStatus);
   });
 
-  it("manual gitStatus() call on workdir-only porcelain still parses correctly", () => {
+  it("manual gitStatus() call on workdir-only porcelain passes entries through", () => {
     const input = [
       " M src/a.js",
       " M src/b.js",
       " D src/c.js"
     ].join("\n");
     const out = gitStatus(input);
-    expect(out).toContain("Modified: 3 files");
+    // Upstream format_status_output keeps porcelain entries verbatim
+    expect(out).toBe(input);
+    expect(out).not.toContain("Modified:");
   });
 });
 

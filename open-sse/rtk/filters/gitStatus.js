@@ -1,117 +1,69 @@
-// Port of git::format_status_output (rtk/src/cmds/git/git.rs:619-730)
-// Output format:
-//   * <branch>
-//   + Staged: N files
-//      path1
-//      ... +K more
-//   ~ Modified: N files
-//   ? Untracked: N files
-//   conflicts: N files
-//   clean — nothing to commit
-import { STATUS_MAX_FILES, STATUS_MAX_UNTRACKED } from "../constants.js";
+// Port of upstream git-status output rules (rtk/src/cmds/git/git_cmd.rs):
+//
+// - `format_status_output` (porcelain): the `## branch` header becomes
+//   `* branch`, every other porcelain line passes through unchanged, and a
+//   branch-only status gains a `clean — nothing to commit` marker. Upstream no
+//   longer groups entries into Staged/Modified/Untracked buckets.
+// - `filter_status_with_args` (plain `git status`): drop empty lines and git's
+//   own hint lines (`(use "git ...`), collapse a clean tree to its clean line,
+//   and answer `ok` when nothing is left.
+
+// Rust: strip lines that only tell the reader which git command to run next.
+const RE_GIT_HINT = /^\(use "git|^\(create\/copy files/;
+const RE_GIT_HINT_INLINE = /\(use "git (add|restore)"/;
+
+function formatStatusOutput(input) {
+  // Rust: .lines().filter(|line| !line.trim().is_empty())
+  const lines = input.split("\n").filter(line => line.trim().length > 0);
+  if (lines.length === 0) return "Clean working tree";
+
+  const out = [];
+  const first = lines[0];
+  if (first.startsWith("##")) {
+    // Rust: trim_start_matches("## ")
+    out.push(`* ${first.replace(/^(## )+/, "")}`);
+  } else {
+    out.push(first);
+  }
+  for (let i = 1; i < lines.length; i++) out.push(lines[i]);
+
+  if (lines.length === 1 && first.startsWith("##")) {
+    out.push("clean — nothing to commit");
+  }
+
+  return out.join("\n");
+}
+
+function filterStatusWithArgs(input) {
+  const result = [];
+
+  for (const line of input.split("\n")) {
+    const trimmed = line.trim();
+
+    if (trimmed.length === 0) continue;
+    if (RE_GIT_HINT.test(trimmed) || RE_GIT_HINT_INLINE.test(trimmed)) continue;
+
+    // Special case: clean working tree
+    if (trimmed.includes("nothing to commit") && trimmed.includes("working tree clean")) {
+      result.push(trimmed);
+      break;
+    }
+
+    result.push(line);
+  }
+
+  return result.length === 0 ? "ok" : result.join("\n");
+}
 
 export function gitStatus(input) {
-  const lines = input.split("\n");
-  if (lines.length === 0 || (lines.length === 1 && !lines[0].trim())) {
-    return "Clean working tree";
-  }
+  if (!input || !input.trim()) return "Clean working tree";
 
-  let branch = "";
-  const stagedFiles = [];
-  const modifiedFiles = [];
-  const untrackedFiles = [];
-  let staged = 0;
-  let modified = 0;
-  let untracked = 0;
-  let conflicts = 0;
-
-  for (const raw of lines) {
-    if (!raw.trim()) continue;
-
-    // Long-form branch detection (LLM usually sends this, not porcelain)
-    const longBranch = raw.match(/^On branch (\S+)/);
-    if (longBranch) { branch = longBranch[1]; continue; }
-
-    // Porcelain branch header: "## main...origin/main"
-    if (raw.startsWith("##")) { branch = raw.replace(/^##\s*/, ""); continue; }
-
-    // Porcelain status (2 chars + space + path)
-    if (raw.length >= 3 && /^[ MADRCU?!][ MADRCU?!] /.test(raw)) {
-      const x = raw[0];
-      const y = raw[1];
-      const file = raw.slice(3);
-
-      if (raw.slice(0, 2) === "??") {
-        untracked++;
-        untrackedFiles.push(file);
-        continue;
-      }
-
-      if ("MADRC".includes(x)) {
-        staged++;
-        stagedFiles.push(file);
-      } else if (x === "U") {
-        conflicts++;
-      }
-
-      if (y === "M" || y === "D") {
-        modified++;
-        modifiedFiles.push(file);
-      }
-      continue;
-    }
-
-    // Long form fallback ("modified:   path", "new file:   path", ...)
-    const longMatch = raw.match(/^\s*(modified|new file|deleted|renamed|both modified):\s+(.+)$/);
-    if (longMatch) {
-      const kind = longMatch[1];
-      const path = longMatch[2].trim();
-      if (kind === "both modified") { conflicts++; }
-      else if (kind === "modified" || kind === "deleted") { modified++; modifiedFiles.push(path); }
-      else if (kind === "new file" || kind === "renamed") { staged++; stagedFiles.push(path); }
-      continue;
-    }
-
-    // "Untracked files:" section — gather bare paths after this marker
-    // Handled implicitly: plain paths without markers are skipped (safer).
-  }
-
-  let out = "";
-  if (branch) out += `* ${branch}\n`;
-
-  if (staged > 0) {
-    out += `+ Staged: ${staged} files\n`;
-    for (const f of stagedFiles.slice(0, STATUS_MAX_FILES)) out += `   ${f}\n`;
-    if (stagedFiles.length > STATUS_MAX_FILES) {
-      out += `   ... +${stagedFiles.length - STATUS_MAX_FILES} more\n`;
-    }
-  }
-
-  if (modified > 0) {
-    out += `~ Modified: ${modified} files\n`;
-    for (const f of modifiedFiles.slice(0, STATUS_MAX_FILES)) out += `   ${f}\n`;
-    if (modifiedFiles.length > STATUS_MAX_FILES) {
-      out += `   ... +${modifiedFiles.length - STATUS_MAX_FILES} more\n`;
-    }
-  }
-
-  if (untracked > 0) {
-    out += `? Untracked: ${untracked} files\n`;
-    for (const f of untrackedFiles.slice(0, STATUS_MAX_UNTRACKED)) out += `   ${f}\n`;
-    if (untrackedFiles.length > STATUS_MAX_UNTRACKED) {
-      out += `   ... +${untrackedFiles.length - STATUS_MAX_UNTRACKED} more\n`;
-    }
-  }
-
-  if (conflicts > 0) {
-    out += `conflicts: ${conflicts} files\n`;
-  }
-
-  if (staged === 0 && modified === 0 && untracked === 0 && conflicts === 0) {
-    out += "clean — nothing to commit\n";
-  }
-
-  return out.replace(/\n+$/, "");
+  // Porcelain (`git status --porcelain -b`) starts with the `## branch` header;
+  // plain `git status` starts with `On branch …` / state text.
+  const firstLine = input.split("\n").find(line => line.trim().length > 0) || "";
+  return firstLine.startsWith("##")
+    ? formatStatusOutput(input)
+    : filterStatusWithArgs(input);
 }
 
 gitStatus.filterName = "git-status";
