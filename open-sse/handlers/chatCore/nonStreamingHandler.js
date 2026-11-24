@@ -96,17 +96,10 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
-  // Provider responded in OpenAI Chat Completions shape but the client speaks
-  // Responses API — convert so tool_calls/text surface as Responses `output`.
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAICompletionToResponses(responseBody, customToolNames);
-  }
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
-  }
-  if (targetFormat === FORMATS.OPENAI) return responseBody;
 
-  // Gemini / Antigravity
+  // Step 1: Convert upstream targetFormat to intermediate OpenAI format
+  let openAIResponse = responseBody;
+
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
     const response = responseBody.response || responseBody;
     if (!response?.candidates?.[0]) return responseBody;
@@ -164,11 +157,8 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
     }
-    return result;
-  }
-
-  // Claude
-  if (targetFormat === FORMATS.CLAUDE) {
+    openAIResponse = result;
+  } else if (targetFormat === FORMATS.CLAUDE) {
     // Always translate a Claude-format body to OpenAI, even if `content` is
     // missing/null (e.g. M3 with max_tokens:1 spends the budget on thinking
     // and returns `content: null`). Returning the raw body would leave the
@@ -178,57 +168,64 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     // Some providers (e.g. xiaomi-tokenplan) return OpenAI-format responses even when
     // the request was translated to Claude format — the targetFormat is Claude but the
     // actual response is OpenAI-native and needs no further translation.
-    if (responseBody.choices || (responseBody.content && !Array.isArray(responseBody.content))) return responseBody;
+    if (responseBody.choices || (responseBody.content && !Array.isArray(responseBody.content))) {
+      openAIResponse = responseBody;
+    } else {
+      let textContent = "", thinkingContent = "";
+      const toolCalls = [];
 
-    let textContent = "", thinkingContent = "";
-    const toolCalls = [];
-
-    for (const block of (responseBody.content || [])) {
-      if (block.type === "text") {
-        // Strip markdown code block markers (e.g. kimi wraps JSON in ```json...```)
-        const raw = block.text ?? "";
-        const text = raw.replace(/^\s*```\s*json\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "");
-        textContent += text;
-      } else if (block.type === "thinking") thinkingContent += block.thinking || "";
-      else if (block.type === "tool_use") {
-        toolCalls.push({ id: block.id, type: "function", function: { name: block.name, arguments: JSON.stringify(block.input || {}) } });
+      for (const block of (responseBody.content || [])) {
+        if (block.type === "text") {
+          // Strip markdown code block markers (e.g. kimi wraps JSON in ```json...```)
+          const raw = block.text ?? "";
+          const text = raw.replace(/^\s*```\s*json\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "");
+          textContent += text;
+        } else if (block.type === "thinking") thinkingContent += block.thinking || "";
+        else if (block.type === "tool_use") {
+          toolCalls.push({ id: block.id, type: "function", function: { name: block.name, arguments: JSON.stringify(block.input || {}) } });
+        }
       }
-    }
 
-    const message = { role: "assistant" };
-    if (textContent) message.content = textContent;
-    if (thinkingContent) message.reasoning_content = thinkingContent;
-    if (toolCalls.length > 0) message.tool_calls = toolCalls;
-    if (!message.content && !message.tool_calls) message.content = "";
+      const message = { role: "assistant" };
+      if (textContent) message.content = textContent;
+      if (thinkingContent) message.reasoning_content = thinkingContent;
+      if (toolCalls.length > 0) message.tool_calls = toolCalls;
+      if (!message.content && !message.tool_calls) message.content = "";
 
-    let finishReason = responseBody.stop_reason || "stop";
-    if (finishReason === "end_turn") finishReason = "stop";
-    if (finishReason === "tool_use") finishReason = "tool_calls";
+      let finishReason = responseBody.stop_reason || "stop";
+      if (finishReason === "end_turn") finishReason = "stop";
+      if (finishReason === "tool_use") finishReason = "tool_calls";
 
-    const result = {
-      id: `chatcmpl-${responseBody.id || Date.now()}`,
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model: responseBody.model || "claude",
-      choices: [{ index: 0, message, finish_reason: finishReason }]
-    };
-
-    if (responseBody.usage) {
-      result.usage = {
-        prompt_tokens: responseBody.usage.input_tokens || 0,
-        completion_tokens: responseBody.usage.output_tokens || 0,
-        total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0)
+      const result = {
+        id: `chatcmpl-${responseBody.id || Date.now()}`,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: responseBody.model || "claude",
+        choices: [{ index: 0, message, finish_reason: finishReason }]
       };
+
+      if (responseBody.usage) {
+        result.usage = {
+          prompt_tokens: responseBody.usage.input_tokens || 0,
+          completion_tokens: responseBody.usage.output_tokens || 0,
+          total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0)
+        };
+      }
+      openAIResponse = result;
     }
-    return result;
+  } else if (targetFormat === FORMATS.OLLAMA) {
+    openAIResponse = ollamaBodyToOpenAI(responseBody);
   }
 
-  // Ollama
-  if (targetFormat === FORMATS.OLLAMA) {
-    return ollamaBodyToOpenAI(responseBody);
+  // Step 2: Convert intermediate OpenAI format to client sourceFormat
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+    return openAICompletionToResponses(openAIResponse, customToolNames);
+  }
+  if (sourceFormat === FORMATS.CLAUDE) {
+    return openAICompletionToClaudeMessage(openAIResponse);
   }
 
-  return responseBody;
+  return openAIResponse;
 }
 
 /**
@@ -238,6 +235,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
+  let currentFormat = targetFormat;
 
   if (contentType.includes("text/event-stream")) {
     const sseText = await providerResponse.text();
@@ -255,6 +253,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       return createErrorResult(status, parsed.error.message || "Upstream SSE stream failed");
     }
     responseBody = parsed;
+    currentFormat = FORMATS.OPENAI;
   } else {
     try {
       responseBody = await providerResponse.json();
@@ -287,8 +286,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+  const translatedResponse = needsTranslation(currentFormat, sourceFormat)
+    ? translateNonStreamingResponse(responseBody, currentFormat, sourceFormat, customToolNames)
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
