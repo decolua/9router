@@ -4,11 +4,29 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getExecutor } from "../executors/index.js";
 import { getImageAdapter } from "./imageProviders/index.js";
 import { urlToBase64 } from "./imageProviders/_base.js";
+import { detectImageMime } from "../translator/concerns/image.js";
 
 function serializeRequestBody(requestBody) {
   if (typeof FormData !== "undefined" && requestBody instanceof FormData) return requestBody;
   if (typeof requestBody === "string") return requestBody;
   return JSON.stringify(requestBody);
+}
+
+// Raw image bytes response. Content-Type comes from the bytes' magic signature;
+// falls back to the requested output_format when the bytes are unrecognized.
+function binaryImageResponse(b64, outputFormat) {
+  const buf = Buffer.from(b64, "base64");
+  const fmt = (outputFormat || "png").toLowerCase();
+  const mime = detectImageMime(buf)
+    || (fmt === "jpeg" || fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png");
+  const ext = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+  return new Response(buf, {
+    headers: {
+      "Content-Type": mime,
+      "Content-Disposition": `inline; filename="image.${ext}"`,
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
 }
 
 /**
@@ -68,15 +86,7 @@ export async function handleImageGenerationCore({
           try { b64 = await urlToBase64(first.url); } catch {}
         }
         if (b64) {
-          const buf = Buffer.from(b64, "base64");
-          const fmt = (body.output_format || "png").toLowerCase();
-          const mime = fmt === "jpeg" || fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png";
-          return {
-            success: true,
-            response: new Response(buf, {
-              headers: { "Content-Type": mime, "Content-Disposition": `inline; filename="image.${fmt === "jpeg" ? "jpg" : fmt}"`, "Access-Control-Allow-Origin": "*" },
-            }),
-          };
+          return { success: true, response: binaryImageResponse(b64, body.output_format) };
         }
       }
 
@@ -227,19 +237,7 @@ export async function handleImageGenerationCore({
       try { b64 = await urlToBase64(first.url); } catch {}
     }
     if (b64) {
-      const buf = Buffer.from(b64, "base64");
-      const fmt = (body.output_format || "png").toLowerCase();
-      const mime = fmt === "jpeg" || fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png";
-      return {
-        success: true,
-        response: new Response(buf, {
-          headers: {
-            "Content-Type": mime,
-            "Content-Disposition": `inline; filename="image.${fmt === "jpeg" ? "jpg" : fmt}"`,
-            "Access-Control-Allow-Origin": "*",
-          },
-        }),
-      };
+      return { success: true, response: binaryImageResponse(b64, body.output_format) };
     }
   }
 

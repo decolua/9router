@@ -48,7 +48,7 @@ async function resolvePinnedIps(hostname) {
 }
 
 // Verify buffer magic bytes match a known image signature; return its mime or null.
-function detectImageMime(buf) {
+export function detectImageMime(buf) {
   for (const { sig, offset, mime, verifyWebp } of IMAGE_SIGNATURES) {
     if (buf.length < offset + sig.length) continue;
     let match = true;
