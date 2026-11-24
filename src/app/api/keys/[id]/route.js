@@ -22,7 +22,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, access } = body;
+    const { isActive, access, expiresAt, name } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,7 +30,24 @@ export async function PUT(request, { params }) {
     }
 
     const updateData = {};
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return NextResponse.json({ error: "Name must be a non-empty string" }, { status: 400 });
+      }
+      updateData.name = name.trim();
+    }
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (expiresAt !== undefined) {
+      if (expiresAt) {
+        const d = new Date(expiresAt);
+        if (Number.isNaN(d.getTime())) {
+          return NextResponse.json({ error: "Invalid expiration date" }, { status: 400 });
+        }
+        updateData.expiresAt = d.toISOString();
+      } else {
+        updateData.expiresAt = null;
+      }
+    }
     if (access !== undefined) {
       const checked = validateKeyAccessInput(access);
       if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
