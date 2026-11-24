@@ -6,6 +6,7 @@ const consoleLevels = ["log", "info", "warn", "error", "debug"];
 if (!global._consoleLogBufferState) {
   global._consoleLogBufferState = {
     logs: [],
+    revision: 0,
     patched: false,
     originals: {},
     emitter: new EventEmitter(),
@@ -23,6 +24,7 @@ if (!state.emitter) {
 
 if (!state.pendingLines) state.pendingLines = [];
 if (!state.flushTimer) state.flushTimer = null;
+if (!Number.isSafeInteger(state.revision)) state.revision = 0;
 
 const FLUSH_INTERVAL_MS = 100;
 const MAX_BATCH_LINES = 50;
@@ -64,6 +66,7 @@ function formatArg(arg) {
 
 function appendLine(line) {
   state.logs.push(line);
+  state.revision += 1;
   const maxLines = CONSOLE_LOG_CONFIG.maxLines;
   if (state.logs.length > maxLines) {
     state.logs = state.logs.slice(-maxLines);
@@ -98,8 +101,18 @@ export function getConsoleLogs() {
   return state.logs;
 }
 
+export function getConsoleLogSnapshot() {
+  return { logs: [...state.logs], revision: state.revision };
+}
+
 export function clearConsoleLogs() {
   state.logs = [];
+  state.pendingLines = [];
+  state.revision += 1;
+  if (state.flushTimer) {
+    clearTimeout(state.flushTimer);
+    state.flushTimer = null;
+  }
   state.emitter.emit("clear");
 }
 

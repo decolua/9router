@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Card, Button } from "@/shared/components";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config";
+import { startConsoleLogTransport } from "./transport";
 
 const LOG_LEVEL_COLORS = {
   LOG: "text-green-400",
@@ -21,45 +22,48 @@ function colorLine(line) {
 
 export default function ConsoleLogClient() {
   const [logs, setLogs] = useState([]);
-  const [connected, setConnected] = useState(false);
   const logRef = useRef(null);
+  const transportRef = useRef(null);
 
   const handleClear = async () => {
     try {
-      await fetch("/api/translator/console-logs", { method: "DELETE" });
-      // UI cleared via SSE "clear" event
+      const response = await fetch("/api/translator/console-logs", { method: "DELETE" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      transportRef.current?.invalidate();
+      setLogs([]);
     } catch (err) {
       console.error("Failed to clear console logs:", err);
     }
   };
 
   useEffect(() => {
-    const es = new EventSource("/api/translator/console-logs/stream");
+    transportRef.current = startConsoleLogTransport({
+      onSnapshot: (nextLogs) => {
+        setLogs(nextLogs.slice(-CONSOLE_LOG_CONFIG.maxLines));
+      },
+      onEvent: (msg) => {
+        if (msg.type === "init") {
+          setLogs(msg.logs.slice(-CONSOLE_LOG_CONFIG.maxLines));
+        } else if (msg.type === "line") {
+          setLogs((prev) => {
+            const next = [...prev, msg.line];
+            return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
+          });
+        } else if (msg.type === "lines") {
+          setLogs((prev) => {
+            const next = [...prev, ...msg.lines];
+            return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
+          });
+        } else if (msg.type === "clear") {
+          setLogs([]);
+        }
+      },
+    });
 
-    es.onopen = () => setConnected(true);
-
-    es.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.type === "init") {
-        setLogs(msg.logs.slice(-CONSOLE_LOG_CONFIG.maxLines));
-      } else if (msg.type === "line") {
-        setLogs((prev) => {
-          const next = [...prev, msg.line];
-          return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
-        });
-      } else if (msg.type === "lines") {
-        setLogs((prev) => {
-          const next = [...prev, ...msg.lines];
-          return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
-        });
-      } else if (msg.type === "clear") {
-        setLogs([]);
-      }
+    return () => {
+      transportRef.current?.stop();
+      transportRef.current = null;
     };
-
-    es.onerror = () => setConnected(false);
-
-    return () => es.close();
   }, []);
 
   // Auto-scroll to bottom on new logs
