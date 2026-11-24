@@ -112,7 +112,10 @@ export function formatDoneLine({ usage, latency }) {
     inStr += ` (CACHE ${parts.join(" ")})`;
   }
   const ttftStr = latency?.ttft ? ` · TTFT ${latency.ttft}ms` : "";
-  return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
+  // Same marker as logUsage(): a count we guessed must not read like a
+  // measured one.
+  const estimatedStr = u.estimated ? " (estimated)" : "";
+  return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}${estimatedStr}`;
 }
 
 export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
