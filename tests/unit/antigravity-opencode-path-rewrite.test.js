@@ -32,6 +32,7 @@ describe("Antigravity prompt rewrites preserve paths and identifiers while rebra
     ].join("\n");
 
     const text = systemTextSentToAntigravity(original);
-    expect(text).toBe(original);
+    // Upstream prepends ANTIGRAVITY_DEFAULT_SYSTEM; assert our rewrites leave the caller's text intact.
+    expect(text.endsWith(original)).toBe(true);
   });
 });
