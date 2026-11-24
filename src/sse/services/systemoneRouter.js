@@ -2,6 +2,7 @@ import { getModelInfo } from "../services/model.js";
 import { getProviderCredentials } from "../services/auth.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
+import { getModelMeta } from "open-sse/config/providerModels.js";
 import {
   DEFAULT_SYSTEMONE_ROUTER_MODEL,
   DEFAULT_SYSTEMONE_TIMEOUT_MS,
@@ -59,6 +60,10 @@ export async function resolveSmartChoice({
 
     const { provider, model } = modelInfo;
 
+    // Get model metadata to check payloadShape (Clairic uses "fields" instead of "questions")
+    const modelMeta = getModelMeta(provider, model);
+    const payloadShape = modelMeta?.payloadShape || "questions";
+
     // Cloudflare Clef rejects option ids containing '/' or ':'; combo members are
     // full model ids. Remap to m0, m1... and keep a reverse map for the answer.
     let optionToModel = null;
@@ -81,17 +86,29 @@ export async function resolveSmartChoice({
     }
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+
+    // Build payload based on payloadShape: "fields" for Clairic, "questions" for Clef
     const systemoneBody = {
       model,
       state,
-      questions: {
+    };
+    if (payloadShape === "fields") {
+      systemoneBody.fields = {
         route: {
           type: "choice",
           instructions: "Which of these configured models is the most appropriate for this request?",
           criteria,
         },
-      },
-    };
+      };
+    } else {
+      systemoneBody.questions = {
+        route: {
+          type: "choice",
+          instructions: "Which of these configured models is the most appropriate for this request?",
+          criteria,
+        },
+      };
+    }
 
     let timeoutId;
     const timeoutPromise = new Promise((_, reject) => {
@@ -100,7 +117,7 @@ export async function resolveSmartChoice({
 
     const corePromise = handleSystemoneCore({
       body: systemoneBody,
-      modelInfo: { provider, model },
+      modelInfo: { provider, model, payloadShape },
       credentials: refreshedCredentials,
       log,
       onRequestSuccess: () => {},
