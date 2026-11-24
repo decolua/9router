@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { parseTOML, stringifyTOML } from "confbox";
+import { CODEX_CATALOG_FILENAME, resolveContextWindow, syncCodexCatalog, restartCodexDaemon } from "@/lib/codexCatalog";
 
 export const dynamic = "force-dynamic";
 
@@ -109,7 +110,7 @@ export async function GET() {
 // POST - Update 9Router settings (merge with existing config)
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model, subagentModel } = await request.json();
+    const { baseUrl, apiKey, model, subagentModel, contextWindow } = await request.json();
     
     if (!baseUrl || !apiKey || !model) {
       return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
@@ -132,6 +133,22 @@ export async function POST(request) {
     parsed.model = model;
     parsed.model_provider = "9router";
 
+    const ctx = Number(contextWindow);
+    if (contextWindow === null || contextWindow === undefined || contextWindow === "") delete parsed.model_context_window;
+    else if (Number.isInteger(ctx) && ctx > 0 && ctx <= 100000000) parsed.model_context_window = ctx;
+    else return NextResponse.json({ error: "model_context_window must be a positive integer" }, { status: 400 });
+
+    delete parsed.model_max_output_tokens;
+
+    const catalogPath = await syncCodexCatalog({
+      codexDir,
+      models: [
+        { slug: model, contextWindow: resolveContextWindow(contextWindow, model) },
+        { slug: subagentModel || model, contextWindow: resolveContextWindow(null, subagentModel || model) },
+      ],
+    });
+    if (catalogPath) parsed.model_catalog_json = catalogPath;
+
     // Update or create 9router provider section (no api_key - Codex reads from auth.json)
     // Ensure /v1 suffix is added only once
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
@@ -151,10 +168,14 @@ export async function POST(request) {
     const configContent = stringifyTOML(parsed);
     await fs.writeFile(configPath, configContent);
 
+    const daemonRestarted = catalogPath ? await restartCodexDaemon() : false;
+
     return NextResponse.json({
       success: true,
       message: "Codex settings applied successfully!",
       configPath,
+      catalogPath,
+      daemonRestarted,
     });
   } catch (error) {
     console.log("Error updating codex settings:", error);
@@ -186,6 +207,10 @@ export async function DELETE() {
     if (parsed.model_provider === "9router") {
       delete parsed.model;
       delete parsed.model_provider;
+      delete parsed.model_context_window;
+    }
+    if (typeof parsed.model_catalog_json === "string" && parsed.model_catalog_json.endsWith(CODEX_CATALOG_FILENAME)) {
+      delete parsed.model_catalog_json;
     }
 
     // Remove 9router provider section

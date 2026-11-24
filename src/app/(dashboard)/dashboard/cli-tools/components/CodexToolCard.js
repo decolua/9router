@@ -10,6 +10,33 @@ import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { getCurrentCodexProviderSettings, deriveProfileNameFromModel } from "./codexConfig";
 
+const CONTEXT_PRESETS = [
+  ["", "Model default"],
+  ["256000", "256K"],
+  ["400000", "400K"],
+  ["1000000", "1M"],
+];
+
+function ContextWindowSelect({ value, onChange, className, ...rest }) {
+  const current = value == null ? "" : String(value);
+  const options = CONTEXT_PRESETS.some(([v]) => v === current)
+    ? CONTEXT_PRESETS
+    : [...CONTEXT_PRESETS, [current, `${Math.round(Number(current) / 1000)}K`]];
+  return (
+    <select
+      value={current}
+      onChange={(e) => onChange(e.target.value)}
+      title="Context window published in the 9Router model catalog"
+      className={`w-full min-w-0 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 ${className || ""}`}
+      {...rest}
+    >
+      {options.map(([v, label]) => (
+        <option key={v || "default"} value={v}>{label}</option>
+      ))}
+    </select>
+  );
+}
+
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);
   const [checkingCodex, setCheckingCodex] = useState(false);
@@ -19,6 +46,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
+  const [modelCtx, setModelCtx] = useState("");
   const [subagentModel, setSubagentModel] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [subagentModalOpen, setSubagentModalOpen] = useState(false);
@@ -28,6 +56,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const [profiles, setProfiles] = useState([]);
   const [aliasInput, setAliasInput] = useState("");
   const [modelInput, setModelInput] = useState("");
+  const [ctxInput, setCtxInput] = useState("");
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [deletingProfile, setDeletingProfile] = useState(null);
@@ -99,12 +128,14 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
         body: JSON.stringify({
           name: cleanAlias,
           model: cleanModel,
+          contextWindow: ctxInput.trim() || null,
         }),
       });
       const data = await res.json();
       if (res.ok) {
         setAliasInput("");
         setModelInput("");
+        setCtxInput("");
         fetchProfiles();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to add model" });
@@ -113,6 +144,26 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       setMessage({ type: "error", text: error.message });
     } finally {
       setCreatingProfile(false);
+    }
+  };
+
+  const handleSaveContextWindow = async (profile, rawValue) => {
+    const trimmed = String(rawValue).trim();
+    try {
+      const res = await fetch("/api/cli-tools/codex-profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile.name,
+          model: profile.model,
+          contextWindow: trimmed === "" ? null : Number(trimmed),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) setMessage({ type: "error", text: data.error || "Failed to save context window" });
+      fetchProfiles();
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
     }
   };
 
@@ -152,6 +203,12 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
 
       const modelMatch = config.match(/^model\s*=\s*"([^"]+)"/m);
       if (modelMatch) setSelectedModel(modelMatch[1]);
+
+      const readLimit = (key) => {
+        const m = config.match(new RegExp(`^\\s*${key}\\s*=\\s*(\\d+)\\s*$`, "m"));
+        return m ? m[1] : "";
+      };
+      setModelCtx(readLimit("model_context_window"));
 
       // Parse subagent settings
       const subagentModelMatch = config.match(/^default_subagent_model\s*=\s*"([^"]+)"/m);
@@ -206,14 +263,20 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
           model: selectedModel,
-          subagentModel: subagentModel || selectedModel
+          subagentModel: subagentModel || selectedModel,
+          contextWindow: modelCtx.trim() || null,
         }),
       });
       const data = await res.json();
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
         rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
-        setMessage({ type: "success", text: "Settings applied successfully!" });
+        setMessage({
+          type: "success",
+          text: data.daemonRestarted
+            ? "Applied. Codex background server restarted with the new context window - reopen any open Codex session."
+            : "Applied. Restart Codex for the context window to take effect.",
+        });
         checkCodexStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
@@ -235,6 +298,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
         setMessage({ type: "success", text: "Settings reset successfully!" });
         setSelectedModel("");
         setSubagentModel("");
+        setModelCtx("");
         checkCodexStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
@@ -265,7 +329,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     const configContent = `# 9Router Configuration for Codex CLI
 model = "${selectedModel}"
 model_provider = "9router"
-
+${modelCtx.trim() ? `model_context_window = ${modelCtx.trim()}\n` : ""}
 [model_providers.9router]
 name = "9Router"
 base_url = "${getEffectiveBaseUrl()}"
@@ -407,6 +471,16 @@ default_subagent_model = "${effectiveSubagentModel}"
                   <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
                 </div>
 
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Context Window</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <ContextWindowSelect
+                    value={modelCtx}
+                    onChange={setModelCtx}
+                    className="px-2 py-2 sm:py-1.5"
+                  />
+                </div>
+
                 {/* Subagent Model */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Subagent Model</span>
@@ -532,6 +606,15 @@ default_subagent_model = "${effectiveSubagentModel}"
                       Add
                     </Button>
                   </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[10rem_1fr_1fr] sm:items-center">
+                    <span className="text-[11px] text-text-muted sm:text-right">Context window (optional)</span>
+                    <ContextWindowSelect
+                      value={ctxInput}
+                      onChange={(v) => setCtxInput(v)}
+                      className="px-2.5 py-1.5 sm:col-span-2"
+                      onKeyDown={(e) => e.key === "Enter" && handleAddProfileWithAlias()}
+                    />
+                  </div>
                 </div>
 
                 {profiles.length === 0 ? (
@@ -564,6 +647,14 @@ default_subagent_model = "${effectiveSubagentModel}"
                               <span className="text-[11px] text-text-muted truncate font-mono">
                                 {p.model}
                               </span>
+                              <div className="flex flex-wrap items-center gap-1 mt-1">
+                                <ContextWindowSelect
+                                  value={p.contextWindow}
+                                  onChange={(v) => handleSaveContextWindow(p, v)}
+                                  disabled={!p.model}
+                                  className="w-28 px-1.5 py-0.5 text-[11px] disabled:opacity-50"
+                                />
+                              </div>
                             </div>
                           </div>
 
