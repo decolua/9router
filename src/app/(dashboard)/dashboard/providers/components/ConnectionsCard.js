@@ -468,13 +468,13 @@ export default function ConnectionsCard({ providerId, isOAuth, loginProviderId =
         )}
       </Card>
 
-      <AddApiKeyModal
+      {showAddModal && <AddApiKeyModal
         isOpen={showAddModal}
         provider={providerId}
         proxyPools={proxyPools}
         onSave={handleSaveApiKey}
         onClose={() => setShowAddModal(false)}
-      />
+      />}
       <EditConnectionModal
         isOpen={showEditModal}
         connection={selectedConnection}
