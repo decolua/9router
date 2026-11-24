@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { Button, Toggle, Tooltip } from "@/shared/components";
 import { getCurrentLocale, translate } from "@/i18n/runtime";
 import { maskKey } from "@/shared/utils/apiKeyList";
-import KeyOwnership from "./KeyOwnership";
+import { KeyEditButton, KeyEditForm } from "./KeyOwnership";
 import KeyAccessControls from "./KeyAccessControls";
 import KeyAccounts from "./KeyAccounts";
 import KeyExpiry from "./KeyExpiry";
@@ -87,6 +88,7 @@ export default function KeyDetail({
   onRestrict,
 }) {
   const showing = visibleKeys.has(apiKey.id);
+  const [editing, setEditing] = useState(false);
   return (
     <div className="min-w-0 space-y-3">
       <header className="rounded-xl border border-border bg-surface p-4">
@@ -96,7 +98,7 @@ export default function KeyDetail({
               <h3 data-i18n-skip className="min-w-0 break-all text-lg font-semibold">
                 {apiKey.name}
               </h3>
-              <KeyOwnership apiKey={apiKey} onSaved={onSaved} />
+              {!editing && <KeyEditButton apiKey={apiKey} onEdit={() => setEditing(true)} />}
             </div>
             <p data-i18n-skip className="break-words text-sm text-text-muted">
               {[apiKey.owner, apiKey.project, apiKey.description].filter(Boolean).join(" · ")}
@@ -130,6 +132,7 @@ export default function KeyDetail({
             />
           </div>
         </div>
+        {editing && <KeyEditForm apiKey={apiKey} onSaved={onSaved} onClose={() => setEditing(false)} />}
         <div className="mt-4 flex items-center gap-1 rounded-lg border border-border bg-bg px-3 py-1">
           <code className="min-w-0 flex-1 break-all text-xs">
             {showing ? apiKey.key : maskKey(apiKey.key)}

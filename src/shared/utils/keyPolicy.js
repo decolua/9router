@@ -1,5 +1,5 @@
 import { validateKeyConnections } from "./keyConnections.js";
-import { keyFieldLimits } from "./keyOwnership.js";
+import { KEY_NAME_MAX, keyFieldLimits } from "./keyOwnership.js";
 import { REQUEST_WINDOWS } from "./requestWindows.js";
 import { isKeyBudget } from "./keyBudget.js";
 
@@ -9,6 +9,11 @@ export function validateKeyPolicy(body) {
     return { error: "Expected a JSON object" };
   }
   const value = {};
+  if (body.name !== undefined) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name || name.length > KEY_NAME_MAX) return { error: `name must be text of 1 to ${KEY_NAME_MAX} characters` };
+    value.name = name;
+  }
   if (body.allowedConnections !== undefined) {
     const checked = validateKeyConnections(body.allowedConnections);
     if (checked.error) return checked;

@@ -1,4 +1,5 @@
 export const keyFieldLimits = Object.freeze({ description: 500, owner: 120, project: 120 });
+export const KEY_NAME_MAX = 120;
 
 // Reject the entire label rather than publishing fragments of a credential.
 export function publicText(value, maxLength = 256) {

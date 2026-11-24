@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import { Button, Input, Tooltip } from "@/shared/components";
 import { translate } from "@/i18n/runtime";
-import { keyFieldLimits } from "@/shared/utils/keyOwnership";
+import { KEY_NAME_MAX, keyFieldLimits } from "@/shared/utils/keyOwnership";
 
 const labels = { description: "Description", owner: "Owner", project: "Project" };
 
@@ -31,57 +31,8 @@ export function OwnershipFields({ values = {} }) {
   );
 }
 
-export default function KeyOwnership({ apiKey, onSaved }) {
-  const [editing, setEditing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-  async function save(event) {
-    event.preventDefault();
-    if (busy) return;
-    const fields = ownershipValues(new FormData(event.currentTarget));
-    setBusy(true);
-    setError(false);
-    try {
-      const res = await fetch(`/api/keys/${encodeURIComponent(apiKey.id)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fields),
-      });
-      if (!res.ok) throw new Error();
-      const { key } = await res.json();
-      onSaved({ owner: key.owner, project: key.project, description: key.description });
-      setEditing(false);
-    } catch {
-      setError(true);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return editing ? (
-    <form
-      method="post"
-      aria-label={translate("Edit key details") + ": " + apiKey.name}
-      onSubmit={save}
-      className="my-2 space-y-2"
-    >
-      <OwnershipFields values={apiKey} />
-      {error && <p role="alert">Could not save key details</p>}
-      <div className="flex gap-2">
-        <Button size="sm" type="submit" loading={busy}>
-          Save
-        </Button>
-        <Button
-          size="sm"
-          type="button"
-          disabled={busy}
-          variant="secondary"
-          onClick={() => setEditing(false)}
-        >
-          Cancel
-        </Button>
-      </div>
-    </form>
-  ) : (
+export function KeyEditButton({ apiKey, onEdit }) {
+  return (
     <Tooltip text="Edit key details">
       <Button
         type="button"
@@ -90,11 +41,68 @@ export default function KeyOwnership({ apiKey, onSaved }) {
         icon="edit"
         className="size-8 p-0"
         aria-label={translate("Edit key details") + ": " + apiKey.name}
-        onClick={() => {
-          setError(false);
-          setEditing(true);
-        }}
+        onClick={onEdit}
       />
     </Tooltip>
+  );
+}
+
+// Full-width form under the key header: name plus ownership details.
+export function KeyEditForm({ apiKey, onSaved, onClose }) {
+  const id = useId();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(event) {
+    event.preventDefault();
+    if (busy) return;
+    const form = new FormData(event.currentTarget);
+    const fields = { name: form.get("name")?.trim() || "", ...ownershipValues(form) };
+    if (!fields.name) {
+      setError("Name is required");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/keys/${encodeURIComponent(apiKey.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) throw new Error();
+      const { key } = await res.json();
+      onSaved({ name: key.name, owner: key.owner, project: key.project, description: key.description });
+      onClose();
+    } catch {
+      setError("Could not save key details");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      method="post"
+      aria-label={translate("Edit key details") + ": " + apiKey.name}
+      onSubmit={save}
+      className="mt-4 space-y-3 border-t border-border pt-4"
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Input id={id + "name"} name="name" label="Name" required maxLength={KEY_NAME_MAX} defaultValue={apiKey.name} />
+        <Input id={id + "project"} name="project" label={labels.project} maxLength={keyFieldLimits.project} defaultValue={apiKey.project ?? ""} />
+        <Input id={id + "owner"} name="owner" label={labels.owner} maxLength={keyFieldLimits.owner} defaultValue={apiKey.owner ?? ""} />
+        <Input id={id + "description"} name="description" label={labels.description} maxLength={keyFieldLimits.description} defaultValue={apiKey.description ?? ""} />
+      </div>
+      {error && <p role="alert" className="text-sm text-danger">{translate(error)}</p>}
+      <div className="flex justify-end gap-2">
+        <Button size="sm" type="button" disabled={busy} variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button size="sm" type="submit" loading={busy}>
+          Save
+        </Button>
+      </div>
+    </form>
   );
 }

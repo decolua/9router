@@ -498,5 +498,6 @@
   "Latency": "Gecikme",
   "First token": "İlk token",
   "Tokens in / out": "Token giriş / çıkış",
-  "Fallbacks": "Yedeğe geçiş"
+  "Fallbacks": "Yedeğe geçiş",
+  "Name is required": "Ad gerekli"
 }

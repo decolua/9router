@@ -31,7 +31,7 @@ export async function POST(request) {
     }
     const policy = validateKeyPolicy(body);
     if (policy.error) return NextResponse.json({ error: policy.error }, { status: 400 });
-    const { name } = body;
+    const name = policy.value.name;
     if (body.access !== undefined) {
       const access = validateKeyAccessInput(body.access);
       if (!access.ok) return NextResponse.json({ error: access.error }, { status: 400 });
