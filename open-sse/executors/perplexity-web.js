@@ -131,6 +131,7 @@ async function* readPplxSseEvents(body, signal) {
     const tail = flush();
     if (tail && tail !== "done") yield tail;
   } finally {
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
