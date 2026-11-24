@@ -37,6 +37,10 @@ export const PROVIDER_ALIASES = {
   "hunyuan": "tencent",
   "doubao": "volcengine",
   "cloudflare-ai": "cloudflare-workers-ai",
+  // models.dev files the hosted tier under "ollama-cloud"; the registry id and
+  // the connection provider id are "ollama" (the daemon ecosystem is not in
+  // the catalog at all). Without this, every ollama-cloud model is dropped.
+  "ollama": "ollama-cloud",
 };
 
 let state = { running: false, lastSync: null, lastError: null, lastResult: null, etag: null, fileVersion: null };

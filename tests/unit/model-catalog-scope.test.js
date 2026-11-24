@@ -17,6 +17,8 @@ const upstream = {
   zhipuai: { models: { "glm-5-canary": { modalities: { input: ["text", "image", "pdf"] } } } },
   moonshotai: { models: { "kimi-k3": { modalities: { input: ["text"] } } } },
   kilo: { models: { "kilo-auto/efficient": { modalities: { input: ["text", "image"] } } } },
+  // models.dev files the hosted tier under "ollama-cloud", never "ollama"
+  "ollama-cloud": { models: { "glm-5.3-flash": { modalities: { input: ["text", "image"] }, limit: { context: 1000000, output: 131072 } } } },
 };
 // The registry snapshot the sync feeds build(): local ids, with the capabilities
 // the tables resolve on their own.
@@ -25,9 +27,10 @@ const entries = [
   { provider: "glm-cn", model: "glm-5-canary", current: { contextWindow: 200000, maxOutput: 128000 } },
   { provider: "zhipu", model: "glm-5-canary", current: { contextWindow: 200000, maxOutput: 128000 } },
   { provider: "kimi", model: "kimi-k3", current: { contextWindow: 128000, maxOutput: 32000 } },
+  { provider: "ollama", model: "glm-5.3-flash", current: { contextWindow: 128000, maxOutput: 32000 } },
 ];
 
-let build, getCatalogModalities, invalidateCatalog, syncModelCatalog, startModelCatalogSync, capabilities;
+let build, getCatalogModalities, getCatalogLimits, invalidateCatalog, syncModelCatalog, startModelCatalogSync, capabilities;
 
 beforeAll(async () => {
   ({ build, syncModelCatalog, startModelCatalogSync } = await import("../../src/lib/modelCatalog/sync.js"));
@@ -36,7 +39,7 @@ beforeAll(async () => {
   expect(typeof build).toBe("function");
   const { models, providers } = build(upstream, entries);
   fs.writeFileSync(catalogFile, JSON.stringify({ v: 2, models, providers }));
-  ({ getCatalogModalities, invalidateCatalog } = await import("../../open-sse/providers/catalogOverride.js"));
+  ({ getCatalogModalities, getCatalogLimits, invalidateCatalog } = await import("../../open-sse/providers/catalogOverride.js"));
   capabilities = await import("../../open-sse/providers/capabilities.js");
 });
 
@@ -68,6 +71,17 @@ describe("model catalog", () => {
     expect(models["zhipuai:glm-5-canary"]).toEqual({ vision: true, pdf: true });
     expect(getCatalogModalities("glm-cn", "glm-5-canary")).toEqual({ vision: true, pdf: true });
     expect(getCatalogModalities("zhipu", "glm-5-canary")).toEqual({ vision: true, pdf: true });
+  });
+
+  it("aliases models.dev's ollama-cloud to the local ollama id", () => {
+    const { models, providers } = build(upstream, entries);
+    // filed under the local id requests arrive with, and under the upstream name
+    expect(models["ollama:glm-5.3-flash"]).toEqual({ vision: true });
+    expect(models["ollama-cloud:glm-5.3-flash"]).toEqual({ vision: true });
+    expect(getCatalogModalities("ollama", "glm-5.3-flash")).toEqual({ vision: true });
+    // limits resolve through the alias too, not just modalities
+    expect(providers.ollama?.["glm-5.3-flash"]).toEqual({ contextWindow: 1000000, maxOutput: 131072 });
+    expect(getCatalogLimits("ollama", "glm-5.3-flash")).toEqual({ contextWindow: 1000000, maxOutput: 131072 });
   });
 
   it("does not hand a router mode another vendor's modalities", () => {
