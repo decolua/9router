@@ -232,8 +232,35 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 }
 
 /**
- * Handle non-streaming response from provider.
+ * Pull the first complete top-level JSON object out of a body that may carry a
+ * trailing SSE frame (e.g. `{...}data: [DONE]`). Returns null when no leading
+ * JSON object can be balanced. See decolua/9router#4733.
  */
+export function extractLeadingJsonObject(text) {
+  if (typeof text !== "string" || text.length === 0) return null;
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === "\\") { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(text.slice(start, i + 1)); }
+        catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
 export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
@@ -259,9 +286,17 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     try {
       responseBody = await providerResponse.json();
     } catch (err) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      // Defensive: some upstreams return a valid JSON object followed by a stray
+      // SSE frame (e.g. `{...}data: [DONE]`) even when we asked for non-streaming
+      // (#4733). Extract the leading JSON object instead of failing the request.
+      const stripped = extractLeadingJsonObject(await providerResponse.text());
+      if (stripped) {
+        responseBody = stripped;
+      } else {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      }
     }
   }
 
