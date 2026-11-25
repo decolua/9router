@@ -10,7 +10,7 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import useSettingsStore from "@/store/settingsStore";
 import Button from "./Button";
-import { ConfirmModal } from "./Modal";
+import Modal, { ConfirmModal } from "./Modal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt", "systemone"];
@@ -51,6 +51,8 @@ export default function Sidebar({ onClose }) {
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
+  const dockerImages = updateInfo?.dockerImages;
+  const isDockerUpdate = Boolean(dockerImages?.length);
 
   useEffect(() => {
     useSettingsStore.getState().fetchSettings().then((data) => {
@@ -58,7 +60,7 @@ export default function Sidebar({ onClose }) {
     });
   }, []);
 
-  // Lazy check for new npm version in background after initial render
+  // Lazy check for updates after initial render.
   useEffect(() => {
     const timer = setTimeout(() => {
       fetch("/api/version")
@@ -141,17 +143,19 @@ export default function Sidebar({ onClose }) {
                   onClick={() => setShowUpdateModal(true)}
                   className="px-2 py-1 rounded bg-green-600 hover:bg-green-700 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors cursor-pointer"
                 >
-                  Update now
+                  {isDockerUpdate ? "Update instructions" : "Update now"}
                 </button>
-                <button
-                  onClick={() => copy(INSTALL_CMD)}
-                  title="Copy install command"
-                  className="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
-                >
-                  <code className="block text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono truncate">
-                    {copied ? "✓ copied!" : INSTALL_CMD}
-                  </code>
-                </button>
+                {!isDockerUpdate && (
+                  <button
+                    onClick={() => copy(INSTALL_CMD)}
+                    title="Copy install command"
+                    className="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
+                  >
+                    <code className="block text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono truncate">
+                      {copied ? "✓ copied!" : INSTALL_CMD}
+                    </code>
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -356,17 +360,34 @@ export default function Sidebar({ onClose }) {
       </aside>
 
 
-      {/* Update Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showUpdateModal}
-        onClose={() => setShowUpdateModal(false)}
-        onConfirm={handleUpdate}
-        title="Update 9Router"
-        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText="Show Command"
-        cancelText="Cancel"
-        variant="primary"
-      />
+      {isDockerUpdate ? (
+        <Modal
+          isOpen={showUpdateModal}
+          onClose={() => setShowUpdateModal(false)}
+          title={`Update 9Router to v${updateInfo.latestVersion}`}
+        >
+          <div className="flex flex-col gap-3 text-sm">
+            <p>On the Docker host, pull the tagged image from the registry you already use.</p>
+            {dockerImages.map((image) => (
+              <code key={image} className="break-all rounded bg-surface-2 px-3 py-2 text-xs">
+                {`docker pull ${image}`}
+              </code>
+            ))}
+            <p>Recreate the container with the new image and its existing data volume. For Compose, set the image tag in your Compose file and run <code>docker compose up -d</code>.</p>
+          </div>
+        </Modal>
+      ) : (
+        <ConfirmModal
+          isOpen={showUpdateModal}
+          onClose={() => setShowUpdateModal(false)}
+          onConfirm={handleUpdate}
+          title="Update 9Router"
+          message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
+          confirmText="Show Command"
+          cancelText="Cancel"
+          variant="primary"
+        />
+      )}
 
       {/* Disconnected / Updating Overlay */}
       {(isDisconnected || isUpdating) && (

@@ -64,6 +64,7 @@ LABEL org.opencontainers.image.title="9router" \
       org.opencontainers.image.version="${APP_VERSION}"
 
 ENV NODE_ENV=production
+ENV NINEROUTER_INSTALL=docker
 ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
