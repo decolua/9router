@@ -168,9 +168,13 @@ export async function POST(request) {
         if (normalizedBase.endsWith("/messages")) {
           normalizedBase = normalizedBase.slice(0, -9); // remove /messages
         }
+        // Base URLs are entered ending in /v1 (see the node form hint); don't double it.
+        if (normalizedBase.endsWith("/v1")) {
+          normalizedBase = normalizedBase.slice(0, -3);
+        }
 
         const messagesUrl = `${normalizedBase}/v1/messages`;
-        const model = node.defaultModel || "claude-3-haiku-20240307";
+        const model = body.defaultModel || node.defaultModel || "claude-3-haiku-20240307";
 
         const res = await fetch(messagesUrl, {
           method: "POST",

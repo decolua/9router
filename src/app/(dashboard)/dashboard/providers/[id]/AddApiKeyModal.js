@@ -131,13 +131,21 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     return !!formData.apiKey;
   };
 
+  // Compatible nodes probe with the model the user is about to save, not a generic default.
+  const validationPayload = () => ({
+    provider,
+    apiKey: formData.apiKey,
+    ...(isCompatible && formData.defaultModel.trim() ? { defaultModel: formData.defaultModel.trim() } : {}),
+    providerSpecificData: buildProviderSpecificData(),
+  });
+
   const handleValidate = async () => {
     setValidating(true);
     try {
       const res = await fetch("/api/providers/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+        body: JSON.stringify(validationPayload()),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -166,7 +174,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+          body: JSON.stringify(validationPayload()),
         });
         const data = await res.json();
         isValid = !!data.valid;

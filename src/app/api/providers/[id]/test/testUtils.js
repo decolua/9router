@@ -544,6 +544,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     try {
       modelsBase = modelsBase.replace(/\/$/, "");
       if (modelsBase.endsWith("/messages")) modelsBase = modelsBase.slice(0, -9);
+      if (modelsBase.endsWith("/v1")) modelsBase = modelsBase.slice(0, -3);
       const messagesUrl = `${modelsBase}/v1/messages`;
       const model = connection.defaultModel || "claude-3-haiku-20240307";
       const res = await fetchWithConnectionProxy(messagesUrl, {

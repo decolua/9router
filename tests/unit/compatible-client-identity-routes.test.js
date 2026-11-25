@@ -215,6 +215,31 @@ describe("compatible client identity route headers", () => {
     expect(JSON.parse(init.body).model).toBe("node-model");
   });
 
+  it("/api/providers/validate does not double /v1 and probes the requested default model", async () => {
+    vi.doMock("@/models", () => ({
+      getProviderNodeById: vi.fn().mockResolvedValue({
+        id: "anthropic-compatible-node",
+        type: "anthropic-compatible",
+        baseUrl: "https://gateway.example.com/v1",
+        defaultModel: "node-model",
+      }),
+    }));
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "" });
+    const { POST } = await import("@/app/api/providers/validate/route.js");
+    globalThis.fetch = fetchMock;
+
+    const response = await POST(new Request("https://9router.local/api/providers/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "anthropic-compatible-node", apiKey: "real-key", defaultModel: "body-model" }),
+    }));
+
+    expect(await response.json()).toEqual({ valid: true, error: null });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://gateway.example.com/v1/messages");
+    expect(JSON.parse(init.body).model).toBe("body-model");
+  });
+
   it("/api/providers/[id]/models uses saved OpenAI compatible connection identity", async () => {
     vi.doMock("@/models", () => ({
       getProviderConnectionById: vi.fn().mockResolvedValue({
