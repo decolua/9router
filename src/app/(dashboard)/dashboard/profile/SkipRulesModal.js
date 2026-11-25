@@ -45,6 +45,11 @@ const ACTION_OPTIONS = [
 //   rounded-[10px] -> !rounded-lg           (app-standard radius)
 //   py-2.5 -> !py-0 + h-10                  (fixed 40px height)
 const FIELD_CLS = "h-10 !py-0 !bg-bg !border-border !rounded-lg hover:!border-brand-500/60";
+// Number inputs: hide the browser spinner so it does not crowd the value next to
+// the datalist arrow in a narrow field.
+const NUMBER_FIELD_CLS = `${FIELD_CLS} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`;
+// Small one-line badge; never wraps, never shrinks (the text next to it truncates).
+const BADGE_CLS = "px-1.5 py-0.5 rounded text-[11px] leading-none whitespace-nowrap shrink-0";
 
 // Priority label mirrors accountFallback.ruleSpecificity: the runtime picks the
 // MOST SPECIFIC matching rule, so the user needs to see that ranking, not row order.
@@ -206,19 +211,19 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
     return (
       <div key={i} className={cn("px-3 py-2.5 border rounded-lg bg-surface-2", rowErrors[i] ? "border-red-500" : "border-border")}>
         <div className="flex items-center gap-2 mb-1.5">
-          <span className={cn("px-1.5 py-0.5 rounded text-[11px] leading-none", spec.cls)}>{spec.text}</span>
-          <span className="text-[11px] text-text-muted truncate">{describeRow(row)}</span>
+          <span className={cn(BADGE_CLS, spec.cls)}>{spec.text}</span>
+          <span className="min-w-0 text-[11px] text-text-muted truncate" title={describeRow(row)}>{describeRow(row)}</span>
           {deadRows.has(i) && (
-            <span className="px-1.5 py-0.5 rounded text-[11px] leading-none bg-red-500/15 text-red-500" title="Same condition as a rule above, so it never runs">duplicate — never runs</span>
+            <span className={cn(BADGE_CLS, "bg-red-500/15 text-red-500")} title="Same condition as a rule above, so it never runs">duplicate — never runs</span>
           )}
-          <Button size="sm" variant="ghost" icon="delete" className="ml-auto" onClick={() => removeRow(i)} title="Delete rule" aria-label="Delete rule" />
+          <Button size="sm" variant="ghost" icon="delete" className="ml-auto shrink-0" onClick={() => removeRow(i)} title="Delete rule" aria-label="Delete rule" />
         </div>
 
         {/* Condition + action. Provider is owned by the group header, so it is not
             repeated per row: that removes one Select per rule from the DOM. */}
         <div className="grid gap-2 items-end grid-cols-1 lg:grid-cols-[minmax(280px,1fr)_auto]">
           <div className="flex flex-wrap gap-2 items-end min-w-0">
-            <Field label="Error type" className="w-[104px] shrink-0">
+            <Field label="Error type" className="w-[136px] shrink-0">
               <Select
                 options={MATCH_MODES}
                 value={row.matchMode}
@@ -229,19 +234,19 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
             </Field>
             {row.matchMode === "http" ? (
               <>
-                <Field label="HTTP status" className="w-[92px] shrink-0">
+                <Field label="HTTP status" className="w-[104px] shrink-0">
                   <Input
                     type="number"
                     list="skip-rule-status-suggestions"
                     value={row.status}
                     onChange={(e) => updateRow(i, { status: e.target.value })}
                     placeholder="any"
-                    inputClassName={FIELD_CLS}
+                    inputClassName={NUMBER_FIELD_CLS}
                     title="HTTP status — leave empty to match any status"
                     aria-label="HTTP status"
                   />
                 </Field>
-                <Field label="Body contains" className="flex-1 min-w-[120px]">
+                <Field label="Body contains" className="flex-1 min-w-[160px]">
                   <Input
                     value={row.contains}
                     onChange={(e) => updateRow(i, { contains: e.target.value })}
@@ -253,7 +258,7 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
                 </Field>
               </>
             ) : (
-              <Field label="Transport kind" className="flex-1 min-w-[140px]">
+              <Field label="Transport kind" className="w-full sm:w-auto sm:flex-1 sm:min-w-[180px]">
                 <Select
                   options={KIND_OPTIONS}
                   value={row.kind}
@@ -308,7 +313,7 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
                         value={row.retryAttempts}
                         onChange={(e) => updateRow(i, { retryAttempts: e.target.value })}
                         placeholder="1"
-                        inputClassName={FIELD_CLS}
+                        inputClassName={NUMBER_FIELD_CLS}
                         title="Call the same account N more times. Empty = 1."
                         aria-label="Extra retries"
                       />
@@ -323,7 +328,7 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
                         value={row.headerTimeoutMs}
                         onChange={(e) => updateRow(i, { headerTimeoutMs: e.target.value })}
                         placeholder="25000"
-                        inputClassName={FIELD_CLS}
+                        inputClassName={NUMBER_FIELD_CLS}
                         title="Default 60000"
                         aria-label="Header timeout (ms)"
                       />
@@ -385,14 +390,14 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
                     className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-surface-2 transition-colors rounded-lg"
                     aria-expanded={isOpen}
                   >
-                    <span className={cn("material-symbols-outlined text-[18px] text-text-muted transition-transform", isOpen && "rotate-90")}>chevron_right</span>
-                    <span className="text-sm text-text-main truncate">{providerLabel(provider)}</span>
-                    <span className="px-1.5 py-0.5 rounded text-[11px] leading-none bg-surface-2 text-text-muted shrink-0">{indices.length} {indices.length === 1 ? "rule" : "rules"}</span>
+                    <span className={cn("material-symbols-outlined text-[18px] text-text-muted transition-transform shrink-0", isOpen && "rotate-90")}>chevron_right</span>
+                    <span className="min-w-0 text-sm text-text-main break-words">{providerLabel(provider)}</span>
+                    <span className={cn(BADGE_CLS, "bg-surface-2 text-text-muted")}>{indices.length} {indices.length === 1 ? "rule" : "rules"}</span>
                     {badCount > 0 && (
-                      <span className="px-1.5 py-0.5 rounded text-[11px] leading-none bg-red-500/15 text-red-500 shrink-0">{badCount} invalid</span>
+                      <span className={cn(BADGE_CLS, "bg-red-500/15 text-red-500")}>{badCount} invalid</span>
                     )}
                     {deadCount > 0 && (
-                      <span className="px-1.5 py-0.5 rounded text-[11px] leading-none bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">{deadCount} duplicate</span>
+                      <span className={cn(BADGE_CLS, "bg-amber-500/15 text-amber-600 dark:text-amber-400")}>{deadCount} duplicate</span>
                     )}
                   </button>
 
