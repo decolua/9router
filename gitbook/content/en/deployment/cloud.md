@@ -113,7 +113,7 @@ pm2 monit
 Create a `Dockerfile` in the `app` directory:
 
 ```dockerfile
-FROM node:20-alpine
+FROM node:22.23.4-alpine
 
 WORKDIR /app
 

@@ -1,6 +1,7 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { createErrorResult } from "../../utils/error.js";
+import { bodyErrorFromJson } from "../../utils/upstreamBodyError.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
@@ -211,7 +212,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       const usage = jsonResponse.usage || {};
       appendLog({ tokens: usage, status: "200 OK" });
-      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, combo: clientRawRequest?.combo, silent: true });
       if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
       // Same cache-inclusive total for the recorded detail, so the DB and the
@@ -308,14 +309,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       // Structured error chunks may carry the real upstream status (e.g. the
       // Qoder executor emits status 403 for billing envelopes). Preserve it so
       // the account loop locks/falls back on the right status instead of a
-      // generic 502. Anything outside 400-599 still maps to 502.
-      const upstreamStatus = Number(parsed.error.status);
-      const status = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
-        ? upstreamStatus
-        : HTTP_STATUS.BAD_GATEWAY;
+      // generic 502. Anything outside 400-599 is classified by its wording
+      // (credits gone → 402, rate/capacity → 429) and otherwise maps to 502. The
+      // error may also be a bare string, which has no `.message` to read.
+      const failure = bodyErrorFromJson({ error: parsed.error });
       return createErrorResult(
-        status,
-        parsed.error.message || "Upstream SSE stream failed"
+        failure?.status || HTTP_STATUS.BAD_GATEWAY,
+        failure?.message || "Upstream SSE stream failed"
       );
     }
 
@@ -323,7 +323,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
     const usage = parsed.usage || {};
     appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, combo: clientRawRequest?.combo, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
     const totalLatency = Date.now() - requestStartTime;
@@ -360,17 +360,23 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       }
     }
 
-    // A Responses-format client (e.g. Codex) forced this provider to stream,
-    // but wants JSON back. parseSSEToOpenAIResponse yields a Chat Completions
-    // body; convert it to the Responses `output` shape so tool_calls are not
-    // lost on the non-streaming return path. Inlined (not imported from
-    // nonStreamingHandler.js) to avoid a circular import: nonStreamingHandler
-    // already imports parseSSEToOpenAIResponse from this module.
-    const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
-      ? chatCompletionToResponses(parsed, customToolNames)
-      : sourceFormat === FORMATS.CLAUDE
-        ? openAICompletionToClaudeMessage(parsed)
-        : parsed;
+    // The client forced this provider to stream but wants JSON back, and
+    // parseSSEToOpenAIResponse yields a Chat Completions body. Anything other
+    // than an OpenAI-format client needs that converted to its own shape —
+    // a Claude client (/v1/messages, stream:false) was otherwise handed an
+    // OpenAI body it cannot parse.
+    //
+    // Responses stays on the inlined converter; the rest reuse the shared
+    // translator, imported dynamically because nonStreamingHandler.js imports
+    // parseSSEToOpenAIResponse from this module and a static import would make
+    // that a load-time cycle.
+    let finalBody = parsed;
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      finalBody = chatCompletionToResponses(parsed, customToolNames);
+    } else if (sourceFormat && sourceFormat !== FORMATS.OPENAI) {
+      const { translateNonStreamingResponse } = await import("./nonStreamingHandler.js");
+      finalBody = translateNonStreamingResponse(parsed, FORMATS.OPENAI, sourceFormat, customToolNames);
+    }
 
     return { success: true, response: new Response(JSON.stringify(restoreToolNames(finalBody, toolNameMap)), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {

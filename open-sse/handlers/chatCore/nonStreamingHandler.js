@@ -3,7 +3,8 @@ import { needsTranslation } from "../../translator/index.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
-import { createErrorResult } from "../../utils/error.js";
+import { createErrorResult, formatProviderError } from "../../utils/error.js";
+import { bodyErrorFromJson } from "../../utils/upstreamBodyError.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
@@ -270,6 +271,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // provider opts in via transport.quirks.clineEnvelope.
   responseBody = unwrapClineEnvelope(responseBody, provider);
 
+  // A failure the upstream put in the body of an HTTP 200 (`{"error": "…has
+  // exhausted its credits…"}`) is a failure: give it its status so the account
+  // and combo fallback see it, instead of returning it to the client as the reply.
+  const bodyFailure = bodyErrorFromJson(responseBody);
+  if (bodyFailure) {
+    appendLog({ status: `FAILED ${bodyFailure.status}` });
+    if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${bodyFailure.status} · ${provider}/${model} · error in a 200 body\n    ${bodyFailure.message}`);
+    return createErrorResult(bodyFailure.status, formatProviderError(new Error(bodyFailure.message), provider, model, bodyFailure.status));
+  }
+
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {
     Promise.resolve()
@@ -284,7 +295,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, combo: clientRawRequest?.combo, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)

@@ -30,6 +30,27 @@ function isCodexResponsesLiteModel(model) {
   return getProviderModels("cx").some((entry) => entry.id === baseId && entry.responsesLite === true);
 }
 
+// Efforts that can be written into a model id: `cx/gpt-6-luna-high`, `cx/gpt-6-luna-max`.
+const EFFORT_SUFFIX_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+ * Split `gpt-6-luna-high` into the model and the effort the id names. Everything that
+ * is decided from the model (Lite transport, upstream id, headers) has to start from
+ * the stripped id, or a suffixed Lite model is sent as an ordinary Responses request.
+ *
+ * A registered id is never split. "-max" is only read as an effort when the model
+ * behind it takes "max", which keeps a real id such as gpt-5.1-codex-max whole.
+ */
+function splitEffortSuffix(model) {
+  const id = String(model || "");
+  const effort = EFFORT_SUFFIX_LEVELS.find((level) => id.endsWith(`-${level}`));
+  if (!effort) return { base: id, effort: null };
+  const base = id.slice(0, -(effort.length + 1));
+  if (!base || getProviderModels("cx").some((entry) => entry.id === id)) return { base: id, effort: null };
+  if (effort === "max" && !getThinkingLevels("codex", base)?.includes("max")) return { base: id, effort: null };
+  return { base, effort };
+}
+
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
 
@@ -219,7 +240,7 @@ export class CodexExecutor extends BaseExecutor {
    */
   buildHeaders(credentials, stream = true, _url = null, model = null, body = null) {
     const headers = super.buildHeaders(credentials, stream);
-    if (isCodexResponsesLiteModel(model && getModelUpstreamId("cx", model)) && !body?.tools?.some?.(tool => tool?.type === "web_search")) {
+    if (isCodexResponsesLiteModel(model && getModelUpstreamId("cx", splitEffortSuffix(model).base)) && !body?.tools?.some?.(tool => tool?.type === "web_search")) {
       headers["x-openai-internal-codex-responses-lite"] = "true";
     }
     headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
@@ -419,7 +440,10 @@ export class CodexExecutor extends BaseExecutor {
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;
-    const upstreamModel = getModelUpstreamId("cx", body.model || model);
+    // An effort written into the id (`gpt-6-luna-max`) is read first: the model it names
+    // decides the transport below, not the suffixed spelling.
+    const { base: requestedModel, effort: modelEffort } = splitEffortSuffix(body.model || model);
+    const upstreamModel = getModelUpstreamId("cx", requestedModel);
     // Register hosted search before choosing transport; Lite cannot execute it.
     const autoWebSearch = body._autoCodexWebSearch === true;
     delete body._autoCodexWebSearch;
@@ -501,21 +525,16 @@ export class CodexExecutor extends BaseExecutor {
       delete body.parallel_tool_calls;
     }
 
-    // Extract thinking level from model name suffix
-    // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-    let modelEffort = null;
-    for (const level of effortLevels) {
-      if (body.model.endsWith(`-${level}`)) {
-        modelEffort = level;
-        // Strip suffix from model name for actual API call
-        body.model = body.model.replace(`-${level}`, '');
-        break;
-      }
-    }
-
-    // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
-    if (!body.reasoning) {
+    // Priority: effort named in the model id > reasoning.effort > reasoning_effort param > default.
+    // The model id wins because it is the operator's explicit choice for this model
+    // (`cx/gpt-6-luna-low`), whereas an agent client sends an effort of its own on
+    // every request — which used to throw the suffix away. Same order as the
+    // `(low)` spelling, which thinkingUnified already applies over the client.
+    if (modelEffort) {
+      const effort = normalizeReasoningEffort(body.model, modelEffort);
+      body.reasoning = { ...(body.reasoning || {}), effort };
+      if (!responsesLite && !body.reasoning.summary) body.reasoning.summary = "auto";
+    } else if (!body.reasoning) {
       const effort = normalizeReasoningEffort(body.model, body.reasoning_effort || modelEffort || (responsesLite ? 'medium' : 'low'));
       body.reasoning = responsesLite ? { effort } : { effort, summary: "auto" };
     } else {

@@ -161,7 +161,9 @@ describe("peer header trust", () => {
     }));
 
     expect(response.status).toBe(403);
-    expect(response.body.error).toBe("Local only: CLI token required");
+    // The refusal now names what to do about it (and says something different
+    // in a container), so pin the meaning rather than the exact wording.
+    expect(response.body.error).toMatch(/^Local only/);
   });
 
   it("accepts the legacy Host fallback only in development", async () => {

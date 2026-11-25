@@ -15,12 +15,6 @@ export const WEB_LOGIN_CONFIGS = {
     // when Cloudflare challenges the fresh profile — capture them all.
     tokenSources: [{ type: "cookie", name: "sso" }],
   },
-  "chatgpt-web": {
-    loginUrl: "https://chatgpt.com/",
-    cookieDomain: ".chatgpt.com",
-    // NextAuth splits large session tokens into `.0`, `.1`, … chunks.
-    tokenSources: [{ type: "cookie", name: "__Secure-next-auth.session-token" }],
-  },
   "gemini-web": {
     loginUrl: "https://gemini.google.com/",
     cookieDomain: ".google.com",

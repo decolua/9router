@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   nextResponse: Symbol("next"),
@@ -232,7 +232,7 @@ describe("dashboard guard local-only access", () => {
     }));
 
     expect(response.status).toBe(403);
-    expect(response.body.error).toBe("Local only: CLI token required");
+    expect(response.body.error).toMatch(/^Local only/);
   });
 
   it("rejects local-only route on loopback when requireLogin=true and no JWT", async () => {
@@ -242,7 +242,7 @@ describe("dashboard guard local-only access", () => {
     }));
 
     expect(response.status).toBe(403);
-    expect(response.body.error).toBe("Local only: CLI token required");
+    expect(response.body.error).toMatch(/^Local only/);
   });
 
   it("allows local-only route on loopback when requireLogin=false", async () => {
@@ -284,6 +284,74 @@ describe("dashboard guard local-only access", () => {
     }));
 
     expect(response).toBe(mocks.nextResponse);
+  });
+});
+
+// In a container there is no operator desktop behind these routes, and the
+// dashboard is necessarily reached from elsewhere — so the loopback test
+// rejected every real request and both provider cards showed nothing but
+// "Local only: CLI token required".
+describe("dashboard guard local-only routes in a container", () => {
+  const CONTAINER_PATHS = [
+    "/api/cli-tools/claude-cli-settings",
+    "/api/cli-tools/claude-cli-accounts",
+  ];
+
+  // IS_CONTAINER is decided once at module load, so each case needs a fresh
+  // module with the environment already set.
+  const loadGuard = async (containerised) => {
+    vi.stubEnv("NINEROUTER_HOST_ROUTES_REMOTE", containerised ? "1" : "0");
+    vi.resetModules();
+    return (await import("../../src/dashboardGuard.js")).proxy;
+  };
+
+  const remote = (path, signedIn) => {
+    const req = request(path, { host: "9router.example.com" });
+    if (signedIn) req.cookies.get = vi.fn(() => ({ value: "a-valid-jwt" }));
+    return req;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  for (const path of CONTAINER_PATHS) {
+    it(`lets a signed-in remote caller reach ${path}`, async () => {
+      mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+      const proxyFn = await loadGuard(true);
+
+      expect(await proxyFn(remote(path, true))).toBe(mocks.nextResponse);
+    });
+  }
+
+  // Authentication is still the gate; it is only the loopback half that goes.
+  it("still refuses an unauthenticated remote caller", async () => {
+    const proxyFn = await loadGuard(true);
+
+    const response = await proxyFn(remote("/api/cli-tools/claude-cli-settings", false));
+
+    expect(response.status).toBe(403);
+  });
+
+  // Off a container, the desktop rule is untouched: a remote browser must not
+  // be able to spawn processes on someone's machine just by logging in.
+  it("refuses a signed-in remote caller when not containerised", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const proxyFn = await loadGuard(false);
+
+    const response = await proxyFn(remote("/api/cli-tools/claude-cli-settings", true));
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toMatch(/^Local only/);
   });
 });
 

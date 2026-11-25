@@ -6,7 +6,7 @@
 // web session). A probe answers three things — ok / rejected / unknown — so a
 // flaky network never flips a healthy connection to "error".
 import https from "node:https";
-import { extractCookieValue, normalizeSessionCookieHeader, normalizeCookieHeaderInput } from "../utils/webCookieAuth.js";
+import { extractCookieValue, normalizeCookieHeaderInput } from "../utils/webCookieAuth.js";
 import { normalizeGeminiValidationCookie } from "../utils/geminiCookies.js";
 import { grokTlsFetch, GROK_TLS_USER_AGENT } from "./grokTlsClient.js";
 
@@ -104,22 +104,6 @@ const PROBES = {
     const biz = json?.data?.biz_data;
     if (!biz?.token) return REJECTED("DeepSeek rejected the userToken");
     return OK(biz.email || "");
-  },
-
-  async "chatgpt-web"(credential) {
-    const cookie = normalizeSessionCookieHeader(credential, "__Secure-next-auth.session-token");
-    if (!cookie) return REJECTED("Missing session cookie");
-    const res = await request("https://chatgpt.com/api/auth/session", {
-      headers: { Cookie: cookie, Accept: "application/json" },
-    });
-    if (!res.status) return UNKNOWN(res.error);
-    if (res.status === 401 || res.status === 403) return REJECTED("Session cookie is invalid or expired");
-    if (!res.ok) return UNKNOWN(`ChatGPT returned HTTP ${res.status}`);
-    let json = null;
-    try { json = JSON.parse(res.text); } catch { return UNKNOWN("ChatGPT returned invalid JSON"); }
-    const email = json?.user?.email;
-    if (!email) return REJECTED("ChatGPT session is not signed in");
-    return OK(email);
   },
 
   async "grok-web"(credential) {

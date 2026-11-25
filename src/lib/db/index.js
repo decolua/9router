@@ -29,6 +29,12 @@ export {
   createProxyPool, updateProxyPool, deleteProxyPool,
 } from "./repos/proxyPoolsRepo.js";
 
+// Agent skills
+export {
+  getAgentSkills, getEnabledAgentSkills, getAgentSkillById,
+  createAgentSkill, updateAgentSkill, deleteAgentSkill,
+} from "./repos/agentSkillsRepo.js";
+
 // API keys
 export {
   getApiKeys, getApiKeyById, getApiKeyByKey, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
@@ -67,6 +73,7 @@ export {
 // Request details
 export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
+  isObservabilityRecording, observabilityEnvSource,
 } from "./repos/requestDetailsRepo.js";
 
 // Export/import full DB

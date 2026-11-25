@@ -75,6 +75,22 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_pp_status ON proxyPools(testStatus)",
     ],
   },
+  // Agent skills: third-party SKILL.md documents injected into the system
+  // prompt of routed requests. The body is stored rather than re-fetched, so a
+  // request never depends on GitHub being reachable.
+  agentSkills: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      enabled: "INTEGER DEFAULT 0",
+      sortOrder: "INTEGER DEFAULT 0",
+      data: "TEXT NOT NULL",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_as_enabled ON agentSkills(enabled)",
+    ],
+  },
   apiKeys: {
     columns: {
       id: "TEXT PRIMARY KEY",

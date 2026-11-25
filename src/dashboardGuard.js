@@ -1,23 +1,9 @@
+import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { hasValidCliToken } from "@/lib/auth/cliToken";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
-
-const CLI_TOKEN_HEADER = "x-9r-cli-token";
-const CLI_TOKEN_SALT = "9r-cli-auth";
-
-let cachedCliToken = null;
-async function getCliToken() {
-  if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
-  return cachedCliToken;
-}
-
-async function hasValidCliToken(request) {
-  const token = request.headers.get(CLI_TOKEN_HEADER);
-  if (!token) return false;
-  return token === await getCliToken();
-}
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
 const PUBLIC_API_PATHS = [
@@ -75,6 +61,12 @@ const PROTECTED_API_PATHS = [
 const LOCAL_ONLY_PATHS = [
   "/api/cli-tools/cowork-settings",
   "/api/cli-tools/antigravity-mitm",
+  // Spawns `claude --version` on the host.
+  "/api/cli-tools/claude-cli-settings",
+  // Creates config directories and opens a terminal window on the host.
+  "/api/cli-tools/claude-cli-accounts",
+  // Fetches a caller-supplied URL and can open a window on the host.
+  // Carries a chatgpt.com session through to the bridge.
   "/api/mcp/",
   "/api/tunnel/tailscale-install",
   "/api/tunnel/tailscale-enable",
@@ -164,10 +156,39 @@ async function canAccessPublicLlmApi(request) {
   return await hasValidApiKey(request);
 }
 
+/**
+ * Whether this process is the whole machine, as far as these routes care.
+ *
+ * LOCAL_ONLY_PATHS exists to stop a remote caller making the OPERATOR'S
+ * DESKTOP spawn a process, open a window or read host secrets. That threat
+ * needs a desktop: it assumes 9Router and the browser are the same machine.
+ *
+ * In a container neither half holds. There is no desktop behind the routes —
+ * the "host" is the container, which exists to run exactly this — and the
+ * dashboard is necessarily reached from somewhere else, so the loopback test
+ * can never pass. Left as-is the gate rejects 100% of legitimate use and
+ * protects nothing that /api/* authentication does not already cover.
+ *
+ * Evaluated once: this cannot change while the process runs.
+ */
+const IS_CONTAINER = (() => {
+  if (process.env.NINEROUTER_HOST_ROUTES_REMOTE === "1") return true;
+  if (process.env.NINEROUTER_HOST_ROUTES_REMOTE === "0") return false;
+  if (process.env.KUBERNETES_SERVICE_HOST) return true;
+  try {
+    return fs.existsSync("/.dockerenv");
+  } catch {
+    return false;
+  }
+})();
+
 async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
   if (isLocalRequest(request) && await isAuthenticated(request)) return true;
+  // Containerised: authentication is the whole gate, because "local" has no
+  // meaning here and the loopback test would reject every real request.
+  if (IS_CONTAINER && await isAuthenticated(request)) return true;
   return false;
 }
 
@@ -214,7 +235,14 @@ export async function proxy(request) {
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
     if (!(await canAccessLocalOnlyRoute(request))) {
-      return NextResponse.json({ error: "Local only: CLI token required" }, { status: 403 });
+      return NextResponse.json(
+        {
+          error: IS_CONTAINER
+            ? "Sign in to the dashboard to use this route."
+            : "Local only: open the dashboard on the machine running 9Router, or send a CLI token.",
+        },
+        { status: 403 },
+      );
     }
   }
 

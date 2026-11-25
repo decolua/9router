@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
-import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS, USAGE_ROUTED_PROVIDERS } from "@/shared/constants/providers";
 import { isLeaseConnection } from "open-sse/services/minimaxCodeLease.js";
 
 const SAFE_FIELDS = [
@@ -46,7 +46,13 @@ function sanitize(c) {
 
 function isUsageEligible(connection) {
   return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
-    connection.authType === "oauth" || isLeaseConnection(connection) || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
+    connection.authType === "oauth"
+    || isLeaseConnection(connection)
+    || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
+    // Local-credential and bridge-held providers store connections with
+    // authType "none", so an auth-type test would exclude them entirely. Their
+    // figures come from what this server routed, not from upstream.
+    || USAGE_ROUTED_PROVIDERS.includes(connection.provider)
   );
 }
 

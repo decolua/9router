@@ -2,18 +2,26 @@ import { NextResponse } from "next/server";
 import { exportDb, getSettings, importDb } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
+import { hasValidCliToken } from "@/lib/auth/cliToken";
 
-const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const PASSWORD_HEADER = "x-9r-password";
 
-// CLI token requests are already trusted (local machine); skip password re-auth.
+/**
+ * A request from the local CLI, which is already trusted and skips the
+ * password re-auth this route otherwise requires.
+ *
+ * The token is checked, not merely counted. Presence alone was enough here —
+ * unlike everywhere else it is used — so any logged-in dashboard session could
+ * skip the re-auth with a made-up header value and export the database, which
+ * carries every stored provider credential.
+ */
 function isCliRequest(request) {
-  return Boolean(request.headers.get(CLI_TOKEN_HEADER));
+  return hasValidCliToken(request);
 }
 
 export async function GET(request) {
   try {
-    if (!isCliRequest(request) && !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))) {
+    if (!(await isCliRequest(request)) && !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
     const payload = await exportDb();
@@ -27,7 +35,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { password, ...payload } = await request.json();
-    if (!isCliRequest(request) && !(await verifyDashboardPassword(password))) {
+    if (!(await isCliRequest(request)) && !(await verifyDashboardPassword(password))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
     await importDb(payload);

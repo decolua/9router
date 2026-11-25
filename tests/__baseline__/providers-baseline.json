@@ -1313,11 +1313,6 @@
     "format": "openai",
     "authType": "cookie"
   },
-  "chatgpt-web": {
-    "baseUrl": "https://chatgpt.com",
-    "format": "openai",
-    "authType": "cookie"
-  },
   "uc-web": {
     "baseUrl": "https://internal.chatuncensored.ai",
     "format": "openai",

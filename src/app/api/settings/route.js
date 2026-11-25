@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { AUTO_PING_SETTINGS_KEYS } from "@/shared/constants/config";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -12,14 +13,16 @@ const SETTINGS_RESPONSE_HEADERS = {
 };
 
 // Secrets must never be mass-assigned from request body (CWE-915)
-const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+// quotaResetNotify holds webhook URLs / bot tokens: it is read and written only
+// through /api/settings/quota-reset-notify, which validates and masks it.
+const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted", "quotaResetNotify"];
 
 export async function GET() {
   try {
     const settings = await getSettings();
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, quotaResetNotify, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
-    
+
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
     
@@ -96,10 +99,12 @@ export async function PATCH(request) {
       resetComboRotation();
     }
 
-    if (
-      Object.prototype.hasOwnProperty.call(body, "claudeAutoPing") ||
-      Object.prototype.hasOwnProperty.call(body, "codexAutoPing")
-    ) {
+    // Derived from the auto-ping provider table: a provider added there must not
+    // also have to be remembered here, or its schedule saves but never starts
+    // the scheduler until the next restart.
+    if (Object.values(AUTO_PING_SETTINGS_KEYS).some(
+      (key) => Object.prototype.hasOwnProperty.call(body, key),
+    )) {
       // Keep the scheduler absent when no account opted in; load its provider graph only on demand.
       import("@/shared/services/quotaAutoPing")
         .then(({ configureQuotaAutoPing }) => {
@@ -108,7 +113,7 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
     }
 
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, quotaResetNotify, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
