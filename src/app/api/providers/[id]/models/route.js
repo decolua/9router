@@ -625,17 +625,42 @@ export async function GET(request, { params }) {
       if (!baseUrl) {
         return NextResponse.json({ error: "No base URL configured for OpenAI compatible provider" }, { status: 400 });
       }
-      const url = `${baseUrl.replace(/\/$/, "")}/models`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${connection.apiKey}`,
-        },
-      });
+
+      const cleanBase = baseUrl.replace(/\/+$/, "");
+      const hasExplicitPath = cleanBase.split("/").length > 3; // http(s)://host[:port]/path
+      const url = `${cleanBase}/models`;
+
+      async function tryFetch(fetchUrl) {
+        const response = await fetch(fetchUrl, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${connection.apiKey}`,
+          },
+        });
+        return response;
+      }
+
+      let response = await tryFetch(url);
+      let data;
+
+      // Check for explicit "endpoint not supported" in 200 responses (e.g., LM Studio)
+      if (response.ok) {
+        data = await response.json();
+        if (data?.error && /unexpected|not\s+(found|supported|implemented)|invalid\s+endpoint/i.test(data.error)) {
+          response = { ok: false, status: 404, text: async () => data.error };
+        }
+      }
+
+      // Fallback: only for root URLs (no explicit path) when first attempt gave 404/unsupported
+      if (!response.ok && response.status === 404 && !hasExplicitPath) {
+        const fallbackUrl = `${cleanBase}/v1/models`;
+        response = await tryFetch(fallbackUrl);
+        data = undefined; // force re-parse on success
+      }
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const errorText = await response.text().catch(() => "");
         console.log(`Error fetching models from ${connection.provider}:`, errorText);
         return NextResponse.json(
           { error: `Failed to fetch models: ${response.status}` },
@@ -643,7 +668,7 @@ export async function GET(request, { params }) {
         );
       }
 
-      const data = await response.json();
+      data = data ?? (await response.json());
       const models = data.data || data.models || [];
 
       return NextResponse.json({

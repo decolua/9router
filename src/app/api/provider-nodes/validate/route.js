@@ -159,10 +159,31 @@ export async function POST(request) {
     }
 
     // OpenAI Compatible Validation (Default)
-    const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
-    const res = await fetchWithTimeout(modelsUrl, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
-    });
+    const cleanBase = baseUrl.replace(/\/+$/, "");
+    const hasExplicitPath = cleanBase.split("/").length > 3; // http(s)://host[:port]/path
+    const normalizedBase = hasExplicitPath ? cleanBase : `${cleanBase}/v1`;
+
+    async function tryFetch(fetchUrl, options) {
+      return fetchWithTimeout(fetchUrl, options);
+    }
+
+    // Try /models endpoint
+    let modelsUrl = `${normalizedBase}/models`;
+    let res = await tryFetch(modelsUrl, { headers: { "Authorization": `Bearer ${apiKey}` } });
+
+    // Check for explicit "endpoint not supported" in 200 responses (e.g., LM Studio)
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data?.error && /unexpected|not\s+(found|supported|implemented)|invalid\s+endpoint/i.test(data.error)) {
+        res = { ok: false, status: 404, text: async () => data.error };
+      }
+    }
+
+    // Fallback for root URLs when /models gives 404/unsupported
+    if (!res.ok && res.status === 404 && !hasExplicitPath && normalizedBase !== `${cleanBase}/v1`) {
+      const fallbackUrl = `${cleanBase}/v1/models`;
+      res = await tryFetch(fallbackUrl, { headers: { "Authorization": `Bearer ${apiKey}` } });
+    }
 
     if (res.ok) return NextResponse.json({ valid: true });
 
@@ -173,7 +194,8 @@ export async function POST(request) {
 
     // Fallback: try chat/completions if modelId provided
     if (modelId) {
-      const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      let chatUrl = `${normalizedBase}/chat/completions`;
+      let chatRes = await tryFetch(chatUrl, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
@@ -185,6 +207,32 @@ export async function POST(request) {
           max_tokens: 1
         })
       });
+
+      // Check for endpoint not supported in chat response
+      if (chatRes.ok) {
+        const data = await chatRes.json().catch(() => null);
+        if (data?.error && /unexpected|not\s+(found|supported|implemented)|invalid\s+endpoint/i.test(data.error)) {
+          chatRes = { ok: false, status: 404, text: async () => data.error };
+        }
+      }
+
+      // Fallback for root URLs when chat gives 404/unsupported
+      if (!chatRes.ok && chatRes.status === 404 && !hasExplicitPath && normalizedBase !== `${cleanBase}/v1`) {
+        const fallbackChatUrl = `${cleanBase}/v1/chat/completions`;
+        chatRes = await tryFetch(fallbackChatUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: modelId,
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1
+          })
+        });
+      }
+
       if (chatRes.ok) {
         return NextResponse.json({ valid: true, method: "chat" });
       }

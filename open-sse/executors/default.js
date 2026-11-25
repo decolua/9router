@@ -179,7 +179,9 @@ export class DefaultExecutor extends BaseExecutor {
     }
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
-      const normalized = baseUrl.replace(/\/$/, "");
+      const cleanBase = baseUrl.replace(/\/+$/, "");
+      const hasExplicitPath = cleanBase.split("/").length > 3; // http(s)://host[:port]/path
+      const normalized = hasExplicitPath ? cleanBase : `${cleanBase}/v1`;
       const path = resolveOpenAICompatibleApiType(this.provider, credentials) === "responses" ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
