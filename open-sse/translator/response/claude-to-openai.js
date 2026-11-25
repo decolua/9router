@@ -41,7 +41,12 @@ export function claudeToOpenAIResponse(chunk, state) {
           completion_tokens: 0,
           total_tokens: promptTokens,
           input_tokens: inputTokens,
-          output_tokens: 0
+          output_tokens: 0,
+          // prompt_tokens above is already cache-inclusive. canonicalizeUsage()
+          // treats a present top-level cached_tokens as its "already folded"
+          // marker, so set it unconditionally (even 0) or the stream's usage
+          // record folds the cache totals into prompt_tokens a second time.
+          cached_tokens: cacheReadTokens
         };
         if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
         if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
@@ -134,7 +139,9 @@ export function claudeToOpenAIResponse(chunk, state) {
           completion_tokens: outputTokens,
           total_tokens: promptTokens + outputTokens,
           input_tokens: inputTokens,
-          output_tokens: outputTokens
+          output_tokens: outputTokens,
+          // Already-folded marker for canonicalizeUsage() (see message_start).
+          cached_tokens: cacheReadTokens
         };
 
         if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
@@ -172,12 +179,15 @@ export function claudeToOpenAIResponse(chunk, state) {
     case "message_stop": {
       if (!state.finishReasonSent) {
         const finishReason = state.finishReason || (state.toolCalls?.size > 0 ? OPENAI_FINISH.TOOL_CALLS : OPENAI_FINISH.STOP);
+        // Same construction as message_delta: input_tokens is cache-exclusive on
+        // Claude, so it cannot be reported as prompt_tokens on its own.
         const usageObj = (state.usage && typeof state.usage === 'object') ? {
-          usage: {
-            prompt_tokens: state.usage.input_tokens || 0,
-            completion_tokens: state.usage.output_tokens || 0,
-            total_tokens: (state.usage.input_tokens || 0) + (state.usage.output_tokens || 0)
-          }
+          usage: toOpenAIUsage({
+            input_tokens: state.usage.input_tokens || 0,
+            output_tokens: state.usage.output_tokens || 0,
+            cache_read_input_tokens: state.usage.cache_read_input_tokens,
+            cache_creation_input_tokens: state.usage.cache_creation_input_tokens
+          }, "claude")
         } : {};
         results.push({ ...createChunk(state, {}, finishReason), ...usageObj });
         state.finishReasonSent = true;
