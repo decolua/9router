@@ -65,12 +65,30 @@ function detectClientLastRole(body) {
   return role === ROLE.ASSISTANT || role === GEMINI_ROLE.MODEL ? ROLE.ASSISTANT : undefined;
 }
 
+// Translator-only metadata that chatCore reads back after translation. Most
+// provider translators build a fresh provider-native body, so these keys are
+// collected after every hop and re-attached to the final body.
+const TRANSLATOR_METADATA_KEYS = ["_customToolNames", "_toolNameMap"];
+
+function collectTranslatorMetadata(body, metadata) {
+  if (!body || typeof body !== "object") return body;
+  for (const key of TRANSLATOR_METADATA_KEYS) {
+    if (body[key] !== undefined) metadata[key] = body[key];
+  }
+  return body;
+}
+
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
   ensureInitialized();
   let result = body;
   // Role the client actually ended on, before any translator drops an emptied turn.
   const clientLastRole = detectClientLastRole(body);
+  // Translator metadata is produced by translators only; never trust a client copy.
+  const translatorMetadata = {};
+  if (result && typeof result === "object") {
+    for (const key of TRANSLATOR_METADATA_KEYS) delete result[key];
+  }
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
@@ -109,13 +127,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     // pairs like claude:kiro (avoids the claude->openai->kiro double-hop).
     const directFn = requestRegistry.get(`${sourceFormat}:${targetFormat}`);
     if (directFn) {
-      result = directFn(model, result, stream, credentials, translationOptions);
+      result = collectTranslatorMetadata(directFn(model, result, stream, credentials, translationOptions), translatorMetadata);
     } else {
       // Step 1: source -> openai (if source is not openai)
       if (sourceFormat !== FORMATS.OPENAI) {
         const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
         if (toOpenAI) {
-          result = toOpenAI(model, result, stream, credentials, translationOptions);
+          result = collectTranslatorMetadata(toOpenAI(model, result, stream, credentials, translationOptions), translatorMetadata);
           // Log OpenAI intermediate format
           reqLogger?.logOpenAIRequest?.(result);
         }
@@ -125,7 +143,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
       if (targetFormat !== FORMATS.OPENAI) {
         const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
         if (fromOpenAI) {
-          result = fromOpenAI(model, result, stream, credentials);
+          result = collectTranslatorMetadata(fromOpenAI(model, result, stream, credentials), translatorMetadata);
         }
       }
     }
@@ -177,6 +195,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   //   }
   // }
 
+  // Keys set on the final body (e.g. the cloaking map above) win over earlier hops.
+  collectTranslatorMetadata(result, translatorMetadata);
+  if (result && typeof result === "object") Object.assign(result, translatorMetadata);
   return result;
 }
 

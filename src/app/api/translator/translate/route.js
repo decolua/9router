@@ -35,6 +35,7 @@ export async function POST(request) {
         // translateRequest(source, OPENAI) = only the first half
         const result = translateRequest(sourceFormat, FORMATS.OPENAI, model, clientBody, stream, null, provider);
         delete result._toolNameMap;
+        delete result._customToolNames;
 
         return NextResponse.json({ success: true, result: { body: result } });
       }
@@ -55,6 +56,7 @@ export async function POST(request) {
         // translateRequest(OPENAI, target) = second half of pipeline
         const translated = translateRequest(FORMATS.OPENAI, targetFormat, model, openaiBody, stream, null, provider);
         delete translated._toolNameMap;
+        delete translated._customToolNames;
 
         // Build URL + headers via executor (same as chatCore → executor.execute)
         const connections = await getProviderConnections({ provider });

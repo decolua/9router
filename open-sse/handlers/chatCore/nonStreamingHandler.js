@@ -36,6 +36,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 
   const message = choice.message || {};
   const output = [];
+  const customNames = new Set(customToolNames || []);
 
   // Reasoning → a reasoning item (summary text), mirroring the streaming path.
   const reasoning = message.reasoning_content || message.reasoning;
@@ -59,7 +60,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   // tool_calls → function_call/custom_tool_call items (Responses-native tool shape).
   for (const tc of message.tool_calls || []) {
     const fn = tc.function || {};
-    const custom = customToolNames?.has(fn.name);
+    const custom = customNames.has(fn.name);
     output.push({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
@@ -92,18 +93,22 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 }
 
 /**
- * Translate non-streaming response body from provider format → OpenAI format.
+ * Translate a non-streaming provider body into the client's format.
+ * Provider-native bodies are first converted to Chat Completions (some
+ * executors, e.g. Kiro, already return that shape); provider-normalized tool
+ * names are restored there, then the body is projected to Responses or
+ * Claude when the client speaks one of those formats.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null, toolNameMap = null) {
   if (targetFormat === sourceFormat) return responseBody;
-  // Provider responded in OpenAI Chat Completions shape but the client speaks
-  // Responses API — convert so tool_calls/text surface as Responses `output`.
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAICompletionToResponses(responseBody, customToolNames);
-  }
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
-  }
+  const chatBody = restoreToolNames(providerBodyToChatCompletion(responseBody, targetFormat), toolNameMap);
+  if (!chatBody?.choices?.[0]) return chatBody;
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) return openAICompletionToResponses(chatBody, customToolNames);
+  if (sourceFormat === FORMATS.CLAUDE) return openAICompletionToClaudeMessage(chatBody);
+  return chatBody;
+}
+
+function providerBodyToChatCompletion(responseBody, targetFormat) {
   if (targetFormat === FORMATS.OPENAI) return responseBody;
 
   // Gemini / Antigravity
@@ -287,8 +292,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+  // Translation restores tool names on its Chat intermediate; restoring again on
+  // the client-format body could remap a name that is itself a map key.
+  const translated = needsTranslation(targetFormat, sourceFormat);
+  const translatedResponse = translated
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames, toolNameMap)
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
@@ -357,7 +365,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   return {
     success: true,
-    response: new Response(JSON.stringify(restoreToolNames(translatedResponse, toolNameMap)), {
+    response: new Response(JSON.stringify(translated ? translatedResponse : restoreToolNames(translatedResponse, toolNameMap)), {
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", ...upstreamResponseHeaders(providerResponse.headers) }
     })
   };

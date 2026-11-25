@@ -16,6 +16,14 @@ import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 
 const MAX_TOOL_NAME_LEN = 128;
 
+// Responses Lite groups callable tools inside `namespace` declarations (possibly
+// nested). Chat Completions has no such wrapper, so expose the leaf tools rather
+// than a function named after the namespace.
+function flattenResponsesTools(tools) {
+  return tools.flatMap((tool) =>
+    tool?.type === "namespace" ? flattenResponsesTools(Array.isArray(tool.tools) ? tool.tools : []) : [tool]);
+}
+
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
  */
@@ -178,10 +186,10 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // explicit `name` field and cannot be represented as Chat Completions function declarations.
   // Filter them out to avoid sending nameless functionDeclarations to downstream providers
   // such as Gemini, which strictly validates function names.
-  const responseTools = [
+  const responseTools = flattenResponsesTools([
     ...(Array.isArray(body.tools) ? body.tools : []),
     ...additionalTools,
-  ];
+  ]);
   if (responseTools.length > 0) {
     result.tools = responseTools
       .map(tool => {
