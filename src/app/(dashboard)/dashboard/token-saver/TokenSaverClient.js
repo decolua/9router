@@ -328,7 +328,7 @@ export default function TokenSaverClient() {
     if (extra === "ml") setKompress(value);
     const key = extra === "code" ? "headroomCodeAware" : "headroomKompress";
     await patchSetting({ [key]: value });
-    if (!headroomStatus.running) return;
+    if (!headroomStatus.running || !headroomStatus.managedPid || headroomStatus.localUrl === false) return;
     setRestartingProxy(true);
     try {
       const res = await fetch("/api/headroom/restart", { method: "POST" });
@@ -340,7 +340,7 @@ export default function TokenSaverClient() {
     } finally {
       setRestartingProxy(false);
     }
-  }, [headroomStatus.running, refreshHeadroomStatus]);
+  }, [headroomStatus.running, headroomStatus.managedPid, headroomStatus.localUrl, refreshHeadroomStatus]);
 
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
@@ -462,19 +462,18 @@ export default function TokenSaverClient() {
   }, [refreshHeadroomStatus, refreshPxpipeStatus, runPxpipeHealth]);
 
   const headroomRunning = !!headroomStatus.running;
+  const headroomLocalUrl = headroomStatus.localUrl !== false;
+  const headroomCanStart = !!headroomStatus.canStart;
+  const headroomManaged = headroomLocalUrl && !!headroomStatus.managedPid;
   const headroomStatusLabel = headroomStatus.loading
     ? "Checking…"
     : headroomRunning
-      ? "Running"
+      ? (headroomManaged ? "Running (managed by 9Router)" : "Running (external)")
       : headroomStatus.localUrl !== false && !headroomStatus.installed
         ? "Not installed"
         : headroomStatus.localUrl !== false
           ? "Stopped"
           : "External";
-  const headroomLocalUrl = headroomStatus.localUrl !== false;
-  const headroomCanStart = !!headroomStatus.canStart;
-  const headroomManaged =
-    headroomLocalUrl && !!headroomStatus.managedPid;
 
   const pxpipeHealthy = pxpipeHealth?.healthy === true;
   const pxpipeStatusLabel = pxpipeStatus.loading
