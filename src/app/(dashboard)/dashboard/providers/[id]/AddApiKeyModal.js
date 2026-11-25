@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
+import { BYTEPLUS_DEFAULT_ENDPOINT_MODE, BYTEPLUS_DEFAULT_MODEL } from "open-sse/config/byteplus.js";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -20,6 +21,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isByteplus = provider === "byteplus";
   // Capability, not identity: gating this on `provider === "bedrock"` left bedrock-xai with no
   // way to enter a profile at all, which is the same mistake as hardcoding the API-key exemption.
   const usesAwsCredentialForm =
@@ -45,6 +47,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [byteplusData, setByteplusData] = useState({
+    endpointMode: BYTEPLUS_DEFAULT_ENDPOINT_MODE,
+    model: BYTEPLUS_DEFAULT_MODEL,
+  });
   const [bedrockData, setBedrockData] = useState({
     profile: "",
     region: "",
@@ -54,6 +60,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [validationWarning, setValidationWarning] = useState(null);
   const [saving, setSaving] = useState(false);
   const [cliDetecting, setCliDetecting] = useState(false);
   const [cliDetectError, setCliDetectError] = useState(null);
@@ -92,6 +99,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const buildProviderSpecificData = () => {
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
       return { baseUrl: formData.ollamaHostUrl.trim() };
+    }
+    if (isByteplus) {
+      return { endpointMode: byteplusData.endpointMode, model: byteplusData.model.trim() };
     }
     if (isAzure) {
       return {
@@ -141,6 +151,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
+      setValidationWarning(data.warning || null);
     } catch {
       setValidationResult("failed");
     } finally {
@@ -163,6 +174,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       try {
         setValidating(true);
         setValidationResult(null);
+        setValidationWarning(null);
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -171,6 +183,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const data = await res.json();
         isValid = !!data.valid;
         setValidationResult(isValid ? "success" : "failed");
+        setValidationWarning(data.warning || null);
       } catch {
         setValidationResult("failed");
       } finally {
@@ -370,6 +383,30 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
           />
         )}
+        {isByteplus && (
+          <>
+            <Select
+              label="Endpoint Mode"
+              value={byteplusData.endpointMode}
+              onChange={(e) => setByteplusData({ ...byteplusData, endpointMode: e.target.value })}
+              options={[
+                { value: "coding", label: "Coding Plan (api/coding/v3)" },
+                { value: "standard", label: "Standard (api/v3)" },
+              ]}
+            />
+            <Input
+              label="Model ID"
+              value={byteplusData.model}
+              onChange={(e) => setByteplusData({ ...byteplusData, model: e.target.value })}
+              placeholder={BYTEPLUS_DEFAULT_MODEL}
+            />
+            <p className="text-xs text-text-muted">
+              {byteplusData.endpointMode === "standard"
+                ? "Pay-as-you-go ModelArk endpoint. Leave the registry default unless your account uses another model ID."
+                : "Coding Plan endpoint. Leave the registry default unless your plan enables another model ID."}
+            </p>
+          </>
+        )}
         {isCompatible && (
           <Input
             label="Default Model"
@@ -387,6 +424,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <Badge variant={validationResult === "success" ? "success" : "error"}>
             {validationResult === "success" ? "Valid" : "Invalid"}
           </Badge>
+        )}
+        {validationWarning && (
+          <p className="text-xs text-yellow-500 break-words">{validationWarning}</p>
         )}
         {error && (
           <p className="text-xs text-red-500 break-words">{error}</p>
