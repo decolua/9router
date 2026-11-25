@@ -247,7 +247,7 @@ export const PATCHED_FILES = [
   {
     path: "open-sse/executors/codex.js",
     markers: ["effort named in the model id"],
-    hint: "An effort written into the model id (`gpt-6-luna-low`) wins over the client's reasoning / reasoning_effort, like the `(low)` spelling does. Upstream only used the suffix when the client sent no effort, which an agent client never does.",
+    hint: "An effort written into the model id (`gpt-6-luna-low`, `-max` included) wins over the client's reasoning / reasoning_effort, like the `(low)` spelling does. Upstream only used the suffix when the client sent no effort, which an agent client never does. splitEffortSuffix() reads it BEFORE the upstream id / Lite decision, so a suffixed Lite model is still sent as Lite; `-max` is only an effort when the base model takes max (keeps gpt-5.1-codex-max whole).",
   },
   {
     path: "src/app/(dashboard)/dashboard/skills/page.js",

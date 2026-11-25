@@ -160,8 +160,18 @@ but only when the client sent no effort. Agent clients always send one, so the
 suffix was thrown away and the model ran at the client's default (medium).
 The `(low)` spelling already won over the client (thinkingUnified); the dash
 spelling now does too: effort in the model id > `reasoning.effort` >
-`reasoning_effort` > default. The dash form takes none/minimal/low/medium/high/xhigh;
-`max` is written `(max)`.
+`reasoning_effort` > default. The dash form takes none/minimal/low/medium/high/xhigh/max,
+so `cx/gpt-6-luna-max` and `cx/gpt-6-luna(max)` are the same request.
+
+Two guards keep the suffix from being over-read. A registered id is never split, and
+`-max` is only read as an effort when the model behind it takes `max` — a real id
+such as `gpt-5.1-codex-max` stays whole.
+
+The suffix is now read before anything is decided from the model. Whether a model is
+a Responses Lite one (the transport, the `x-openai-internal-codex-responses-lite`
+header, the `context: "all_turns"` shape) used to be decided on the id with the
+suffix still on it, so `cx/gpt-6-luna-high` and `-xhigh` went out as an ordinary
+Responses request. They now go out as Lite, like the `(high)` spelling always did.
 
 #### Effort can be set per model
 
