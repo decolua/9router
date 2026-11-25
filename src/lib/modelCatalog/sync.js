@@ -112,7 +112,11 @@ export function build(catalog, entries) {
     const seen = new Set();
     for (const [modelId, model] of Object.entries(provider?.models || {})) {
       const id = baseId(modelId);
-      modelsById[id] = model;
+      // Keep the full id too: "model:free" and "model" collapse to the same
+      // baseId but have different windows, and the :free seat is the one combos
+      // publish. Let :free win the baseId slot so either lookup form finds it.
+      modelsById[modelId] = model;
+      if (!modelsById[id] || modelId.endsWith(":free")) modelsById[id] = model;
       // One entry per provider+model: several upstream ids can normalize to the
       // same model (claude-opus-4-thinking:1024, :8192, :32768 …) and must not
       // stack their modalities.
@@ -141,7 +145,7 @@ export function build(catalog, entries) {
   for (const { provider, model, contextLength, current } of entries) {
     const alias = PROVIDER_ALIASES[provider];
     const upstream = catalog[provider] ? provider : (alias && catalog[alias] ? alias : null);
-    const entry = upstream && byProvider[upstream]?.[baseId(model)];
+    const entry = upstream && (byProvider[upstream]?.[model] || byProvider[upstream]?.[baseId(model)]);
     if (!entry) continue;
 
     const delta = {};
@@ -166,7 +170,7 @@ export function build(catalog, entries) {
 // The previous catalog MUST be detached first. Leaving it installed makes each
 // delta relative to the last one, so a value that still agrees with upstream
 // looks like "no change" and is dropped — the file erases itself over two runs.
-async function collectEntries() {
+async function collectEntries(catalog) {
   const [{ default: registry }, { getCapabilitiesForModel, setCatalogSource }] = await Promise.all([
     import("open-sse/providers/registry/index.js"),
     import("open-sse/providers/capabilities.js"),
@@ -174,6 +178,7 @@ async function collectEntries() {
   setCatalogSource(null);
 
   const entries = [];
+  const passthrough = new Set();
   for (const provider of registry) {
     for (const model of provider.models || []) {
       entries.push({
@@ -182,6 +187,27 @@ async function collectEntries() {
         contextLength: model.contextLength,
         current: getCapabilitiesForModel(provider.id, model.id),
       });
+    }
+    if (provider.passthroughModels) passthrough.add(provider.id);
+  }
+  // passthrough providers expose their whole upstream catalog live, so static
+  // models[] is only a hint. Add upstream models not already static so build()
+  // can write capability deltas for them (e.g. :free seats absent from the
+  // hand-written table). The catalog was already fetched by syncModelCatalog().
+  for (const providerId of passthrough) {
+    const provider = registry.find((p) => p.id === providerId);
+    const staticIds = new Set(provider?.models?.map((m) => m.id) || []);
+    const upstreamId = PROVIDER_ALIASES[providerId] || providerId;
+    const upstream = catalog?.[upstreamId] || catalog?.[providerId];
+    for (const modelId of Object.keys(upstream?.models || {})) {
+      if (!staticIds.has(modelId)) {
+        entries.push({
+          provider: providerId,
+          model: modelId,
+          contextLength: undefined,
+          current: getCapabilitiesForModel(providerId, modelId),
+        });
+      }
     }
   }
   return entries;
@@ -208,7 +234,7 @@ export async function syncModelCatalog() {
       // point — not worth a worker thread.
       const catalog = await response.json();
       const etag = response.headers.get("etag") || null;
-      const entries = await collectEntries();
+      const entries = await collectEntries(catalog);
       const { models, providers } = build(catalog, entries);
       const serialized = JSON.stringify({ v: CATALOG_VERSION, etag, syncedAt: Date.now(), models, providers });
 
