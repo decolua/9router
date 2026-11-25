@@ -14,6 +14,7 @@ import {
   isNousApiKeyAccepted,
 } from "open-sse/services/nous.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { applyClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -117,7 +118,7 @@ export async function POST(request) {
         }
         const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
         const res = await fetch(modelsUrl, {
-          headers: { "Authorization": `Bearer ${apiKey}` },
+          headers: applyClientIdentityHeaders({ "Authorization": `Bearer ${apiKey}` }, node),
         });
         isValid = res.ok;
         return NextResponse.json({
@@ -167,18 +168,22 @@ export async function POST(request) {
         if (normalizedBase.endsWith("/messages")) {
           normalizedBase = normalizedBase.slice(0, -9); // remove /messages
         }
+        // Base URLs are entered ending in /v1 (see the node form hint); don't double it.
+        if (normalizedBase.endsWith("/v1")) {
+          normalizedBase = normalizedBase.slice(0, -3);
+        }
 
         const messagesUrl = `${normalizedBase}/v1/messages`;
-        const model = node.defaultModel || "claude-3-haiku-20240307";
+        const model = body.defaultModel || node.defaultModel || "claude-3-haiku-20240307";
 
         const res = await fetch(messagesUrl, {
           method: "POST",
-          headers: {
+          headers: applyClientIdentityHeaders({
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
-          },
+          }, node),
           body: JSON.stringify({
             model,
             max_tokens: 1,

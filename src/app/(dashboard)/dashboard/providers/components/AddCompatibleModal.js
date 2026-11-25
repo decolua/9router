@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Badge, Button, Input, Modal, Select } from "@/shared/components";
+import ClientIdentityFields, { clientIdentityFormState, clientIdentityPayload } from "./ClientIdentityFields";
 
 const VARIANT_CONFIG = {
   openai: {
@@ -41,6 +42,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     prefix: "",
     ...(config.hasApiType ? { apiType: "chat" } : {}),
     baseUrl: config.defaultBaseUrl,
+    ...clientIdentityFormState(),
   });
 
   const [formData, setFormData] = useState(initialFormData);
@@ -49,6 +51,14 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [identityError, setIdentityError] = useState(null);
+
+  // Parses the identity fields; surfaces a format error instead of sending a request.
+  const readIdentity = () => {
+    const { error, ...identity } = clientIdentityPayload(formData);
+    setIdentityError(error || null);
+    return error ? null : identity;
+  };
 
   // openai: reset baseUrl when apiType changes; anthropic: reset checks when opened
   useEffect(() => {
@@ -63,6 +73,8 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    const identity = readIdentity();
+    if (!identity) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/provider-nodes", {
@@ -74,6 +86,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
+          ...identity,
         }),
       });
       const data = await res.json();
@@ -91,6 +104,8 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   };
 
   const handleValidate = async () => {
+    const identity = readIdentity();
+    if (!identity) return;
     setValidating(true);
     try {
       const res = await fetch("/api/provider-nodes/validate", {
@@ -101,6 +116,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           apiKey: checkKey,
           type: config.type,
           modelId: checkModelId.trim() || undefined,
+          ...identity,
         }),
       });
       const data = await res.json();
@@ -164,6 +180,12 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
           placeholder={config.defaultBaseUrl}
           hint={config.baseUrlHint}
+        />
+        <ClientIdentityFields
+          profile={formData.clientIdentityProfile}
+          headersText={formData.clientIdentityHeadersText}
+          error={identityError}
+          onChange={(patch) => setFormData({ ...formData, ...patch })}
         />
         <Input
           label="API Key (for Check)"

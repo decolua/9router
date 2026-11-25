@@ -6,6 +6,7 @@ import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders, NOUS_ATTRIBUTION } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
 import { buildKiroIdentityHeaders } from "../shared/kiroIdentity.js";
+import { applyClientIdentityHeaders, keepsClaudeIdentityHeaders } from "../shared/clientIdentityHeaders.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
@@ -223,6 +224,8 @@ export class DefaultExecutor extends BaseExecutor {
     // Hooks run BEFORE auth so dynamic overlays can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
+    // Compatible nodes can present a chosen client identity (never replaces auth headers).
+    applyClientIdentityHeaders(headers, credentials?.providerSpecificData);
 
     // anthropic-compatible-* nodes serving a real Claude model sit in front of
     // Anthropic itself (a rotating multi-account proxy, a corporate gateway),
@@ -251,7 +254,8 @@ export class DefaultExecutor extends BaseExecutor {
       }
     }
 
-    // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
+    // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams,
+    // unless the node explicitly chose a Claude client identity.
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
@@ -262,6 +266,8 @@ export class DefaultExecutor extends BaseExecutor {
         if (credentials.apiKey && !headers["Authorization"]) {
           headers["Authorization"] = `Bearer ${credentials.apiKey}`;
         }
+      }
+      if (!isOfficialAnthropic && !keepsClaudeIdentityHeaders(credentials?.providerSpecificData)) {
         delete headers["anthropic-dangerous-direct-browser-access"];
         delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
         delete headers["x-app"];

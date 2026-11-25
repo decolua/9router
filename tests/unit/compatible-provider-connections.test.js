@@ -115,6 +115,98 @@ describe("compatible provider connections API", () => {
     });
   });
 
+  it("copies client identity settings from compatible node into its connection", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-identity-test",
+      type: "openai-compatible",
+      name: "Identity Test Node",
+      prefix: "ident",
+      apiType: "chat",
+      baseUrl: "https://identity.test/v1",
+      clientIdentityProfile: "custom",
+      clientIdentityHeaders: {
+        "User-Agent": "custom/1.0",
+        "X-App": "cli",
+      },
+    });
+    cleanup = ctx.cleanup;
+
+    expect(ctx.node.clientIdentityProfile).toBe("custom");
+    expect(ctx.node.clientIdentityHeaders).toEqual({
+      "User-Agent": "custom/1.0",
+      "X-App": "cli",
+    });
+
+    const response = await ctx.POST(makeRequest(ctx.node.id));
+    const body = await response.json();
+    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+
+    expect(response.status).toBe(201);
+    expect(body.connection.providerSpecificData).toMatchObject({
+      clientIdentityProfile: "custom",
+      clientIdentityHeaders: {
+        "User-Agent": "custom/1.0",
+        "X-App": "cli",
+      },
+    });
+    expect(storedConnections[0].providerSpecificData).toMatchObject({
+      clientIdentityProfile: "custom",
+      clientIdentityHeaders: {
+        "User-Agent": "custom/1.0",
+        "X-App": "cli",
+      },
+    });
+  });
+
+  it("preserves and propagates existing client identity when updating a compatible node without identity fields", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-update-identity-test",
+      type: "openai-compatible",
+      name: "Identity Update Test Node",
+      prefix: "ident",
+      apiType: "chat",
+      baseUrl: "https://identity.test/v1",
+      clientIdentityProfile: "custom",
+      clientIdentityHeaders: {
+        "User-Agent": "custom/1.0",
+      },
+    });
+    cleanup = ctx.cleanup;
+    const createResponse = await ctx.POST(makeRequest(ctx.node.id));
+    expect(createResponse.status).toBe(201);
+
+    const { PUT } = await import("@/app/api/provider-nodes/[id]/route.js");
+    const response = await PUT(new Request(`https://9router.local/api/provider-nodes/${ctx.node.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Renamed Identity Node",
+        prefix: "ident2",
+        apiType: "responses",
+        baseUrl: "https://identity-updated.test/v1",
+      }),
+    }), {
+      params: Promise.resolve({ id: ctx.node.id }),
+    });
+    const body = await response.json();
+    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+
+    expect(response.status).toBe(200);
+    expect(body.node).toMatchObject({
+      clientIdentityProfile: "custom",
+      clientIdentityHeaders: {
+        "User-Agent": "custom/1.0",
+      },
+    });
+    expect(storedConnections[0].providerSpecificData).toMatchObject({
+      baseUrl: "https://identity-updated.test/v1",
+      clientIdentityProfile: "custom",
+      clientIdentityHeaders: {
+        "User-Agent": "custom/1.0",
+      },
+    });
+  });
+
   it("creates one API-key connection for an Anthropic-compatible node", async () => {
     const ctx = await setupTestContext({
       id: "anthropic-compatible-test",

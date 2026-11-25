@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import ClientIdentityFields, { clientIdentityFormState, clientIdentityPayload } from "../components/ClientIdentityFields";
 
 export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
@@ -10,12 +11,14 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
     prefix: "",
     apiType: "chat",
     baseUrl: "https://api.openai.com/v1",
+    ...clientIdentityFormState(),
   });
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [identityError, setIdentityError] = useState(null);
 
   useEffect(() => {
     if (node) {
@@ -24,7 +27,9 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         prefix: node.prefix || "",
         apiType: node.apiType || "chat",
         baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
+        ...clientIdentityFormState(node),
       });
+      setIdentityError(null);
     }
   }, [node, isAnthropic]);
 
@@ -33,14 +38,24 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
     { value: "responses", label: "Responses API" },
   ];
 
+  // Parses the identity fields; surfaces a format error instead of sending a request.
+  const readIdentity = () => {
+    const { error, ...identity } = clientIdentityPayload(formData);
+    setIdentityError(error || null);
+    return error ? null : identity;
+  };
+
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    const identity = readIdentity();
+    if (!identity) return;
     setSaving(true);
     try {
       const payload = {
         name: formData.name,
         prefix: formData.prefix,
         baseUrl: formData.baseUrl,
+        ...identity,
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
@@ -52,6 +67,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
   };
 
   const handleValidate = async () => {
+    const identity = readIdentity();
+    if (!identity) return;
     setValidating(true);
     try {
       const res = await fetch("/api/provider-nodes/validate", {
@@ -61,7 +78,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           baseUrl: formData.baseUrl,
           apiKey: checkKey,
           type: isAnthropic ? "anthropic-compatible" : "openai-compatible",
-          modelId: checkModelId.trim() || undefined
+          modelId: checkModelId.trim() || undefined,
+          ...identity,
         }),
       });
       const data = await res.json();
@@ -106,6 +124,12 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
           placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
           hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
+        />
+        <ClientIdentityFields
+          profile={formData.clientIdentityProfile}
+          headersText={formData.clientIdentityHeadersText}
+          error={identityError}
+          onChange={(patch) => setFormData({ ...formData, ...patch })}
         />
         <div className="flex gap-2">
           <Input
@@ -154,6 +178,8 @@ EditCompatibleNodeModal.propTypes = {
     prefix: PropTypes.string,
     apiType: PropTypes.string,
     baseUrl: PropTypes.string,
+    clientIdentityProfile: PropTypes.string,
+    clientIdentityHeaders: PropTypes.object,
   }),
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,

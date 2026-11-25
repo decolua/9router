@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { normalizeClientIdentityData } from "open-sse/config/clientIdentity.js";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
@@ -30,6 +31,16 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
     }
 
+    // Client identity (compatible LLM nodes): keep the stored one unless the body sets it.
+    const isCompatibleNode = node.type === "openai-compatible" || node.type === "anthropic-compatible";
+    const setsIdentity = "clientIdentityProfile" in body || "clientIdentityHeaders" in body;
+    const { error: identityError, ...identityData } = isCompatibleNode
+      ? normalizeClientIdentityData(setsIdentity ? body : node)
+      : {};
+    if (identityError) {
+      return NextResponse.json({ error: identityError }, { status: 400 });
+    }
+
     let sanitizedBaseUrl = baseUrl.trim();
     
     // Sanitize Base URL for Anthropic Compatible
@@ -52,6 +63,7 @@ export async function PUT(request, { params }) {
       name: name.trim(),
       prefix: prefix.trim(),
       baseUrl: sanitizedBaseUrl,
+      ...identityData,
     };
 
     if (node.type === "openai-compatible") {
@@ -69,6 +81,7 @@ export async function PUT(request, { params }) {
           apiType: node.type === "openai-compatible" ? apiType : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
+          ...identityData,
         }
       })
     )));
