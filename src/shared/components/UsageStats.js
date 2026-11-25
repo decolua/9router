@@ -230,10 +230,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       fetch("/api/provider-nodes").then((r) => r.ok ? r.json() : null),
     ])
       .then(([d, nodesData]) => {
-        // Build node name lookup for custom providers
-        const nodeNameMap = {};
+        // Build node lookup for custom providers
+        const nodeMap = {};
         for (const node of (nodesData?.nodes || [])) {
-          nodeNameMap[node.id] = node.name;
+          nodeMap[node.id] = node;
         }
         const seen = new Set();
         const unique = (d?.connections || []).filter((c) => {
@@ -245,7 +245,8 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           return true;
         }).map((c) => ({
           ...c,
-          nodeName: nodeNameMap[c.provider] || null,
+          nodeName: nodeMap[c.provider]?.name || null,
+          apiType: nodeMap[c.provider]?.apiType || c.providerSpecificData?.apiType || null,
         }));
         const noAuthProviders = Object.values(FREE_PROVIDERS)
           .filter((p) => p.noAuth && !p.hidden && !seen.has(p.id) && isLLMProvider(p.id))
