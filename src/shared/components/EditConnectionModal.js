@@ -8,6 +8,7 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { BYTEPLUS_DEFAULT_ENDPOINT_MODE, BYTEPLUS_DEFAULT_MODEL } from "open-sse/config/byteplus.js";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -23,10 +24,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
+  const [byteplusData, setByteplusData] = useState({
+    endpointMode: BYTEPLUS_DEFAULT_ENDPOINT_MODE,
+    model: BYTEPLUS_DEFAULT_MODEL,
+  });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
   const [region, setRegion] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [testWarning, setTestWarning] = useState(null);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -49,6 +55,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
+      }
+      if (connection.provider === "byteplus") {
+        const psd = connection.providerSpecificData || {};
+        setByteplusData({
+          endpointMode: psd.endpointMode === "coding" ? "coding" : BYTEPLUS_DEFAULT_ENDPOINT_MODE,
+          model: psd.model || BYTEPLUS_DEFAULT_MODEL,
+        });
       }
       if (AI_PROVIDERS?.[connection.provider]?.credentialForm === "aws") {
         const psd = connection.providerSpecificData || {};
@@ -74,6 +87,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isByteplus = connection?.provider === "byteplus";
   const usesAwsCredentialForm = AI_PROVIDERS?.[connection?.provider]?.credentialForm === "aws";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
@@ -85,6 +99,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     if (providerRegions && region) return { ...((connection?.providerSpecificData) || {}), region };
     return undefined;
   };
+
+  const buildByteplusSpecificData = () => ({
+    endpointMode: byteplusData.endpointMode,
+    model: byteplusData.model.trim(),
+  });
 
   // The server keeps a saved session token when this password field is blank. Other empty
   // fields still clear their saved values so a profile can be switched to static keys.
@@ -99,10 +118,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     if (!connection?.provider) return;
     setTesting(true);
     setTestResult(null);
+    setTestWarning(null);
     try {
       const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
       const data = await res.json();
       setTestResult(data.valid ? "success" : "failed");
+      setTestWarning(data.warning || null);
     } catch {
       setTestResult("failed");
     } finally {
@@ -123,6 +144,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiKey: formData.apiKey,
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          ...(isByteplus ? { providerSpecificData: buildByteplusSpecificData() } : {}),
           ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
           ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
         }),
@@ -159,6 +181,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 apiKey: formData.apiKey,
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                ...(isByteplus ? { providerSpecificData: buildByteplusSpecificData() } : {}),
                 ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
                 ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
               }),
@@ -190,6 +213,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      }
+      if (isByteplus) {
+        updates.providerSpecificData = buildByteplusSpecificData();
       }
       if (usesAwsCredentialForm) {
         updates.providerSpecificData = buildAwsSpecificData();
@@ -347,6 +373,27 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           />
         )}
 
+        {isByteplus && (
+          <>
+            <Select
+              label="Endpoint Mode"
+              value={byteplusData.endpointMode}
+              onChange={(e) => setByteplusData({ ...byteplusData, endpointMode: e.target.value })}
+              options={[
+                { value: "coding", label: "Coding Plan (api/coding/v3)" },
+                { value: "standard", label: "Standard (api/v3)" },
+              ]}
+            />
+            <Input
+              label="Model ID"
+              value={byteplusData.model}
+              onChange={(e) => setByteplusData({ ...byteplusData, model: e.target.value })}
+              placeholder={BYTEPLUS_DEFAULT_MODEL}
+              hint="Saved on this connection and used by Test Connection."
+            />
+          </>
+        )}
+
         {!isCompatible && !isAzure && !isCloudflareAi && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
@@ -358,6 +405,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               </Badge>
             )}
           </div>
+        )}
+        {testWarning && (
+          <p className="text-xs text-yellow-500 break-words">{testWarning}</p>
         )}
 
         <div className="flex gap-2">

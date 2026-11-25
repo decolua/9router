@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
+import { getByteplusChatUrl, getByteplusModel, isByteplusAuthFailure } from "open-sse/config/byteplus.js";
 import { ANTIGRAVITY_IDE_USER_AGENT } from "open-sse/providers/shared.js";
 import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
@@ -736,8 +737,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
-      case "volcengine-ark":
-      case "byteplus": {
+      case "volcengine-ark": {
         const res = await fetchWithConnectionProxy(PROVIDERS[connection.provider]?.baseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
@@ -745,6 +745,29 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "byteplus": {
+        // Endpoint surface and model are per connection.
+        const res = await fetchWithConnectionProxy(getByteplusChatUrl(connection.providerSpecificData), {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            model: getByteplusModel(connection.providerSpecificData, getDefaultModel(connection.provider)),
+            max_tokens: 1,
+            messages: [{ role: "user", content: "test" }],
+          }),
+        }, effectiveProxy);
+        // 401 always means a bad key; other statuses only when the body is an
+        // auth error. 403 AccessDenied, 400 InvalidSubscription and 404
+        // ModelNotOpen are plan/model errors — keep the key valid and warn.
+        if (res.ok) return { valid: true, error: null };
+        if (res.status === 401) return { valid: false, error: "Invalid API key", status: 401 };
+        const bodyText = await res.text().catch(() => "");
+        if (isByteplusAuthFailure(bodyText)) {
+          return { valid: false, error: "Invalid API key", status: res.status };
+        }
+        const message = parseProviderErrorMessage(bodyText, `API returned ${res.status}`);
+        return { valid: true, warning: `${res.status} ${message}`, status: res.status };
       }
       case "deepseek": {
         const res = await fetchWithConnectionProxy("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
@@ -1045,5 +1068,5 @@ export async function testSingleConnection(id) {
 
   await updateProviderConnection(id, updateData);
 
-  return { valid: result.valid, error: result.error, refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
+  return { valid: result.valid, error: result.error, warning: result.warning || null, refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
 }

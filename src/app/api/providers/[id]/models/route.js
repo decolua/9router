@@ -4,6 +4,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { getByteplusBaseUrl } from "open-sse/config/byteplus.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -724,6 +725,10 @@ export async function GET(request, { params }) {
 
     // Build request URL
     let url = config.url;
+    // byteplus: the model catalog follows the connection's coding/standard mode
+    if (connection.provider === "byteplus") {
+      url = `${getByteplusBaseUrl(connection.providerSpecificData)}/models`;
+    }
     if (config.authQuery) {
       url += `?${config.authQuery}=${token}`;
     }

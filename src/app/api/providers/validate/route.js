@@ -3,6 +3,8 @@ import { ACCEPT_ENCODING } from "open-sse/utils/zstdCompat.js";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
+import { getByteplusChatUrl, getByteplusModel, isByteplusAuthFailure } from "open-sse/config/byteplus.js";
+import { parseUpstreamError } from "open-sse/utils/error.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { buildCommandCodeHeaders } from "open-sse/shared/commandCodeHeaders.js";
@@ -107,6 +109,7 @@ export async function POST(request) {
 
     let isValid = false;
     let error = null;
+    let warning = null;
 
     // Validate with each provider
     try {
@@ -380,8 +383,7 @@ export async function POST(request) {
           }
           break;
         }
-        case "volcengine-ark":
-        case "byteplus": {
+        case "volcengine-ark": {
           const res = await fetch(PROVIDERS[provider]?.baseUrl, {
             method: "POST",
             headers: {
@@ -395,6 +397,41 @@ export async function POST(request) {
             }),
           });
           isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
+
+        case "byteplus": {
+          // Endpoint surface and model are per connection.
+          const res = await fetch(getByteplusChatUrl(providerSpecificData), {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: getByteplusModel(providerSpecificData, getDefaultModel(provider)),
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          // 401 always means a bad key; other statuses only when the body is an
+          // auth error. 403 AccessDenied, 400 InvalidSubscription and 404
+          // ModelNotOpen are plan/model errors — keep the key valid and warn.
+          if (res.ok) {
+            isValid = true;
+            break;
+          }
+          isValid = res.status !== 401;
+          if (isValid) {
+            const bodyText = await res.clone().text().catch(() => "");
+            if (isByteplusAuthFailure(bodyText)) {
+              isValid = false;
+            } else {
+              const { message } = await parseUpstreamError(res);
+              warning = `${res.status} ${message}`;
+            }
+          }
+          if (!isValid) error = "Invalid API key";
           break;
         }
 
@@ -688,6 +725,7 @@ export async function POST(request) {
     return NextResponse.json({
       valid: isValid,
       error: isValid ? null : (error || "Invalid API key"),
+      ...(warning ? { warning } : {}),
     });
   } catch (error) {
     console.log("Error validating API key:", error);
