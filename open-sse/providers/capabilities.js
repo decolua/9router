@@ -205,7 +205,7 @@ export const MODEL_CAPABILITIES = {
   "k3.1-pro-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "kimi-for-coding":   { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-for-coding-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
-  "kimi-k2.7-code":    { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
+  "kimhy4-flashi-k2.7-code":    { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-k2.7-code-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   // OpenCode Free Muse Spark — multimodal (text+image per models.dev meta/muse-spark)
   // via OpenAI Responses input_image; reasoning supports up to xhigh.
@@ -884,6 +884,16 @@ function isCommandCodeTextOnly(model) {
   }
   return false;
 }
+// Seat ids carry ":free" while MODEL_CAPABILITIES keys use "-free" (and
+// synced catalog keeps ":free"). Probe both so ":free" seats resolve regardless
+// which form the lookup table uses.
+function modelLookupIds(model) {
+  const ids = [model];
+  if (model.endsWith(":free")) ids.push(model.slice(0, -5) + "-free");
+  if (model.endsWith("-free")) ids.push(model.slice(0, -5) + ":free");
+  return ids;
+}
+
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
@@ -910,14 +920,22 @@ export function getCapabilitiesForModel(provider, model) {
   // 1. Provider-specific override
   if (provider) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    for (const id of modelLookupIds(model)) {
+      if (providerCaps?.[id]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[id] };
+    }
+    for (const id of modelLookupIds(baseModel)) {
+      if (providerCaps?.[id]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[id] };
+    }
   }
 
   // 2. Canonical exact, then catalog overlay so provider-scoped models.dev
   //    deltas still apply. Step 1 above still short-circuits.
-  if (MODEL_CAPABILITIES[baseModel]) return refine(MODEL_CAPABILITIES[baseModel], provider, model);
-  if (MODEL_CAPABILITIES[model]) return refine(MODEL_CAPABILITIES[model], provider, model);
+  for (const id of modelLookupIds(baseModel)) {
+    if (MODEL_CAPABILITIES[id]) return refine(MODEL_CAPABILITIES[id], provider, model);
+  }
+  for (const id of modelLookupIds(model)) {
+    if (MODEL_CAPABILITIES[id]) return refine(MODEL_CAPABILITIES[id], provider, model);
+  }
 
   // 3. Pattern match (first match wins), refined by catalog + name heuristic
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
