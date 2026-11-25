@@ -4,7 +4,14 @@ import { clearDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 
 export async function POST() {
   const cookieStore = await cookies();
-  clearDashboardAuthCookie(cookieStore);
+  try {
+    await clearDashboardAuthCookie(cookieStore);
+  } catch {
+    return NextResponse.json(
+      { error: "Session could not be ended. Please retry logout." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   cookieStore.delete("oidc_state");
   cookieStore.delete("oidc_nonce");
   cookieStore.delete("oidc_code_verifier");

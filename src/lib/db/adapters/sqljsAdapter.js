@@ -105,11 +105,18 @@ export async function createSqlJsAdapter(filePath) {
     db.close();
   }
 
+  // Security state must reach disk before a logout can acknowledge success.
+  function flushNow() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = null;
+    if (dirty) persist();
+  }
+
   // Flush on shutdown
   const flush = () => { if (dirty) try { persist(); } catch {} };
   process.on("beforeExit", flush);
   process.on("SIGINT", flush);
   process.on("SIGTERM", flush);
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+  return { driver: "sql.js", run, get, all, exec, transaction, flush: flushNow, close, raw: db };
 }

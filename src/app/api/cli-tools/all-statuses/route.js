@@ -1,5 +1,3 @@
-"use server";
-
 import { NextResponse } from "next/server";
 import { GET as claudeGet } from "../claude-settings/route";
 import { GET as codexGet } from "../codex-settings/route";

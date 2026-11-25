@@ -1,5 +1,3 @@
-"use server";
-
 import { NextResponse } from "next/server";
 import { resolveCliApiKey } from "../resolveApiKey.js";
 import { ALIAS_TO_ID } from "@/shared/constants/providers";

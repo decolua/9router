@@ -1,5 +1,3 @@
-"use server";
-
 import { NextResponse } from "next/server";
 
 const REGISTRY_URL = "https://api.anthropic.com/mcp-registry/v0/servers";
