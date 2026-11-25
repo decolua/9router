@@ -3,6 +3,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
 import { getVideoAdapter } from "./videoProviders/index.js";
+import { evaluateVideoCreation, OUTCOME_ERROR, outcomeErrorResult } from "../utils/upstreamOutcome.js";
 
 // Upstream fetch deadline for video job submission/polling (the job itself is
 // async upstream — this only bounds the HTTP round-trip, not video rendering).
@@ -220,15 +221,24 @@ export async function handleVideoProxyCore({
   };
 
   const method = requestId ? "GET" : "POST";
+  // A caller abort (499) is not an upstream timeout (408): keep them apart so
+  // neither is mistaken for the other in logs and account handling.
+  const abortResult = (error, what) => {
+    const clientAborted = signal?.aborted === true;
+    return outcomeErrorResult(
+      clientAborted ? 499 : HTTP_STATUS.REQUEST_TIMEOUT,
+      sanitizeSecrets(`[${provider}] ${what} ${clientAborted ? "aborted" : "timed out"}: ${error.message}`, credentials),
+      clientAborted ? OUTCOME_ERROR.ABORTED : OUTCOME_ERROR.STALL
+    );
+  };
+  const isAbortError = (error) => error?.name === "AbortError" || error?.name === "TimeoutError";
   let upstream;
   try {
     const first = await doFetch();
     if (first.planError) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] ${first.planError}`);
     upstream = first.response;
   } catch (error) {
-    if (error?.name === "AbortError" || error?.name === "TimeoutError") {
-      return createErrorResult(HTTP_STATUS.REQUEST_TIMEOUT, `[${provider}] video ${method} aborted: ${error.message}`);
-    }
+    if (isAbortError(error)) return abortResult(error, `video ${method}`);
     // Never re-send a creation POST on network error — the job may already exist upstream.
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, sanitizeSecrets(`[${provider}] video upstream fetch failed: ${error.message}`, credentials));
   }
@@ -256,6 +266,7 @@ export async function handleVideoProxyCore({
         if (retry.planError) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] ${retry.planError}`);
         upstream = retry.response;
       } catch (error) {
+        if (isAbortError(error)) return abortResult(error, "video retry after refresh");
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, sanitizeSecrets(`[${provider}] video retry after refresh failed: ${error.message}`, credentials));
       }
     } else {
@@ -270,16 +281,33 @@ export async function handleVideoProxyCore({
     return createErrorResult(upstream.status, `[${provider}] ${message.slice(0, 2000)}`);
   }
 
+  let payload;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}] upstream returned invalid video JSON`, OUTCOME_ERROR.INVALID);
+  }
+
   // Success: pass the upstream JSON through untouched (request_id / status / video.url),
   // unless the adapter maps a provider-native shape onto it (Vertex operations).
   let outBody = bodyText;
   let outType = upstream.headers.get("content-type") || "application/json";
   if (adapter?.transformResponse) {
     try {
-      outBody = JSON.stringify(adapter.transformResponse(JSON.parse(bodyText)));
+      payload = adapter.transformResponse(payload);
+      outBody = JSON.stringify(payload);
       outType = "application/json";
     } catch {
-      // Non-JSON or unexpected shape — fall back to the raw upstream body.
+      // Unexpected shape — fall back to the raw upstream body.
+    }
+  }
+
+  // A creation that returned no job to poll (or reported a failed job) is not an
+  // accepted job. Poll answers, failed jobs included, keep passing through.
+  if (method === "POST") {
+    const outcome = evaluateVideoCreation(payload);
+    if (!outcome.ok) {
+      return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, sanitizeSecrets(`[${provider}] ${outcome.message}`, credentials), outcome.errorKind);
     }
   }
 

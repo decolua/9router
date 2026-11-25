@@ -613,6 +613,48 @@ describe("handleImageGenerationCore", () => {
     expect(result.error).toContain("Rate limit exceeded");
   });
 
+  it("rejects an HTTP 200 image error before onRequestSuccess", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: "render rejected" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const onRequestSuccess = vi.fn();
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "test" },
+      modelInfo: { provider: "openai", model: "dall-e-3" },
+      credentials: { apiKey: "test-key" },
+      log: null,
+      onRequestSuccess,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.errorKind).toBe("upstream_payload_error");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("rejects an HTTP 200 image body without image evidence", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ created: 1, data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "test" },
+      modelInfo: { provider: "openai", model: "dall-e-3" },
+      credentials: { apiKey: "test-key" },
+      log: null,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errorKind).toBe("empty_upstream_response");
+  });
+
   it("handles network errors", async () => {
     global.fetch.mockRejectedValueOnce(new Error("Network timeout"));
 

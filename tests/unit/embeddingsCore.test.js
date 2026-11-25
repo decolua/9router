@@ -613,6 +613,30 @@ describe("handleEmbeddingsCore — success path", () => {
     expect(onRequestSuccess).not.toHaveBeenCalled();
   });
 
+  it("rejects an HTTP 200 semantic error before onRequestSuccess", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse({ error: { message: "quota" } }));
+    const onRequestSuccess = vi.fn();
+
+    const result = await handleEmbeddingsCore(makeOptions({ onRequestSuccess }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.errorKind).toBe("upstream_payload_error");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty embedding vector", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse({
+      object: "list",
+      data: [{ object: "embedding", embedding: [], index: 0 }],
+    }));
+
+    const result = await handleEmbeddingsCore(makeOptions());
+
+    expect(result.success).toBe(false);
+    expect(result.errorKind).toBe("invalid_upstream_json");
+  });
+
   it("provider response with non-standard format is passed through as-is", async () => {
     const nonStandardBody = { embeddings: [[0.1, 0.2]], model: "custom" };
     vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(nonStandardBody));

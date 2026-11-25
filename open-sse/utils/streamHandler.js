@@ -1,6 +1,7 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_PRECOMMIT_MAX_BYTES, STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { OUTCOME_ERROR, parseSSEBlocks } from "./upstreamOutcome.js";
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -87,6 +88,17 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
   };
 }
 
+// Wrap { onError, onCancel } so only the first abnormal end is reported.
+function onceLifecycle(lifecycle = {}) {
+  let settled = false;
+  const once = (fn) => (value) => {
+    if (settled) return;
+    settled = true;
+    fn?.(value);
+  };
+  return { onError: once(lifecycle.onError), onCancel: once(lifecycle.onCancel) };
+}
+
 /**
  * Create transform stream with disconnect detection
  * Wraps existing transform stream and adds abort capability.
@@ -98,10 +110,13 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  *
  * @param {function} [onAbortTerminal] - Receives a human-readable abort
  * message and returns terminal SSE bytes to emit downstream.
+ * @param {object} [lifecycle] - { onError(error), onCancel(reason) }; at most one
+ * of them fires, when the stream ends abnormally.
  */
-export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null, lifecycle = {}) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
+  const { onError, onCancel } = onceLifecycle(lifecycle);
   let terminalEmitted = false;
 
   // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
@@ -117,6 +132,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
   return new ReadableStream({
     async pull(controller) {
       if (!streamController.isConnected()) {
+        onCancel("client disconnected");
         emitTerminal(controller);
         controller.close();
         return;
@@ -137,6 +153,12 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         const msg0 = error?.message || "";
         const isControllerClosed = msg0.includes("already closed") || msg0.includes("Invalid state");
         if (!isControllerClosed) streamController.handleError(error);
+        // A read that fails after the client left is the abort, not an upstream fault.
+        if (!wasConnected || isControllerClosed) onCancel("client disconnected");
+        else {
+          if (!error.errorKind) error.errorKind = OUTCOME_ERROR.RESET;
+          onError(error);
+        }
         reader.cancel().catch(() => {});
         writer.abort().catch(() => {});
 
@@ -169,6 +191,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
     },
 
     cancel(reason) {
+      onCancel(reason);
       streamController.handleDisconnect(reason || "cancelled");
       reader.cancel();
       writer.abort();
@@ -191,8 +214,10 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {Response} providerResponse - Response from provider
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
+ * @param {object} [lifecycle] - See createDisconnectAwareStream; a stall reports onError.
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, lifecycle = {}) {
+  const settle = onceLifecycle(lifecycle);
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -209,7 +234,9 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
       stallTimer = null;
       abortMessage = "stream stall timeout";
       dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
-      streamController.handleError?.(new Error("stream stall timeout"));
+      const error = Object.assign(new Error("stream stall timeout"), { errorKind: OUTCOME_ERROR.STALL });
+      settle.onError(error);
+      streamController.handleError?.(error);
       streamController.abort?.();
     }, stallTimeoutMs);
   };
@@ -254,7 +281,148 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
     wrappedController,
-    onAbortTerminal ? () => onAbortTerminal(abortMessage) : null
+    onAbortTerminal ? () => onAbortTerminal(abortMessage) : null,
+    settle
   );
 }
 
+/**
+ * Hold a streaming upstream response until it proves itself, before any byte is
+ * committed downstream. Reads (and buffers) the body until the outcome tracker
+ * sees output that can be streamed, a successful terminal, a failure, or EOF.
+ *
+ * A failure found here is still routable — the client has received nothing —
+ * so the caller returns an error result and account/combo fallback can run.
+ *
+ * @returns {Promise<{ ok: true, reader, buffered: Uint8Array[], ended: boolean, outcome }
+ *   | { ok: false, outcome }>}
+ */
+export async function createPrecommitStream(providerResponse, outcomeTracker, {
+  signal,
+  stallTimeoutMs = STREAM_STALL_TIMEOUT_MS,
+  maxBufferedBytes = STREAM_PRECOMMIT_MAX_BYTES,
+} = {}) {
+  if (!providerResponse?.body) {
+    return { ok: false, outcome: outcomeTracker.fail(OUTCOME_ERROR.EMPTY, "Upstream returned no response body") };
+  }
+  if (signal?.aborted) {
+    providerResponse.body.cancel("request aborted").catch(() => {});
+    return { ok: false, outcome: outcomeTracker.abortClient("Request aborted") };
+  }
+
+  const reader = providerResponse.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  const buffered = [];
+  let bufferedBytes = 0;
+  let parseBuffer = "";
+  let interrupt = null;
+
+  // A stall or a client abort rejects the pending read and cancels the upstream.
+  const stop = (error) => {
+    interrupt?.(error);
+    reader.cancel(error.message).catch(() => {});
+  };
+  const read = () => new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => stop(Object.assign(new Error("stream stall timeout"), { errorKind: OUTCOME_ERROR.STALL })),
+      stallTimeoutMs
+    );
+    interrupt = (error) => { clearTimeout(timer); reject(error); };
+    reader.read().then(
+      (result) => { clearTimeout(timer); resolve(result); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
+  const onAbort = () => stop(Object.assign(new Error("request aborted"), { errorKind: OUTCOME_ERROR.ABORTED }));
+  signal?.addEventListener?.("abort", onAbort, { once: true });
+
+  const committed = (ended) => {
+    outcomeTracker.commit();
+    return { ok: true, reader, buffered, ended, outcome: outcomeTracker.snapshot() };
+  };
+  const failed = async (outcome) => {
+    await reader.cancel(outcome.error).catch(() => {});
+    return { ok: false, outcome };
+  };
+
+  try {
+    while (true) {
+      let result;
+      try {
+        result = await read();
+      } catch (error) {
+        if (signal?.aborted || error?.errorKind === OUTCOME_ERROR.ABORTED) {
+          return { ok: false, outcome: outcomeTracker.abortClient("Request aborted") };
+        }
+        return { ok: false, outcome: outcomeTracker.fail(error?.errorKind || OUTCOME_ERROR.RESET, error?.message || "Upstream stream failed before output") };
+      }
+
+      if (result.done) {
+        parseBuffer += decoder.decode();
+        if (parseBuffer.trim()) parseSSEBlocks(`${parseBuffer}\n\n`, outcomeTracker.observe);
+        const outcome = outcomeTracker.finish();
+        return outcome.ok ? committed(true) : { ok: false, outcome };
+      }
+
+      buffered.push(result.value);
+      bufferedBytes += result.value?.byteLength || 0;
+      if (bufferedBytes > maxBufferedBytes) {
+        return failed(outcomeTracker.fail(OUTCOME_ERROR.INVALID, "Upstream produced too much metadata before useful output"));
+      }
+
+      parseBuffer = parseSSEBlocks(parseBuffer + decoder.decode(result.value, { stream: true }), outcomeTracker.observe);
+      const outcome = outcomeTracker.snapshot();
+      if (outcome.terminalClass === "failure") return failed(outcome);
+      if (outcome.terminalClass === "success") {
+        const terminal = outcomeTracker.finish();
+        if (!terminal.ok) return failed(terminal);
+        return committed(false);
+      }
+      if (outcome.committableOutputSeen) return committed(false);
+    }
+  } finally {
+    signal?.removeEventListener?.("abort", onAbort);
+  }
+}
+
+/**
+ * Replay the bytes buffered by createPrecommitStream, then keep reading the same
+ * upstream reader with normal backpressure.
+ */
+export function streamFromPrecommit({ reader, buffered, ended = false }) {
+  let index = 0;
+  return new ReadableStream({
+    async pull(controller) {
+      if (index < buffered.length) {
+        controller.enqueue(buffered[index++]);
+        return;
+      }
+      if (ended) {
+        controller.close();
+        return;
+      }
+      const { done, value } = await reader.read();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+}
+
+/** Pass bytes through unchanged while feeding every SSE event to the tracker. */
+export function createOutcomeTrackingStream(outcomeTracker) {
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  let buffer = "";
+  return new TransformStream({
+    transform(chunk, controller) {
+      buffer = parseSSEBlocks(buffer + decoder.decode(chunk, { stream: true }), outcomeTracker.observe);
+      controller.enqueue(chunk);
+    },
+    flush() {
+      buffer += decoder.decode();
+      if (buffer.trim()) parseSSEBlocks(`${buffer}\n\n`, outcomeTracker.observe);
+    },
+  });
+}

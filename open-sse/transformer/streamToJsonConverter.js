@@ -3,12 +3,17 @@
  * Converts Responses API SSE stream to single JSON response
  * Used when client requests non-streaming but provider forces streaming (e.g., Codex)
  */
+import { OUTCOME_ERROR } from "../utils/upstreamOutcome.js";
 
 /**
  * Process a single SSE message and update state accordingly.
  */
 function processSSEMessage(msg, state) {
   if (!msg.trim()) return;
+
+  // A failure is terminal and sticky: a response.completed that some broken
+  // upstreams emit after response.failed must not turn it back into a success.
+  if (state.status === "failed") return;
 
   const eventMatch = msg.match(/^event:\s*(.+)$/m);
   const dataMatch = msg.match(/^data:\s*(.+)$/m);
@@ -20,7 +25,11 @@ function processSSEMessage(msg, state) {
 
   let parsed;
   try { parsed = JSON.parse(dataStr); }
-  catch { return; }
+  catch {
+    state.status = "failed";
+    state.error = { message: "Upstream SSE contained malformed JSON", errorKind: OUTCOME_ERROR.INVALID };
+    return;
+  }
 
   if (eventType === "response.created") {
     state.responseId = parsed.response?.id || state.responseId;
@@ -36,6 +45,13 @@ function processSSEMessage(msg, state) {
     }
   } else if (eventType === "response.failed") {
     state.status = "failed";
+    state.error = parsed.response?.error || parsed.error || { message: "Upstream response failed" };
+  } else if (eventType === "response.incomplete") {
+    // Truncated (e.g. max_output_tokens) but still a terminal: judged by its output.
+    state.status = "incomplete";
+  } else if (eventType === "error") {
+    state.status = "failed";
+    state.error = parsed.error || parsed.response?.error || { message: parsed.message || "Upstream stream emitted an error" };
   }
 }
 
@@ -59,6 +75,7 @@ export async function convertResponsesStreamToJson(stream) {
     responseId: "",
     created: Math.floor(Date.now() / 1000),
     status: "in_progress",
+    error: null,
     usage: { ...EMPTY_RESPONSE },
     items: new Map()
   };
@@ -97,6 +114,7 @@ export async function convertResponsesStreamToJson(stream) {
     object: "response",
     created_at: state.created,
     status: state.status || "completed",
+    error: state.error,
     output,
     usage: state.usage
   };

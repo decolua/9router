@@ -1,6 +1,7 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { PROVIDERS } from "../config/providers.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { liftReasoningAliases } from "../translator/concerns/reasoning.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
@@ -8,6 +9,7 @@ import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStream
 import { restoreToolNames } from "./opencodeFingerprint.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { OUTCOME_ERROR, OUTCOME_STATE } from "./upstreamOutcome.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -43,6 +45,8 @@ const PENDING_COMPLETION_FLUSH_MS = 3000;
  * @param {object} options.body - Request body (for input token estimation)
  * @param {function} options.onStreamComplete - Callback when stream completes (content, usage)
  * @param {string} options.apiKey - API key for usage tracking
+ * @param {object} [options.outcomeTracker] - createStreamingOutcomeTracker(); when set,
+ *   usage is recorded and onStreamComplete reports success only for a valid outcome
  */
 export function createSSEStream(options = {}) {
   const {
@@ -58,7 +62,8 @@ export function createSSEStream(options = {}) {
     body = null,
     onStreamComplete = null,
     apiKey = null,
-    credentials = null
+    credentials = null,
+    outcomeTracker = null
   } = options;
 
   let buffer = "";
@@ -107,10 +112,20 @@ export function createSSEStream(options = {}) {
 
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
+  // With an outcome tracker, a stream that failed or was cancelled records no usage
+  // and reports its outcome instead of a success.
   const finalizeStream = () => {
     if (completionFlushTimer) { clearTimeout(completionFlushTimer); completionFlushTimer = null; }
     if (finalized) return;
     finalized = true;
+
+    const outcome = outcomeTracker?.finish() || { ok: true, state: OUTCOME_STATE.OK };
+    if (!outcome.ok) {
+      const status = outcome.state === OUTCOME_STATE.CLIENT_ABORTED ? 499 : HTTP_STATUS.BAD_GATEWAY;
+      appendRequestLog({ model, provider, connectionId, tokens: null, status: `FAILED ${status}` }).catch(() => { });
+      onStreamComplete?.({ content: accumulatedContent, thinking: accumulatedThinking }, null, ttftAt, outcome);
+      return;
+    }
 
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
     let finalUsage = isPassthrough ? usage : state?.usage;
@@ -130,7 +145,7 @@ export function createSSEStream(options = {}) {
       onStreamComplete({
         content: accumulatedContent,
         thinking: accumulatedThinking
-      }, finalUsage, ttftAt);
+      }, finalUsage, ttftAt, outcome);
     }
   };
 
@@ -148,7 +163,7 @@ export function createSSEStream(options = {}) {
     finalizeStream();
   };
 
-  return new TransformStream({
+  const transformStream = new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -500,7 +515,9 @@ export function createSSEStream(options = {}) {
           // Without it they can hang until timeout and trigger failover.
           // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
           const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
-          if (!streamDoneSent && !isGeminiFamily) {
+          // A failed/incomplete upstream must not be given a success sentinel.
+          const failed = outcomeTracker && !outcomeTracker.finish().ok;
+          if (!streamDoneSent && !isGeminiFamily && !failed) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
@@ -584,13 +601,20 @@ export function createSSEStream(options = {}) {
         finalizeStream();
       } catch (error) {
         console.log("Error in flush:", error);
+        outcomeTracker?.fail(error?.errorKind || OUTCOME_ERROR.INVALID, error?.message || "Failed to finalize upstream stream");
         finalizeStream();
       }
     }
   });
+
+  // Abnormal end (upstream reset/stall, client cancel): flush() never runs, so the
+  // stream owner records the end on the tracker and calls this to finalize usage
+  // and request logging.
+  transformStream.finalizeOutcome = finalizeStream;
+  return transformStream;
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, outcomeTracker = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -604,11 +628,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     body,
     onStreamComplete,
     apiKey,
-    credentials
+    credentials,
+    outcomeTracker
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null, outcomeTracker = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -618,6 +643,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    outcomeTracker
   });
 }

@@ -1,13 +1,26 @@
 // Shared TTS helpers
 import { Buffer } from "node:buffer";
+import { OUTCOME_ERROR } from "../../utils/upstreamOutcome.js";
 
 export const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
 
 // Convert upstream Response (binary audio) to { base64, format }
 export async function responseToBase64(res, defaultFormat = "mp3") {
+  const ctype = (res.headers.get("content-type") || "").toLowerCase();
+  if (ctype.includes("json") || ctype.includes("text/") || ctype.includes("html")) {
+    const text = await res.text().catch(() => "");
+    let message = text || "Upstream returned non-audio content";
+    try {
+      const parsed = JSON.parse(text);
+      message = parsed?.error?.message || parsed?.message || parsed?.detail?.message || message;
+    } catch { /* preserve bounded upstream text */ }
+    const error = new Error(String(message).slice(0, 1000));
+    error.errorKind = OUTCOME_ERROR.PAYLOAD_ERROR;
+    throw error;
+  }
+
   const buf = await res.arrayBuffer();
   if (buf.byteLength < 100) throw new Error("Upstream returned empty audio");
-  const ctype = res.headers.get("content-type") || "";
   let format = defaultFormat;
   if (ctype.includes("wav")) format = "wav";
   else if (ctype.includes("mpeg") || ctype.includes("mp3")) format = "mp3";

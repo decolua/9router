@@ -3,6 +3,7 @@ import { HTTP_STATUS, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.j
 import { getExecutor } from "../executors/index.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getEmbeddingAdapter } from "./embeddingProviders/index.js";
+import { evaluateEmbeddingJson, extractPayloadError, OUTCOME_ERROR, outcomeErrorResult } from "../utils/upstreamOutcome.js";
 import { PROVIDER_ID_TO_ALIAS, getModelParams } from "../config/providerModels.js";
 import { resolveInputType } from "../config/embeddingParams.js";
 
@@ -141,9 +142,22 @@ export async function handleEmbeddingsCore({
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
   }
 
-  if (onRequestSuccess) await onRequestSuccess();
+  // An HTTP 200 error envelope or a reply without usable vectors is a failure:
+  // route it like an upstream error and leave the account state untouched.
+  const payloadError = extractPayloadError(responseBody);
+  if (payloadError) return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, payloadError.message, payloadError.errorKind);
 
-  const normalized = adapter.normalize(responseBody, model);
+  let normalized;
+  try {
+    normalized = adapter.normalize(responseBody, model);
+  } catch (error) {
+    return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, error.message || `Invalid embeddings response from ${provider}`, OUTCOME_ERROR.INVALID);
+  }
+
+  const outcome = evaluateEmbeddingJson(normalized, { allowEmpty: Array.isArray(input) && input.length === 0 });
+  if (!outcome.ok) return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, outcome.message, outcome.errorKind);
+
+  if (onRequestSuccess) await onRequestSuccess();
   log?.debug?.("EMBEDDINGS", `Success | usage=${JSON.stringify(normalized.usage || {})}`);
 
   return {

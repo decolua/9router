@@ -265,6 +265,76 @@ describe("handleVideoProxyCore", () => {
     expect(result.error).toContain("[redacted]");
   });
 
+  it("maps a caller abort to 499 without retrying", async () => {
+    const abortError = new Error("This operation was aborted");
+    abortError.name = "AbortError";
+    global.fetch.mockRejectedValueOnce(abortError);
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await handleVideoProxyCore({
+      provider: "xai",
+      action: "generations",
+      rawBody: "{}",
+      credentials: { accessToken: "tok" },
+      signal: controller.signal,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(499);
+    expect(result.errorKind).toBe("aborted");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps an auth-refresh retry deadline to 408", async () => {
+    const timeoutError = new Error("The operation timed out");
+    timeoutError.name = "TimeoutError";
+    global.fetch
+      .mockResolvedValueOnce(jsonResponse({ error: "expired" }, 401))
+      .mockRejectedValueOnce(timeoutError);
+    refreshTokenByProvider.mockResolvedValueOnce({ accessToken: "tok-NEW" });
+
+    const result = await handleVideoProxyCore({
+      provider: "xai",
+      action: "generations",
+      rawBody: "{}",
+      credentials: { accessToken: "tok-OLD", refreshToken: "ref" },
+    });
+
+    expect(result.status).toBe(408);
+    expect(result.errorKind).toBe("upstream_stall");
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a creation response that returns no job id", async () => {
+    global.fetch.mockResolvedValueOnce(jsonResponse({ status: "pending" }));
+
+    const result = await handleVideoProxyCore({
+      provider: "xai",
+      action: "generations",
+      rawBody: "{}",
+      credentials: { accessToken: "tok" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.errorKind).toBe("invalid_upstream_json");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a non-JSON success body", async () => {
+    global.fetch.mockResolvedValueOnce(new Response("<html>gateway</html>", { status: 200, headers: { "Content-Type": "text/html" } }));
+
+    const result = await handleVideoProxyCore({
+      provider: "xai",
+      requestId: "req-1",
+      credentials: { accessToken: "tok" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errorKind).toBe("invalid_upstream_json");
+  });
+
   it("maps client aborts to 408 without retrying", async () => {
     const abortError = new Error("This operation was aborted");
     abortError.name = "AbortError";
