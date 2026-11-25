@@ -1,6 +1,8 @@
 import { DashboardLayout } from "@/shared/components";
 
-export default function DashboardRootLayout({ children }) {
-  return <DashboardLayout>{children}</DashboardLayout>;
+import { dashboardPageRole } from "@/lib/auth/dashboardPageRole";
+
+export default async function DashboardRootLayout({ children }) {
+  return <DashboardLayout role={await dashboardPageRole()}>{children}</DashboardLayout>;
 }
 

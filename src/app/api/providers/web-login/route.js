@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { createProviderConnection, deleteProviderConnection, getProviderConnections, updateProviderConnection } from "@/models";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
@@ -14,7 +15,7 @@ import { fetchWebIdentity } from "open-sse/services/webIdentity.js";
 
 // GET /api/providers/web-login            → supported provider list
 // GET /api/providers/web-login?provider=x → session status (saves once on success)
-export async function GET(request) {
+async function getHandler(request) {
   const provider = request.nextUrl.searchParams.get("provider");
   if (!provider) {
     return NextResponse.json({ providers: listWebLoginProviders(), profiles: listWebLoginProfiles() });
@@ -138,3 +139,5 @@ export async function DELETE(request) {
   }
   return NextResponse.json({ cancelled: cancelWebLogin(provider) });
 }
+
+export const GET = withProviderAudit(getHandler);

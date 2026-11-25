@@ -3,18 +3,6 @@ import crypto from "crypto";
 const API_KEY_SECRET = process.env.API_KEY_SECRET || "endpoint-proxy-api-key-secret";
 
 /**
- * Generate 6-char random keyId
- */
-function generateKeyId() {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-/**
  * Generate CRC (8-char HMAC)
  */
 function generateCrc(machineId, keyId) {
@@ -32,7 +20,7 @@ function generateCrc(machineId, keyId) {
  * @returns {{ key: string, keyId: string }}
  */
 export function generateApiKeyWithMachine(machineId) {
-  const keyId = generateKeyId();
+  const keyId = crypto.randomBytes(32).toString("hex");
   const crc = generateCrc(machineId, keyId);
   const key = `sk-${machineId}-${keyId}-${crc}`;
   return { key, keyId };

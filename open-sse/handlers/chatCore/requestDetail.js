@@ -93,6 +93,7 @@ export function buildRequestDetail(base, overrides = {}) {
     response: base.response || {},
     pxpipe: base.pxpipe || undefined,
     status: base.status || "success",
+    errorCategory: base.errorCategory,
     ...overrides
   };
 }
@@ -115,13 +116,14 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
+export function saveUsageStats({ provider, model, tokens, usageReported, connectionId, apiKey, endpoint, ttftMs = null, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
   const outTokens = tokens.output_tokens ?? tokens.completion_tokens ?? 0;
 
-  if (inTokens === 0 && outTokens === 0) return;
+  // A zero explicitly reported by a JSON provider is still a measurement.
+  if (inTokens === 0 && outTokens === 0 && !usageReported) return;
 
   if (!silent) {
     const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -136,13 +138,15 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0
   };
 
-  saveRequestUsage({
+  return saveRequestUsage({
     provider: provider || "unknown",
     model: model || "unknown",
     tokens: normalized,
+    usageReported: usageReported ?? !tokens.estimated,
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
-    endpoint: endpoint || null
+    endpoint: endpoint || null,
+    ...(ttftMs != null ? { ttftMs } : {}),
   }).catch(() => {});
 }

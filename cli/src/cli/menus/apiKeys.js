@@ -1,5 +1,5 @@
 const api = require("../api/client");
-const { prompt, confirm, pause } = require("../utils/input");
+const { prompt, select, selectMenu, multiSelect, confirm, pause } = require("../utils/input");
 const { clearScreen, showStatus, showHeader } = require("../utils/display");
 const { maskKey, formatDate, getRelativeTime } = require("../utils/format");
 const { showMenuWithBack } = require("../utils/menuHelper");
@@ -48,6 +48,7 @@ function displayApiKeys(keys, port) {
   console.log("│  2. View Full Key (by number)                           │");
   console.log("│  3. Copy Key to Clipboard (by number)                   │");
   console.log("│  4. Delete Key (by number)                              │");
+  console.log("│  5. Rotate Key (by number)                              │");
   console.log("│  0. ← Back to Main Menu                                 │");
   console.log("└─────────────────────────────────────────────────────────┘");
 }
@@ -161,6 +162,84 @@ async function handleDeleteKey(key) {
   return true;
 }
 
+async function handleRotateKey(keys) {
+  const index = await select("Select a key to rotate:", keys.map(key => key.name));
+  const { id, name, keyVersion } = keys[index];
+  if (!await confirm(`Rotate "${name}"? The old key will stop working immediately.`)) return;
+
+  const result = await api.rotateApiKey(id, keyVersion);
+  if (result.statusCode === 409) {
+    showStatus("This key changed elsewhere. Select it again from the refreshed list.", "warning");
+  } else if (result.statusCode === 405 || (result.statusCode === 404 && result.error !== "Key not found")) {
+    showStatus("This server does not support key rotation.", "error");
+  } else if (!result.success || result.statusCode !== 200 || !result.data?.key) {
+    showStatus(result.error || "Failed to rotate key", "error");
+  } else {
+    console.log("Save the new key now. This confirmation will not be shown again.");
+    console.log(`Key: ${result.data.key}`);
+    if (await confirm("Copy key to clipboard?")) {
+      const copied = copyToClipboard(result.data.key);
+      showStatus(copied ? "Key copied to clipboard!" : "Failed to copy to clipboard", copied ? "success" : "error");
+    }
+  }
+  await pause();
+}
+
+function accountError(result, fallback) {
+  if (result.statusCode === 401 || result.statusCode === 403) {
+    return `Administrator access required (HTTP ${result.statusCode})`;
+  }
+  return result.error || fallback;
+}
+
+async function handleAllowedAccounts(key) {
+  const result = await api.getProviders();
+  if (!result.success || !Array.isArray(result.data?.connections)) {
+    showStatus(accountError(result, "Could not load accounts"), "error");
+    await pause();
+    return;
+  }
+
+  const initial = key.allowedConnections || [];
+  const labels = new Map();
+  for (const account of result.data.connections) {
+    const provider = account.providerSpecificData?.nodeName || account.provider;
+    const name = account.name || account.displayName;
+    const label = name && account.email && name !== account.email
+      ? `${name} · ${account.email}`
+      : name || account.email || account.id;
+    labels.set(account.id, `${provider} · ${label}`);
+  }
+  for (const id of initial) {
+    if (!labels.has(id)) labels.set(id, `Deleted account: ${id}`);
+  }
+  const current = initial.length ? initial.map(id => labels.get(id)).join(", ") : "All accounts";
+  console.log(`Allowed accounts: ${current}`);
+  if (!labels.size) {
+    showStatus("No accounts available", "info");
+    await pause();
+    return;
+  }
+
+  const selected = await multiSelect({
+    message: "Choose accounts",
+    hint: "Space to toggle, Enter to save. Empty selection allows all accounts.",
+    emptyError: "All accounts",
+    initial,
+    choices: Array.from(labels, ([id, label]) => ({ name: id, message: label })),
+  });
+  if (selected === null) return;
+
+  const saved = await api.setAllowedAccounts(key.id, selected);
+  if (saved.success) {
+    key.allowedConnections = selected;
+    showStatus("Updated", "success");
+  } else {
+    showStatus(accountError(saved, "Could not save allowed accounts"), "error");
+  }
+  await pause();
+}
+
 /**
  * Show actions for a specific key
  * @param {Object} key - API key object
@@ -172,7 +251,7 @@ async function showKeyActions(key, port, breadcrumb = []) {
   await showMenuWithBack({
     title: `🔑 ${key.name}`,
     breadcrumb: [...breadcrumb, key.name],
-    headerContent: `Name: ${key.name}\nKey: ${key.key}\nEndpoint: ${endpoint}`,
+    headerContent: `Name: ${key.name}\nKey: ${maskKey(key.key)}\nEndpoint: ${endpoint}`,
     items: [
       {
         label: "Copy to Clipboard",
@@ -180,6 +259,10 @@ async function showKeyActions(key, port, breadcrumb = []) {
           await handleCopyKey(key);
           return true;
         }
+      },
+      {
+        label: "Allowed accounts",
+        action: () => handleAllowedAccounts(key),
       },
       {
         label: "Delete Key",
@@ -198,34 +281,29 @@ async function showKeyActions(key, port, breadcrumb = []) {
  * @param {Array<string>} breadcrumb - Breadcrumb path
  */
 async function showApiKeysMenu(port, breadcrumb = []) {
-  const { showListMenu } = require("../utils/menuHelper");
-  
   const { endpoint } = await getEndpoint(port);
-  await showListMenu({
-    title: "🔑 API Keys Management",
-    breadcrumb,
-    headerContent: `Endpoint: ${endpoint}`,
-    fetchItems: async () => {
-      const result = await api.getApiKeys();
-      if (!result.success) {
-        clearScreen();
-        showStatus(`Failed to fetch API keys: ${result.error}`, "error");
-        await pause();
-        return null;
-      }
-      return { items: result.data.keys || [] };
-    },
-    formatItem: (key) => `${key.name} (${maskKey(key.key)})`,
-    onSelect: async (key) => {
-      await showKeyActions(key, port, breadcrumb);
-    },
-    createAction: {
-      label: "Create New API Key",
-      action: async () => {
-        await handleCreateKey();
-      }
+  while (true) {
+    const result = await api.getApiKeys();
+    if (!result.success) {
+      clearScreen();
+      showStatus(accountError(result, "Failed to fetch API keys"), "error");
+      await pause();
+      return;
     }
-  });
+    const keys = result.data.keys || [];
+    const actions = [
+      { label: "← Back" },
+      { label: "Create New API Key", run: handleCreateKey },
+      ...(keys.length ? [{ label: "Rotate Key (by number)", run: () => handleRotateKey(keys) }] : []),
+      ...keys.map(key => ({
+        label: `${key.name} (${maskKey(key.key)})`,
+        run: () => showKeyActions(key, port, breadcrumb),
+      })),
+    ];
+    const choice = await selectMenu("🔑 API Keys Management", actions, 0, "", `Endpoint: ${endpoint}`, breadcrumb);
+    if (choice <= 0) return;
+    await actions[choice].run();
+  }
 }
 
 module.exports = {

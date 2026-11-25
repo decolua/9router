@@ -1,33 +1,29 @@
+import { audit, auditActor } from "@/lib/observability/audit";
 import { NextResponse } from "next/server";
 import { exportDb, getSettings, importDb } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
 
-const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const PASSWORD_HEADER = "x-9r-password";
 
-// CLI token requests are already trusted (local machine); skip password re-auth.
-function isCliRequest(request) {
-  return Boolean(request.headers.get(CLI_TOKEN_HEADER));
-}
 
-export async function GET(request) {
+async function getHandler(request, identity) {
   try {
-    if (!isCliRequest(request) && !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))) {
+    if (identity.actor !== "cli" && !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
     const payload = await exportDb();
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.log("Error exporting database:", error);
     return NextResponse.json({ error: "Failed to export database" }, { status: 500 });
   }
 }
 
-export async function POST(request) {
+async function postHandler(request, identity) {
   try {
     const { password, ...payload } = await request.json();
-    if (!isCliRequest(request) && !(await verifyDashboardPassword(password))) {
+    if (identity.actor !== "cli" && !(await verifyDashboardPassword(password))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
     await importDb(payload);
@@ -48,4 +44,18 @@ export async function POST(request) {
       { status: 400 }
     );
   }
+}
+
+export async function GET(request) {
+  const identity = await auditActor(request);
+  const response = await getHandler(request, identity);
+  await audit(request, "db.export", { identity, result: response.ok ? "success" : "failure" });
+  return response;
+}
+
+export async function POST(request) {
+  const identity = await auditActor(request);
+  const response = await postHandler(request, identity);
+  await audit(request, "db.import", { identity, result: response.ok ? "success" : "failure" });
+  return response;
 }

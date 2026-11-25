@@ -1,21 +1,6 @@
-import { handleChat } from "@/sse/handlers/chat.js";
-import { initTranslators } from "open-sse/translator/index.js";
+import { chatInferenceRoute } from "@/sse/handlers/budgetInference.js";
+import { BUDGET_ENDPOINT } from "@/shared/utils/keyBudget.js";
 
-let initialized = false;
-
-/**
- * Initialize translators once
- */
-async function ensureInitialized() {
-  if (!initialized) {
-    await initTranslators();
-    initialized = true;
-  }
-}
-
-/**
- * Handle CORS preflight
- */
 export async function OPTIONS() {
   return new Response(null, {
     headers: {
@@ -26,11 +11,4 @@ export async function OPTIONS() {
   });
 }
 
-/**
- * POST /v1/messages - Claude format (auto convert via handleChat)
- */
-export async function POST(request) {
-  await ensureInitialized();
-  return await handleChat(request);
-}
-
+export const POST = chatInferenceRoute(BUDGET_ENDPOINT.MESSAGES);

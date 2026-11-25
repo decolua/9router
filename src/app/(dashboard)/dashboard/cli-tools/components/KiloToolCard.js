@@ -23,10 +23,6 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
   const [customBaseUrl, setCustomBaseUrl] = useState("");
 
   useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
     if (initialStatus) setStatus(initialStatus);
   }, [initialStatus]);
 
@@ -78,9 +74,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = (selectedApiKey && selectedApiKey.trim())
-        ? selectedApiKey
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+      const keyToUse = selectedApiKey.trim();
 
       const res = await fetch("/api/cli-tools/kilo-settings", {
         method: "POST",
@@ -91,6 +85,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
         rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        setSelectedApiKey("");
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkStatus();
       } else {
@@ -207,7 +202,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <BaseUrlSelect
                     value={customBaseUrl || getDisplayUrl()}
-                    onChange={setCustomBaseUrl}
+                    onChange={url => { if (url !== customBaseUrl) setSelectedApiKey(""); setCustomBaseUrl(url); }}
                     requiresExternalUrl={tool.requiresExternalUrl}
                     tunnelEnabled={tunnelEnabled}
                     tunnelPublicUrl={tunnelPublicUrl}
@@ -219,7 +214,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect keepExisting value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
@@ -241,7 +236,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button variant="primary" size="sm" onClick={handleApply} disabled={(!selectedApiKey && (cloudEnabled && apiKeys.length > 0)) || !selectedModel} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleReset} disabled={restoring} loading={restoring}>

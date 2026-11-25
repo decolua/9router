@@ -1,3 +1,4 @@
+import { fetchHeadroom } from "../../src/lib/headroom/transport.js";
 import { FORMATS } from "../translator/formats.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, COMMANDCODE_BLOCK, RESPONSES_ITEM } from "../translator/schema/index.js";
 import { HEADROOM_TOOL_OUTPUT_MAX_DEPTH } from "./constants.js";
@@ -368,6 +369,30 @@ function applyProjectedHeadroomMessages(projection, compressedMessages, diagnost
   return true;
 }
 
+// Dev profile only submits plain assistant prose from the original wire request.
+// Tool results, user messages and structured content never enter the projection.
+export async function compressDevProse(body, options) {
+  if (!Array.isArray(body?.messages)) return null;
+  const messages = [];
+  const targets = [];
+  for (const msg of body.messages) {
+    if (msg?.role !== ROLE.ASSISTANT || typeof msg.content !== "string" ||
+        Object.keys(msg).some(k => k !== "role" && k !== "content")) continue;
+    // Conservative allowlist: one unindented line of words. No paths, fences,
+    // inline code, patch markers or filename punctuation.
+    if (!/^[\p{L}]+(?: [\p{L}]+){2,}[.!?]?$/u.test(msg.content) || /[\r\n]/.test(msg.content)) continue;
+    messages.push({ ...msg });
+    targets.push({ object: msg, key: "content" });
+  }
+  if (!messages.length) return null;
+  const diag = options.diagnostics;
+  diag.before = captureSizeSnapshot(body);
+  const data = await callCompress(options.url, messages, options.model, normalizeTimeout(options.timeoutMs), false, diag);
+  if (!data || !applyProjectedHeadroomMessages({ targets, messages }, data.messages, diag, "dev")) return null;
+  diag.after = captureSizeSnapshot(body);
+  return data;
+}
+
 // POST messages to Headroom /v1/compress; returns compressed messages + stats or null.
 async function callCompress(url, messages, model, timeoutMs, compressUserMessages, diagnostics) {
   const endpoint = buildCompressEndpoint(url);
@@ -376,7 +401,7 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
   if (compressUserMessages) payload.config = { compress_user_messages: true };
   let res;
   try {
-    res = await fetch(endpoint, {
+    res = await fetchHeadroom(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

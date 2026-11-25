@@ -1,4 +1,4 @@
-import { proxy as dashboardProxy, isAuthenticated } from "./dashboardGuard";
+import { proxy as dashboardProxy, dashboardRole } from "./dashboardGuard";
 import {
   sessionFromRequest,
   isAccountProxyPath,
@@ -22,7 +22,7 @@ export default async function proxy(request) {
   const cookies = request.headers.get("cookie") || "";
   const hasSessionCookie = cookies.includes("9r_mimo_login=");
   const { pathname } = request.nextUrl;
-  if (hasSessionCookie && !(await isAuthenticated(request))) {
+  if (hasSessionCookie && await dashboardRole(request) !== "admin") {
     // Forged or stale session cookie without dashboard auth — drop it early.
     const res = await dashboardProxy(request);
     const headers = new Headers(res.headers);

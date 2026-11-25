@@ -1,7 +1,8 @@
 "use server";
 
+import { publicToolConfig } from "../publicToolConfig.js";
 import { NextResponse } from "next/server";
-import { resolveCliApiKey } from "../resolveApiKey.js";
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -91,7 +92,7 @@ export async function GET() {
 
     return NextResponse.json({
       installed: true,
-      config,
+      config: publicToolConfig(config),
       has9Router: has9RouterConfig(config),
       configPath,
     });
@@ -179,7 +180,7 @@ export async function POST(request) {
     existing.providers["9router"] = {
       ...existingProvider,
       baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || existingProvider.apiKey || await resolveCliApiKey(null),
+      apiKey: resolveCliApiKey(apiKey, normalizedBaseUrl, existingProvider?.baseUrl, existingProvider?.apiKey),
       api: existingProvider.api || "openai-completions",
       models: modelList,
     };
@@ -192,6 +193,7 @@ export async function POST(request) {
       configPath,
     });
   } catch (err) {
+    if (err instanceof CliKeySelectionError) return NextResponse.json({ error: { message: err.message } }, { status: 400 });
     return NextResponse.json({ error: { message: err.message } }, { status: 500 });
   }
 }

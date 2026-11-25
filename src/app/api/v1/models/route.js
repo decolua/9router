@@ -1,6 +1,6 @@
+import { catalogCapsResolver, catalogProviderId } from "@/lib/modelCatalogCaps";
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
-  ALIAS_TO_ID,
   AI_PROVIDERS,
   FREE_PROVIDERS,
   getProviderAlias,
@@ -45,16 +45,7 @@ async function resolveQoderLiveModels(conn, provider) {
   return { models: models.map((m) => ({ id: m.id, name: m.name })) };
 }
 
-// Combo seats use UI aliases; the model registry also has transport aliases.
-// Capability overrides and catalog limits are keyed by provider id.
-const ALIAS_TO_PROVIDER_ID = {
-  ...Object.fromEntries(
-    Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
-  ),
-  ...ALIAS_TO_ID,
-};
-
-function comboSeatCapabilities(seat) {
+function comboSeatCapabilities(seat, resolveCaps) {
   const slash = seat.indexOf("/");
   if (slash <= 0) return null;
   const alias = seat.slice(0, slash);
@@ -62,7 +53,7 @@ function comboSeatCapabilities(seat) {
   // capability lookup — it is not part of the model id. Otherwise the lookup
   // misses the provider-scoped catalog entry and falls through to a default.
   const model = seat.slice(slash + 1).replace(/\([^()]+\)\s*$/, "").trim();
-  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, model);
+  return resolveCaps(alias, model);
 }
 
 // Per-provider live model resolvers. Each receives a connection record and
@@ -323,7 +314,7 @@ function comboMatchesKinds(combo, kindFilter) {
 // treated as a literal model and publishes the 200k floor. Expand nested
 // names (cycle-guarded) so the published window is the true min across the
 // whole chain.
-function comboSeatLimits(combo, combosByName, visiting = new Set()) {
+function comboSeatLimits(combo, combosByName, resolveSeat, visiting = new Set()) {
   const name = typeof combo?.name === "string" ? combo.name : null;
   if (name) {
     if (visiting.has(name)) return { contextWindow: undefined, maxOutput: undefined };
@@ -339,13 +330,13 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
       if (slash <= 0) {
         const nested = combosByName.get(seat);
         if (nested) {
-          const nestedLimits = comboSeatLimits(nested, combosByName, visiting);
+          const nestedLimits = comboSeatLimits(nested, combosByName, resolveSeat, visiting);
           if (Number.isFinite(nestedLimits.contextWindow)) contextWindow = Math.min(contextWindow, nestedLimits.contextWindow);
           if (Number.isFinite(nestedLimits.maxOutput)) maxOutput = Math.min(maxOutput, nestedLimits.maxOutput);
           continue;
         }
       }
-      const caps = comboSeatCapabilities(seat) || getCapabilitiesForModel(null, seat);
+      const caps = resolveSeat(seat) || getCapabilitiesForModel(null, seat);
       if (Number.isFinite(caps?.contextWindow)) contextWindow = Math.min(contextWindow, caps.contextWindow);
       if (Number.isFinite(caps?.maxOutput)) maxOutput = Math.min(maxOutput, caps.maxOutput);
     }
@@ -424,6 +415,8 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
 
   const models = [];
+  const resolveCaps = catalogCapsResolver(customModels);
+  const resolveSeat = seat => comboSeatCapabilities(seat, resolveCaps);
   const combosByName = new Map(
     combos.filter((c) => typeof c?.name === "string").map((c) => [c.name, c]),
   );
@@ -442,13 +435,14 @@ export async function buildModelsList(kindFilter, options = {}) {
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     } else {
-      const comboCaps = aggregateComboCapabilities(combo.models, comboByName, comboSeatCapabilities);
+      const comboCaps = aggregateComboCapabilities(combo.models, comboByName, resolveSeat);
       if (comboCaps) entry.capabilities = comboCaps;
       // Any seat can serve the request, so the only window a combo can promise is
       // its smallest. Combo entries were the only models on this endpoint that
       // published no limits at all, which leaves a client to guess from the name —
       // and it guesses high (see the snake_case note on the per-provider path).
-      const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName);
+      const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName, resolveSeat);
+      if (entry.capabilities) Object.assign(entry.capabilities, { contextWindow, maxOutput });
       if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
       if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
     }
@@ -458,16 +452,19 @@ export async function buildModelsList(kindFilter, options = {}) {
   if (connections.length === 0) {
     // DB unavailable -> return static models, filtered by per-model kind
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
-      const providerId = ALIAS_TO_PROVIDER_ID[alias] || alias;
+      const providerId = catalogProviderId(alias);
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id) || isDisabled(providerId, model.id)) continue;
+        const caps = resolveCaps(providerId, model.id);
         models.push({
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
-          capabilities: getCapabilitiesForModel(alias, model.id),
+          capabilities: caps,
+          context_length: caps.contextWindow,
+          max_completion_tokens: caps.maxOutput,
         });
       }
     }
@@ -482,7 +479,9 @@ export async function buildModelsList(kindFilter, options = {}) {
       const modelId = String(customModel.id).trim();
       if (!modelId) continue;
 
+      const caps = resolveCaps(providerAlias, modelId);
       models.push({
+        capabilities: caps, context_length: caps.contextWindow, max_completion_tokens: caps.maxOutput,
         id: `${providerAlias}/${modelId}`,
         object: "model",
         owned_by: providerAlias,
@@ -506,9 +505,11 @@ export async function buildModelsList(kindFilter, options = {}) {
         isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
       // Build kind lookup for static models so we can filter even when only IDs are exposed
-      const staticModelKindById = new Map(
-        providerModels.map((m) => [m.id, modelKind(m)])
-      );
+      const staticModelKindById = new Map();
+      for (const m of providerModels) {
+        // Some IDs are listed for more than one service (e.g. Gemini chat and STT).
+        if (!staticModelKindById.has(m.id) || kindFilter.includes(modelKind(m))) staticModelKindById.set(m.id, modelKind(m));
+      }
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
 
@@ -553,6 +554,7 @@ export async function buildModelsList(kindFilter, options = {}) {
 
       const modelIds = rawModelIds
         .map((modelId) => {
+          if (staticModelKindById.has(modelId)) return modelId; // A vendor prefix can be part of the actual ID.
           if (modelId.startsWith(`${outputAlias}/`)) {
             return modelId.slice(outputAlias.length + 1);
           }
@@ -630,33 +632,18 @@ export async function buildModelsList(kindFilter, options = {}) {
         // dynamically-discovered LLM models still surface vision/reasoning/search/tools.
         const liveCaps = liveCapabilitiesById.get(modelId);
         const serviceCaps = capabilitiesFromServiceKind(customKind || liveKind);
-        const caps = liveCaps || serviceCaps || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
-        if (caps) model.capabilities = caps;
-        // Token limits under the snake_case names the OpenAI/OpenRouter
-        // convention uses. `capabilities.contextWindow` is camelCase and nested,
-        // so clients matching context_length find nothing, fall back to guessing
-        // the window from the model name, and guess high — a 372k model read as
-        // 1.05M never reaches its compaction threshold and hard-fails upstream.
-        // Emitted at top level because not every client recurses into nested
-        // objects; the camelCase `capabilities` block stays for compatibility.
         if (kind === LLM_KIND || allowAsLlm) {
-          let contextWindow = caps?.contextWindow;
-          let maxOutput = caps?.maxOutput;
-          // Live-catalog and service-kind capabilities are usually partial
-          // (often just { tools: true }), so fill the gaps from the static
-          // table rather than emitting null and leaving clients to guess.
-          if (!Number.isFinite(contextWindow) || !Number.isFinite(maxOutput)) {
-            const fallback = getCapabilitiesForModel(providerId, modelId);
-            if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
-            if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
-          }
-          if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
-          if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
+          const { contextWindow, maxOutput, ...registryCaps } = resolveCaps(providerId, modelId, outputAlias, liveCaps);
+          model.capabilities = { ...registryCaps, ...serviceCaps, ...liveCaps, contextWindow, maxOutput };
+          model.context_length = contextWindow;
+          model.max_completion_tokens = maxOutput;
           // Selectable reasoning levels (the set the dashboard picker shows) so clients
           // can build their effort selector from the gateway instead of keeping a
           // per-model table. Omitted when the model has no reasoning.
           const thinkingLevels = getThinkingLevels(providerId, modelId);
           if (Array.isArray(thinkingLevels) && thinkingLevels.length > 0) model.thinking_levels = thinkingLevels;
+        } else if (liveCaps || serviceCaps) {
+          model.capabilities = liveCaps || serviceCaps;
         }
         models.push(model);
       }

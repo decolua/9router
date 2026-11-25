@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
 
@@ -6,7 +7,7 @@ import { createProviderConnection } from "@/models";
  * POST /api/oauth/iflow/cookie
  * Body: { cookie: "BXAuth=xxx; ..." }
  */
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const { cookie } = await request.json();
 
@@ -135,3 +136,5 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export const POST = withProviderAudit(postHandler);

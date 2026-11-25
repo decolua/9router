@@ -9,8 +9,8 @@ export async function GET() {
   try {
     const settings = await getSettings();
     const url = settings.headroomUrl || DEFAULT_HEADROOM_URL;
-    const status = await getHeadroomStatus(url);
-    const managedPid = getManagedPid();
+    const managedPid = getManagedPid(url);
+    const status = await getHeadroomStatus(url, managedPid);
     return NextResponse.json({ ...status, url, managedPid });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

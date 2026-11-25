@@ -1,5 +1,6 @@
 "use server";
 
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -32,7 +33,7 @@ const checkInstalled = async () => {
   }
 };
 
-const readJson = async (filePath) => {
+const readJson = async (filePath, strict = false) => {
   try {
     const content = await fs.readFile(filePath, "utf-8");
     // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
@@ -40,6 +41,7 @@ const readJson = async (filePath) => {
     const stripped = content.replace(/,(\s*[}\]])/g, "$1");
     return JSON.parse(stripped);
   } catch (error) {
+    if (strict && error.code !== "ENOENT") throw error;
     return null;
   }
 };
@@ -74,33 +76,39 @@ export async function GET() {
 export async function POST(request) {
   try {
     const { baseUrl, apiKey, model } = await request.json();
-    if (!baseUrl || !apiKey || !model) {
-      return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
+    if (typeof baseUrl !== "string" || !baseUrl.trim() || !model) {
+      return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
 
     await fs.mkdir(getDataDir(), { recursive: true });
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
-    const auth = (await readJson(getAuthPath())) || {};
+    const auth = (await readJson(getAuthPath(), true)) || {};
+    const previous = auth["openai-compatible"] || auth["9router"];
+    const selected = resolveCliApiKey(apiKey, normalizedBaseUrl, previous?.baseUrl || previous?.baseURL, previous?.apiKey);
     auth["openai-compatible"] = {
       type: "api-key",
-      apiKey,
+      apiKey: selected,
       baseUrl: normalizedBaseUrl,
       model,
     };
-    await fs.writeFile(getAuthPath(), JSON.stringify(auth, null, 2));
+    await fs.writeFile(getAuthPath(), JSON.stringify(auth, null, 2), { mode: 0o600 });
 
     // Best-effort: update VS Code extension settings
     try {
-      const vscode = (await readJson(getVscodeSettingsPath())) || {};
-      vscode["kilocode.customProvider"] = { name: "9Router", baseURL: normalizedBaseUrl, apiKey };
+      const vscode = (await readJson(getVscodeSettingsPath(), true)) || {};
+      const ext = vscode["kilocode.customProvider"];
+      const extKey = apiKey?.trim() && apiKey.trim() !== "sk_9router" ? selected
+        : resolveCliApiKey(null, normalizedBaseUrl, ext?.baseURL, ext?.apiKey);
+      vscode["kilocode.customProvider"] = { name: "9Router", baseURL: normalizedBaseUrl, apiKey: extKey };
       vscode["kilocode.defaultModel"] = model;
       await fs.writeFile(getVscodeSettingsPath(), JSON.stringify(vscode, null, 2));
     } catch { /* VS Code settings not writable */ }
 
     return NextResponse.json({ success: true, message: "Kilo Code settings applied successfully!", authPath: getAuthPath() });
   } catch (error) {
+    if (error instanceof CliKeySelectionError) return NextResponse.json({ error: error.message }, { status: 400 });
     console.log("Error updating kilo settings:", error);
     return NextResponse.json({ error: "Failed to update kilo settings" }, { status: 500 });
   }

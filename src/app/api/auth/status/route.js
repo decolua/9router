@@ -5,11 +5,15 @@ import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 
-export async function GET() {
+import { hasValidCliToken } from "@/dashboardGuard";
+
+export async function GET(request) {
   try {
     const settings = await getSettings();
     const cookieStore = await cookies();
-    const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+    const token = cookieStore.get("auth_token")?.value;
+    const session = await getDashboardAuthSession(token);
+    const cli = !!request && await hasValidCliToken(request);
     const requireLogin = settings.requireLogin !== false;
     const authMode = settings.authMode || "password";
     const ssoType = settings.ssoType || "oidc";
@@ -38,14 +42,15 @@ export async function GET() {
       hasPassword: !!settings.password,
       displayName,
       loginMethod,
-      authenticated: !!session,
+      role: cli ? "admin" : session?.role ?? (!token && !requireLogin ? "admin" : null),
+      authenticated: !!session || cli,
       oidcName: oidcName || null,
       oidcEmail: oidcEmail || null,
       oidcLogin: !!session?.oidc,
       samlName: samlName || null,
       samlEmail: samlEmail || null,
       samlLogin: !!session?.saml,
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({
       requireLogin: true,
@@ -58,6 +63,7 @@ export async function GET() {
       hasPassword: false,
       displayName: "Password user",
       loginMethod: "Password",
+      role: null,
       authenticated: false,
       oidcName: null,
       oidcEmail: null,
@@ -65,6 +71,6 @@ export async function GET() {
       samlName: null,
       samlEmail: null,
       samlLogin: false,
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   }
 }

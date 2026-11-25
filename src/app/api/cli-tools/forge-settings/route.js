@@ -1,7 +1,8 @@
 "use server";
 
+import { publicToolConfig } from "../publicToolConfig.js";
 import { NextResponse } from "next/server";
-import { resolveCliApiKey } from "../resolveApiKey.js";
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -62,7 +63,7 @@ export async function GET() {
 
     return NextResponse.json({
       installed: true,
-      config,
+      config: publicToolConfig(config),
       has9Router: has9RouterConfig(content),
       configPath: getForgeConfigPath(),
     });
@@ -97,7 +98,7 @@ export async function POST(request) {
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
     existing.openai = {
-      api_key: await resolveCliApiKey(apiKey),
+      api_key: resolveCliApiKey(apiKey, normalizedBaseUrl, existing.openai?.base_url, existing.openai?.api_key),
       base_url: normalizedBaseUrl,
       model: model || "provider/model-id",
     };
@@ -113,6 +114,7 @@ export async function POST(request) {
       configPath,
     });
   } catch (err) {
+    if (err instanceof CliKeySelectionError) return NextResponse.json({ error: { message: err.message } }, { status: 400 });
     return NextResponse.json({ error: { message: err.message } }, { status: 500 });
   }
 }

@@ -30,7 +30,9 @@ Options:
   --save                 After a successful login, save the password for this server
                          to ~/.9router/connect.env (plain text, mode 600) so later
                          runs skip the prompt. Delete that file to forget it.
-  --key-name <name>      API key name to reuse/create (default: cli-<hostname>)
+  --key-name <name>      Key name for lookup or explicit creation (default: cli-<hostname>)
+  --create-key           Create a key only if the name is unused
+  --keep-local-key       Keep the credential already configured for this server in each selected tool
   --api-key <key>        Use this API key, skip login + key lookup
   --model <model>        Model for all non-Claude tools (default: each tool's own
                          model on the server, else the server's OpenCode model;
@@ -65,7 +67,12 @@ function parseArgs(argv) {
     };
     if (a === "--password") opts.password = next();
     else if (a === "--key-name") opts.keyName = next();
-    else if (a === "--api-key") opts.apiKey = next();
+    else if (a === "--api-key") {
+      opts.apiKey = next();
+      if (!usableKey(opts.apiKey)) throw new Error("--api-key requires a complete API key");
+    }
+    else if (a === "--create-key") opts.createKey = true;
+    else if (a === "--keep-local-key") opts.keepLocal = true;
     else if (a === "--tools") opts.tools = next().split(",");
     else if (a === "--model") opts.model = next();
     else if (a === "--save") opts.save = true;
@@ -76,6 +83,10 @@ function parseArgs(argv) {
     else if (!a.startsWith("-") && !opts.url) opts.url = a;
     else throw new Error(`Unknown option: ${a}`);
   }
+  if ([opts.createKey, opts.keepLocal, !!opts.apiKey].filter(Boolean).length > 1)
+    throw new Error("Choose one credential source: --api-key, --keep-local-key or --create-key");
+  if (opts.keepLocal && (argv.includes("--key-name") || opts.printEnv))
+    throw new Error("--keep-local-key cannot be combined with --key-name or --print-env");
   return opts;
 }
 
@@ -172,16 +183,43 @@ async function login(server, password) {
   throw new Error(`Login failed (${res.status}): ${res.data?.error || "unknown error"}`);
 }
 
-async function getOrCreateApiKey(server, cookie, keyName) {
-  const list = await request(`${server}/api/keys`, { cookie });
+function usableKey(key) {
+  return typeof key === "string" && !!key && !/[\s*•…]/u.test(key) && !key.includes("...") && !/^(?:undefined|null|\[?redacted\]?|sk_9router)$/i.test(key) && !key.startsWith("--");
+}
+
+async function localKeyForTools(server, tools) {
+  let key;
+  for (const tool of tools) {
+    const local = await tool.show();
+    const target = (local.baseUrl || "").replace(/\/$/, "");
+    if ((target !== server && target !== server + "/v1") || !usableKey(local.apiKey))
+      throw new Error(`${tool.name}: no usable key configured for this exact server; supply --api-key`);
+    if (key && key !== local.apiKey)
+      throw new Error("Selected tools use different API keys; reconnect them separately");
+    key = local.apiKey;
+  }
+  return key;
+}
+
+async function getOrCreateApiKey(server, cookie, keyName, createKey) {
+  const list = await request(`${server}/api/keys?view=summary`, { cookie });
   if (list.status === 401) throw new Error("Unauthorized listing API keys — wrong password or session rejected");
   if (list.status !== 200) throw new Error(`Failed to list API keys (${list.status}): ${list.data?.error || ""}`);
-  const keys = (list.data?.keys || []).filter((k) => k.isActive !== false);
-  const existing = keys.find((k) => k.name === keyName);
-  if (existing) return { key: existing.key, created: false };
+  if (!Array.isArray(list.data?.keys) || !list.data.keys.every(k => typeof k?.name === "string"))
+    throw new Error("Invalid API key list; no key created");
+  const matches = list.data.keys.filter(k => k.name === keyName);
+  if (matches.length) {
+    if (createKey) throw new Error("Key name already in use; no key created");
+    const [existing] = matches;
+    // Older gateways may ignore the summary view and return a full row.
+    if (matches.length === 1 && existing.isActive !== false && (!existing.expiresAt || Date.parse(existing.expiresAt) > Date.now()) && usableKey(existing.key))
+      return { key: existing.key, created: false };
+    throw new Error("Named key unavailable for reuse; use --keep-local-key or supply --api-key");
+  }
+  if (!createKey) throw new Error("No matching key; use --keep-local-key, --api-key or explicitly --create-key");
 
   const created = await request(`${server}/api/keys`, { method: "POST", cookie, body: { name: keyName } });
-  if (created.status !== 201 || !created.data?.key) {
+  if (created.status !== 201 || !usableKey(created.data?.key)) {
     throw new Error(`Failed to create API key (${created.status}): ${created.data?.error || ""}`);
   }
   return { key: created.data.key, created: true };
@@ -238,8 +276,8 @@ async function fetchServerModels(server, cookie, tools) {
 async function listModels(server, apiKey) {
   const res = await request(`${server}/v1/models`, { apiKey });
   if (res.status === 401) throw new Error("API key rejected by server (/v1/models returned 401)");
-  if (res.status !== 200) return null;
-  return new Set((res.data?.data || []).map((m) => m.id));
+  if (res.status !== 200 || !Array.isArray(res.data?.data)) return null;
+  return new Set(res.data.data.map((m) => m.id));
 }
 
 async function promptTools() {
@@ -323,9 +361,14 @@ async function runConnect(argv) {
     if (opts.save && password !== saved) {
       console.log(`• Saved password to ${savePassword(server, password)} (plain text, mode 600)`);
     }
-    const result = await getOrCreateApiKey(server, cookie, opts.keyName);
-    apiKey = result.key;
-    console.log(`• ${result.created ? "Created" : "Reusing"} API key "${opts.keyName}" (${maskKey(apiKey)})`);
+    if (opts.keepLocal) {
+      apiKey = await localKeyForTools(server, tools);
+      console.log("• Keeping the configured tool credential");
+    } else {
+      const result = await getOrCreateApiKey(server, cookie, opts.keyName, opts.createKey);
+      apiKey = result.key;
+      console.log(`• ${result.created ? "Created" : "Reusing"} API key "${opts.keyName}" (${maskKey(apiKey)})`);
+    }
   }
 
   // Models always come from the server's own cli-tools config; flags override.
@@ -335,6 +378,7 @@ async function runConnect(argv) {
   }
 
   const available = await listModels(server, apiKey);
+  if (!available && (opts.keepLocal || opts.apiKey)) throw new Error("Cannot validate API key; tool settings not written");
   const warnMissing = (label, model, flag) => {
     // Claude Code's "[1m]" context marker is part of the env value, not the model id.
     if (available && !available.has(model.replace(/\[1m\]$/, ""))) {

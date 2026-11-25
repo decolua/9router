@@ -1,5 +1,6 @@
 "use server";
 
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -106,7 +107,8 @@ export async function GET() {
 
     return NextResponse.json({
       installed: true,
-      settings: settings,
+      settings: settings ? { env: Object.fromEntries(Object.entries(settings.env || {}).filter(([k]) =>
+        /^(ANTHROPIC_BASE_URL|ANTHROPIC_MODEL|ANTHROPIC_DEFAULT_(FABLE|OPUS|SONNET|HAIKU)_MODEL|CLAUDE_CODE_AUTO_COMPACT_WINDOW)$/.test(k))) } : null,
       has9Router: has9Router,
       exaMcpEnabled: !!claudeJson?.mcpServers?.exa,
       settingsPath: getClaudeSettingsPath(),
@@ -149,17 +151,17 @@ export async function POST(request) {
       }
     }
 
-    // Normalize ANTHROPIC_BASE_URL to ensure /v1 suffix
-    if (env.ANTHROPIC_BASE_URL) {
-      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1")
-        ? env.ANTHROPIC_BASE_URL
-        : `${env.ANTHROPIC_BASE_URL}/v1`;
+    if (typeof env.ANTHROPIC_BASE_URL !== "string" || !env.ANTHROPIC_BASE_URL.trim())
+      return NextResponse.json({ error: "Endpoint required" }, { status: 400 });
+    const url = env.ANTHROPIC_BASE_URL.replace(/\/+$/, "");
+    env.ANTHROPIC_BASE_URL = url.endsWith("/v1") ? url : url + "/v1";
+    const saved = currentSettings.env || {};
+    if (env.ANTHROPIC_BASE_URL !== saved.ANTHROPIC_BASE_URL &&
+        (saved.ANTHROPIC_API_KEY || saved.ANTHROPIC_CUSTOM_HEADERS || currentSettings.apiKeyHelper)) {
+      throw new CliKeySelectionError("Remove the other Claude authentication settings before changing endpoints.");
     }
-
-    // Keep an existing token (real key or earlier config); only add when absent — Reset clears it.
-    if (currentSettings.env?.ANTHROPIC_AUTH_TOKEN) {
-      delete env.ANTHROPIC_AUTH_TOKEN;
-    }
+    env.ANTHROPIC_AUTH_TOKEN = resolveCliApiKey(env.ANTHROPIC_AUTH_TOKEN, env.ANTHROPIC_BASE_URL,
+      saved.ANTHROPIC_BASE_URL, saved.ANTHROPIC_AUTH_TOKEN);
 
     // Merge new env with existing settings
     const newSettings = {
@@ -193,6 +195,7 @@ export async function POST(request) {
       message: "Settings updated successfully",
     });
   } catch (error) {
+    if (error instanceof CliKeySelectionError) return NextResponse.json({ error: error.message }, { status: 400 });
     console.log("Error updating claude settings:", error);
     return NextResponse.json(
       { error: "Failed to update claude settings" },

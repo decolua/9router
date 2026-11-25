@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createRequire } from "node:module";
 import http from "node:http";
-import { __test__ as requestDetails } from "@/lib/db/repos/requestDetailsRepo.js";
+import { redactLogValue } from "@/lib/observability/logPrivacy.js";
 
 const require = createRequire(import.meta.url);
 
@@ -61,26 +61,27 @@ describe("custom-server peer header sanitizing", () => {
   });
 
   it("marks via-proxy and adopts the forwarded IP for a loopback proxy hop", async () => {
-    const headers = await get({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" });
+    const headers = await get({ "x-forwarded-for": "203.0.113.9, 10.0.0.1", "x-9r-socket-ip": "203.0.113.9" });
 
     expect(headers["x-9r-via-proxy"]).toBe("1");
     expect(headers["x-9r-real-ip"]).toBe("203.0.113.9");
+    expect(headers["x-9r-socket-ip"]).toMatch(/^(::ffff:)?127\.0\.0\.1$/);
     expect(headers["x-forwarded-for"]).toBeUndefined();
   });
 
   // chat.js snapshots every client header into the request detail. Anything that grants
   // access must not survive into a record the dashboard renders and cloud sync uploads.
   it("keeps the peer token out of persisted request details", () => {
-    const sanitized = requestDetails.sanitizeHeaders({
+    const sanitized = redactLogValue({
       "x-9r-peer-token": "secret",
       "x-9r-cli-token": "secret",
       "authorization": "Bearer sk-x",
       "x-9r-real-ip": "127.0.0.1",
     });
 
-    expect(sanitized["x-9r-peer-token"]).toBeUndefined();
-    expect(sanitized["x-9r-cli-token"]).toBeUndefined();
-    expect(sanitized["authorization"]).toBeUndefined();
+    expect(sanitized["x-9r-peer-token"]).toBe("[REDACTED]");
+    expect(sanitized["x-9r-cli-token"]).toBe("[REDACTED]");
+    expect(sanitized["authorization"]).toBe("[REDACTED]");
     expect(sanitized["x-9r-real-ip"]).toBe("127.0.0.1");
   });
 });

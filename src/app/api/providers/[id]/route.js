@@ -1,3 +1,5 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
+import { validWeight } from "@/shared/constants/accountRouting";
 import { NextResponse } from "next/server";
 import {
   getProviderConnectionById,
@@ -78,10 +80,13 @@ export async function GET(request, { params }) {
 }
 
 // PUT /api/providers/[id] - Update connection
-export async function PUT(request, { params }) {
+async function putHandler(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
+    if (body.weight !== undefined && !validWeight(body.weight)) {
+      return NextResponse.json({ error: "Weight must be an integer from 1 to 100" }, { status: 400 });
+    }
     const {
       name,
       priority,
@@ -112,6 +117,7 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (name !== undefined) updateData.name = name;
+    if (body.weight !== undefined) updateData.weight = body.weight;
     if (priority !== undefined) updateData.priority = priority;
     if (globalPriority !== undefined) updateData.globalPriority = globalPriority;
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
@@ -169,7 +175,7 @@ export async function PUT(request, { params }) {
 }
 
 // DELETE /api/providers/[id] - Delete connection
-export async function DELETE(request, { params }) {
+async function deleteHandler(request, { params }) {
   try {
     const { id } = await params;
 
@@ -184,3 +190,6 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ error: "Failed to delete connection" }, { status: 500 });
   }
 }
+
+export const PUT = withProviderAudit(putHandler);
+export const DELETE = withProviderAudit(deleteHandler);

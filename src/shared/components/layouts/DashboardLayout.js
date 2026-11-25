@@ -3,8 +3,14 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
+import { DashboardRoleProvider, useDashboardRole } from "@/shared/hooks/useDashboardRole";
+import ViewerPage from "../viewer/ViewerPage";
+import { viewerPage, viewerPages } from "../viewer/routes";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
+import ViewerBanner from "../ViewerBanner";
+
+const viewerHrefs = Object.keys(viewerPages);
 
 function getToastStyle(type) {
   if (type === "success") {
@@ -31,7 +37,16 @@ function getToastStyle(type) {
   };
 }
 
-export default function DashboardLayout({ children }) {
+export default function DashboardLayout({ children, role }) {
+  return (
+    <DashboardRoleProvider serverRole={role}>
+      <DashboardShell>{children}</DashboardShell>
+    </DashboardRoleProvider>
+  );
+}
+
+function DashboardShell({ children }) {
+  const { role, loading } = useDashboardRole();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const notifications = useNotificationStore((state) => state.notifications);
@@ -39,6 +54,7 @@ export default function DashboardLayout({ children }) {
 
   // Preload heavy usage charts in background when browser is idle
   useEffect(() => {
+    if (role !== "admin") return;
     const preload = () => {
       import("@/shared/components/UsageStats").catch(() => {});
       import("@/app/(dashboard)/dashboard/usage/components/UsageChart").catch(() => {});
@@ -53,8 +69,13 @@ export default function DashboardLayout({ children }) {
       const timer = setTimeout(preload, 2500);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [role]);
 
+  if (!role) {
+    return <p role="status" className="p-6">{loading ? "Loading..." : "Could not verify dashboard session"}</p>;
+  }
+  const isChat = pathname === "/dashboard/basic-chat";
+  const allowedHrefs = role === "admin" ? undefined : viewerHrefs;
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">
       <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
@@ -96,7 +117,7 @@ export default function DashboardLayout({ children }) {
 
       {/* Sidebar - Desktop */}
       <div className="hidden lg:flex">
-        <Sidebar />
+        <Sidebar allowedHrefs={allowedHrefs} />
       </div>
 
       {/* Sidebar - Mobile */}
@@ -105,16 +126,19 @@ export default function DashboardLayout({ children }) {
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <Sidebar allowedHrefs={allowedHrefs} onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* Main content */}
       <main className="flex flex-col flex-1 h-full min-w-0 relative transition-colors duration-300 isolate">
         {/* Faint grid background */}
         <div className="landing-grid absolute inset-0 pointer-events-none -z-10" aria-hidden="true" />
+        <ViewerBanner role={role} />
         <Header key={pathname} onMenuClick={() => setSidebarOpen(true)} />
-        <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/basic-chat" ? "" : "p-6 lg:p-10"} ${pathname === "/dashboard/basic-chat" ? "flex flex-col overflow-hidden" : ""}`}>
-          <div className={`${pathname === "/dashboard/basic-chat" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>{children}</div>
+        <div className={`flex-1 overflow-y-auto custom-scrollbar ${isChat ? "flex flex-col overflow-hidden" : "p-6 lg:p-10"}`}>
+          <div className={isChat ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}>
+            {role === "admin" ? children : <ViewerPage key={pathname} page={viewerPage(pathname)} />}
+          </div>
         </div>
       </main>
     </div>

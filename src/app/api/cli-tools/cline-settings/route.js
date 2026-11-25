@@ -1,5 +1,6 @@
 "use server";
 
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -32,7 +33,7 @@ const checkInstalled = async () => {
   }
 };
 
-const readJson = async (filePath) => {
+const readJson = async (filePath, strict = false) => {
   try {
     const content = await fs.readFile(filePath, "utf-8");
     // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
@@ -40,6 +41,7 @@ const readJson = async (filePath) => {
     const stripped = content.replace(/,(\s*[}\]])/g, "$1");
     return JSON.parse(stripped);
   } catch (error) {
+    if (strict && error.code !== "ENOENT") throw error;
     return null;
   }
 };
@@ -79,8 +81,8 @@ export async function GET() {
 export async function POST(request) {
   try {
     const { baseUrl, apiKey, model } = await request.json();
-    if (!baseUrl || !apiKey || !model) {
-      return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
+    if (typeof baseUrl !== "string" || !baseUrl.trim() || !model) {
+      return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
 
     await fs.mkdir(getDataDir(), { recursive: true });
@@ -88,7 +90,15 @@ export async function POST(request) {
     // Cline expects base WITHOUT /v1
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl.slice(0, -3) : baseUrl;
 
-    const globalState = (await readJson(getGlobalStatePath())) || {};
+    const globalState = (await readJson(getGlobalStatePath(), true)) || {};
+    const secrets = (await readJson(getSecretsPath(), true)) || {};
+    const selected = resolveCliApiKey(apiKey, normalizedBaseUrl, globalState.openAiBaseUrl, secrets.openAiApiKey);
+    // Cline reads endpoint and token from separate files. On a switch, revoke
+    // the old pairing first so an interrupted write cannot send it to the new endpoint.
+    if (secrets.openAiApiKey && globalState.openAiBaseUrl !== normalizedBaseUrl) {
+      delete secrets.openAiApiKey;
+      await fs.writeFile(getSecretsPath(), JSON.stringify(secrets, null, 2), { mode: 0o600 });
+    }
     globalState.actModeApiProvider = "openai";
     globalState.planModeApiProvider = "openai";
     globalState.openAiBaseUrl = normalizedBaseUrl;
@@ -96,12 +106,12 @@ export async function POST(request) {
     globalState.planModeOpenAiModelId = model;
     await fs.writeFile(getGlobalStatePath(), JSON.stringify(globalState, null, 2));
 
-    const secrets = (await readJson(getSecretsPath())) || {};
-    secrets.openAiApiKey = apiKey;
-    await fs.writeFile(getSecretsPath(), JSON.stringify(secrets, null, 2));
+    secrets.openAiApiKey = selected;
+    await fs.writeFile(getSecretsPath(), JSON.stringify(secrets, null, 2), { mode: 0o600 });
 
     return NextResponse.json({ success: true, message: "Cline settings applied successfully!", globalStatePath: getGlobalStatePath() });
   } catch (error) {
+    if (error instanceof CliKeySelectionError) return NextResponse.json({ error: error.message }, { status: 400 });
     console.log("Error updating cline settings:", error);
     return NextResponse.json({ error: "Failed to update cline settings" }, { status: 500 });
   }

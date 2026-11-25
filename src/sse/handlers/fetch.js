@@ -1,3 +1,4 @@
+import { dispatchMedia } from "@/lib/observability/mediaDispatch.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -143,7 +144,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   // No-auth fetch path (kept for parity though no current fetch provider sets noAuth)
   if (resolvedProvider.noAuth) {
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
-    const result = await handleFetchCore({
+    const result = await dispatchMedia(handleFetchCore, {
       url: targetUrl,
       format,
       maxCharacters,
@@ -192,7 +193,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
     const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
 
-    const result = await handleFetchCore({
+    const result = await dispatchMedia(handleFetchCore, {
       url: targetUrl,
       format,
       maxCharacters,

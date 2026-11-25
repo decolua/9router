@@ -1,3 +1,5 @@
+import { fetchHeadroom, headroomEndpoint, isLoopbackHeadroomUrl } from "./transport.js";
+export { isLoopbackHeadroomUrl };
 import { execFileSync, execSync } from "child_process";
 import path from "path";
 
@@ -44,7 +46,6 @@ const EXTENDED_PATH = [...EXTRA_BINS, process.env.PATH || ""].filter(Boolean).jo
 const PYTHON_CANDIDATES = ["python3.13", "python3.12", "python3.11", "python3.10", "python3", "python"];
 const MIN_VERSION = [3, 10];
 const HEADROOM_HEALTH_TIMEOUT_MS = 1500;
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
 
 export const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
 
@@ -123,26 +124,17 @@ export function findPython310() {
 // Probe whether a Headroom proxy is reachable at the given URL by hitting /health.
 export async function probeProxyRunning(url) {
   if (!url) return false;
-  const base = String(url).replace(/\/$/, "");
   try {
-    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(HEADROOM_HEALTH_TIMEOUT_MS) });
+    const res = await fetchHeadroom(headroomEndpoint(url, "health"), { signal: AbortSignal.timeout(HEADROOM_HEALTH_TIMEOUT_MS) });
+    await res.body?.cancel();
     return res.ok;
   } catch {
     return false;
   }
 }
 
-export function isLoopbackHeadroomUrl(url) {
-  try {
-    const parsed = new URL(url);
-    return LOOPBACK_HOSTS.has(parsed.hostname);
-  } catch {
-    return false;
-  }
-}
-
 // Aggregate status for the dashboard: installed, running, python interpreter.
-export async function getHeadroomStatus(url) {
+export async function getHeadroomStatus(url, managedPid = null) {
   const path = findHeadroomBinary();
   const python = findPython310();
   const installed = Boolean(path);
@@ -153,9 +145,10 @@ export async function getHeadroomStatus(url) {
     installed,
     path,
     running,
+    state: running ? (managedPid ? "running" : "external") : (localUrl && !managedPid ? "stopped" : "unreachable"),
     python,
     localUrl,
-    canStart: installed && localUrl,
+    canStart: installed && localUrl && !managedPid && !running,
     version: extrasStatus.version,
     extras: extrasStatus.extras,
   };

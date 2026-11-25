@@ -129,10 +129,11 @@ function makeRequest(method, path, body = null) {
               statusCode: res.statusCode,
             });
           }
-        } catch (err) {
+        } catch {
           resolve({
             success: false,
-            error: `Failed to parse response: ${err.message}`,
+            error: `Invalid response (HTTP ${res.statusCode})`,
+            statusCode: res.statusCode,
           });
         }
       });
@@ -286,8 +287,12 @@ async function updateConnection(id, data) {
  * Get all API keys
  * @returns {Promise<Object>} { success, data: { keys } }
  */
-async function getApiKeys() {
-  return makeRequest("GET", "/api/keys");
+async function getApiKeys({ summary = false } = {}) {
+  return makeRequest("GET", summary ? "/api/keys?view=summary" : "/api/keys");
+}
+
+async function setAllowedAccounts(id, allowedConnections) {
+  return makeRequest("PUT", `/api/keys/${encodeURIComponent(id)}`, { allowedConnections });
 }
 
 /**
@@ -297,6 +302,10 @@ async function getApiKeys() {
  */
 async function createApiKey(name) {
   return makeRequest("POST", "/api/keys", { name });
+}
+
+async function rotateApiKey(id, keyVersion) {
+  return makeRequest("POST", `/api/keys/${encodeURIComponent(id)}/rotate`, { keyVersion });
 }
 
 /**
@@ -531,6 +540,8 @@ module.exports = {
   // API Keys
   getApiKeys,
   createApiKey,
+  setAllowedAccounts,
+  rotateApiKey,
   deleteApiKey,
   
   // Combos

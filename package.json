@@ -47,6 +47,7 @@
     "recharts": "^3.7.0",
     "socks-proxy-agent": "^8.0.5",
     "sql.js": "^1.14.1",
+    "temporal-polyfill": "0.3.2",
     "undici": "^7.30.2",
     "uuid": "^13.0.0",
     "zustand": "^5.0.10"

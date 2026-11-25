@@ -17,9 +17,14 @@ describe("API key visibility guidance source verification", () => {
   });
 
   it("retains the list's reveal and copy controls", () => {
-    expect(source).toContain("visibleKeys.has(key.id) ? key.key : maskKey(key.key)");
-    expect(source).toContain("onClick={() => toggleKeyVisibility(key.id)}");
-    expect(source).toContain("onClick={() => copy(key.key, key.id)}");
+    const detail = readFileSync(
+      new URL("../../src/app/(dashboard)/dashboard/endpoint/components/KeyDetail.js", import.meta.url),
+      "utf-8"
+    );
+    expect(detail).toContain("visibleKeys.has(apiKey.id)");
+    expect(detail).toContain("showing ? apiKey.key : maskKey(apiKey.key)");
+    expect(detail).toContain("onClick={() => toggleKeyVisibility(apiKey.id)}");
+    expect(detail).toContain("onClick={() => copy(apiKey.key, apiKey.id)}");
   });
 
   it.each(["fa", "id", "km", "pt-BR", "th", "zh-CN"])(

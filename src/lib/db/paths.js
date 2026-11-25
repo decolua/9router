@@ -12,7 +12,7 @@ export const LEGACY_FILES = {
   details: path.join(DATA_DIR, "request-details.json"),
 };
 export function ensureDirs() {
-  for (const dir of [DATA_DIR, DB_DIR, BACKUPS_DIR]) {
+  for (const dir of [DATA_DIR, DB_DIR]) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   }
 }

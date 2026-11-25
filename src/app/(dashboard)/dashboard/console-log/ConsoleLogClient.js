@@ -1,96 +1,56 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { Card, Button } from "@/shared/components";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config";
+import { filterConsole } from "@/shared/utils/consoleFilter";
 
-const LOG_LEVEL_COLORS = {
-  LOG: "text-green-400",
-  INFO: "text-blue-400",
-  WARN: "text-yellow-400",
-  ERROR: "text-red-400",
-  DEBUG: "text-purple-400",
-};
-
-function colorLine(line) {
-  const match = line.match(/\[(\w+)\]/g);
-  const levelTag = match ? match[1]?.replace(/\[|\]/g, "") : null;
-  const color = LOG_LEVEL_COLORS[levelTag] || "text-green-400";
-  return <span className={color}>{line}</span>;
-}
-
+const colors = { error: "text-red-400", warn: "text-yellow-400", info: "text-green-400", debug: "text-sky-400" };
+const input = "bg-surface border border-border rounded px-2 py-1";
+const max = CONSOLE_LOG_CONFIG.maxLines;
 export default function ConsoleLogClient() {
-  const [logs, setLogs] = useState([]);
-  const [connected, setConnected] = useState(false);
-  const logRef = useRef(null);
-
-  const handleClear = async () => {
-    try {
-      await fetch("/api/translator/console-logs", { method: "DELETE" });
-      // UI cleared via SSE "clear" event
-    } catch (err) {
-      console.error("Failed to clear console logs:", err);
-    }
-  };
+  const [logs, setLogs] = useState([]), [frozen, freeze] = useState(null);
+  const [query, setQuery] = useState(""), [level, setLevel] = useState("");
+  const [requestId, setRequestId] = useState(""), [limit, setLimit] = useState(max);
+  const logRef = useRef(null), cleared = useRef(false);
 
   useEffect(() => {
     const es = new EventSource("/api/translator/console-logs/stream");
-
-    es.onopen = () => setConnected(true);
-
-    es.onmessage = (e) => {
+    es.onmessage = e => {
       const msg = JSON.parse(e.data);
-      if (msg.type === "init") {
-        setLogs(msg.logs.slice(-CONSOLE_LOG_CONFIG.maxLines));
-      } else if (msg.type === "line") {
-        setLogs((prev) => {
-          const next = [...prev, msg.line];
-          return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
-        });
-      } else if (msg.type === "lines") {
-        setLogs((prev) => {
-          const next = [...prev, ...msg.lines];
-          return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
-        });
-      } else if (msg.type === "clear") {
-        setLogs([]);
-      }
+      if (msg.type === "init" && !cleared.current) setLogs(msg.logs.slice(-max));
+      if (msg.type === "line" || msg.type === "lines")
+        setLogs(prev => prev.concat(msg.type === "line" ? [msg.line] : msg.lines).slice(-max));
+      if (msg.type === "clear") setLogs([]);
     };
-
-    es.onerror = () => setConnected(false);
-
     return () => es.close();
   }, []);
-
-  // Auto-scroll to bottom on new logs
+  const view = frozen ?? logs;
   useEffect(() => {
-    if (!logRef.current) return;
-    logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [logs]);
-
-  return (
-    <div className="">
-      <Card>
-        <div className="flex items-center justify-end px-4 pt-3 pb-2">
-          <Button size="sm" variant="outline" icon="delete" onClick={handleClear}>
-            Clear
-          </Button>
-        </div>
-        <div
-          ref={logRef}
-          className="bg-black rounded-b-lg p-4 text-xs font-mono h-[calc(100vh-220px)] overflow-y-auto"
-        >
-          {logs.length === 0 ? (
-            <span className="text-text-muted">No console logs yet.</span>
-          ) : (
-            <div className="space-y-0.5">
-              {logs.map((line, i) => (
-                <div key={i}>{colorLine(line)}</div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Card>
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [view]);
+  return <Card>
+    <search className="flex flex-wrap items-end gap-3 p-3 text-sm">
+      <label className="grid">Search logs<input className={input} type="search" value={query} onChange={e => setQuery(e.target.value)} /></label>
+      <label className="grid">Request ID<input className={input} value={requestId} onChange={e => setRequestId(e.target.value)} /></label>
+      <label className="grid">Log level<select className={input} value={level} onChange={e => setLevel(e.target.value)}>
+        <option value="">All levels</option>{Object.keys(colors).map(l => <option key={l} value={l}>{l}</option>)}
+      </select></label>
+      <label className="grid">Row limit<select className={input} value={limit} onChange={e => setLimit(Number(e.target.value))}>
+        {[25, 50, 100, max].map(n => <option key={n}>{n}</option>)}</select></label>
+      <Button size="sm" variant="outline" onClick={() => freeze(frozen ? null : logs)}>{frozen ? "Resume" : "Pause"}</Button>
+      <Button size="sm" variant="outline" onClick={() => { cleared.current = true; setLogs([]); if (frozen) freeze([]); }}>Clear view</Button>
+    </search>
+    <div ref={logRef} className="bg-black rounded-b-lg p-4 text-xs font-mono h-[calc(100vh-240px)] overflow-auto">
+      <LogLines rows={filterConsole(view, { query, level, requestId, limit })} />
     </div>
-  );
+  </Card>;
+}
+
+function LogLines({ rows }) {
+  if (!rows.length) return <span className="text-gray-400">No matching log lines</span>;
+  return rows.map(({ line, level, requestId }, i) => <div key={i} className={colors[level]} data-i18n-skip>
+    {line}{requestId && <> · <Link className="underline" href={`/dashboard/usage?tab=details&requestId=${encodeURIComponent(requestId)}`}>{requestId}</Link></>}
+  </div>);
 }

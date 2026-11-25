@@ -1,3 +1,7 @@
+import { currentInference, noteAttempt } from "@/lib/observability/requestContext.js";
+import { observeConnection } from "@/lib/observability/providerHealth.js";
+import { classifyInferenceError } from "open-sse/services/inferenceError.js";
+import { inferenceRoute } from "@/lib/observability/inferenceRoute.js";
 import { handleChat } from "@/sse/handlers/chat.js";
 import {
   clearAccountError,
@@ -51,7 +55,9 @@ export async function OPTIONS() {
  * The upstream handleChat returns OpenAI SSE format; we transform it to
  * Gemini SSE format on the fly via transformOpenAISSEToGeminiSSE().
  */
-export async function POST(request, { params }) {
+export const POST = inferenceRoute(dispatchPost);
+
+async function dispatchPost(request, { params }) {
   await ensureInitialized();
 
   try {
@@ -178,8 +184,7 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
   return upstreamUrl.toString();
 }
 
-async function validateGeminiNativeClientKey(request) {
-  const settings = await getSettings();
+async function validateGeminiNativeClientKey(request, settings) {
   if (!settings.requireApiKey) return null;
 
   const apiKey = extractGeminiClientApiKey(request);
@@ -237,7 +242,8 @@ function getSafeGeminiNativeErrorText(error) {
 }
 
 async function forwardGeminiNativeRequest(request, body, model, action) {
-  const authError = await validateGeminiNativeClientKey(request);
+  const settings = await getSettings();
+  const authError = await validateGeminiNativeClientKey(request, settings);
   if (authError) return authError;
 
   const modelId = normalizeGeminiNativeModel(model);
@@ -247,7 +253,7 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
 
   // Per-key access control: this path calls Gemini directly (not via handleChat),
   // so restricted keys are checked here, before any credential lookup.
-  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), model, "gemini", modelId);
+  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request, settings), model, "gemini", modelId);
   if (keyAccessDenied) return keyAccessDenied;
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);
@@ -293,6 +299,7 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
 
     let upstreamResponse;
     try {
+      noteAttempt("gemini", modelId, credentials.connectionId);
       upstreamResponse = await fetch(upstreamUrl, {
         method: "POST",
         headers: {
@@ -311,6 +318,8 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
 
       const status = isGeminiNativeTimeoutError(error, timedOut) ? 504 : 502;
       const errorText = getSafeGeminiNativeErrorText(error);
+      currentInference().failure = classifyInferenceError({ status, error });
+      await observeConnection(credentials.connectionId, currentInference().failure);
       console.log(`[GEMINI_NATIVE] fetch failed model=${modelId} status=${status} ms=${durationMs} conn=${safeConnection} error=${errorText}`);
 
       const { shouldFallback } = await markAccountUnavailable(
@@ -338,6 +347,7 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
     console.log(`[GEMINI_NATIVE] upstream model=${modelId} status=${upstreamResponse.status} ms=${Date.now() - startedAt} conn=${safeConnection} ct=${upstreamResponse.headers.get("content-type") || "?"} cl=${upstreamResponse.headers.get("content-length") || "?"}`);
 
     if (upstreamResponse.ok) {
+      await observeConnection(credentials.connectionId);
       await clearAccountError(credentials.connectionId, credentials, modelId);
       return new Response(upstreamResponse.body, {
         status: upstreamResponse.status,
@@ -347,6 +357,8 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
     }
 
     const errorText = await upstreamResponse.text();
+    currentInference().failure = classifyInferenceError({ status: upstreamResponse.status, body: errorText, headers: upstreamResponse.headers });
+    await observeConnection(credentials.connectionId, currentInference().failure);
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       upstreamResponse.status,

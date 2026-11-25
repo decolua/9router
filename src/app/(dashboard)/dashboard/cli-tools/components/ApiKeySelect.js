@@ -6,7 +6,7 @@ import { readKeyPresets, upsertKeyPreset, deleteKeyPreset, subscribeKeyPresets }
 const CUSTOM_VALUE = "__custom__";
 const SAVE_VALUE = "__save_key__";
 
-export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabled = false, className = "" }) {
+export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabled = false, keepExisting = false, className = "" }) {
   const [savedKeys, setSavedKeys] = useState([]);
   // Custom mode is sticky once the user types, so an emptied input doesn't jump back to a dropdown option
   const [customMode, setCustomMode] = useState(false);
@@ -20,11 +20,12 @@ export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabl
 
   const options = useMemo(
     () => [
-      ...apiKeys.map((k) => ({ value: k.key, label: k.key })),
-      ...savedKeys.map((p) => ({ value: `saved:${p.name}`, label: p.key, url: p.key, saved: true })),
+      ...(keepExisting ? [{ value: "", label: "Keep the key for this endpoint" }] : []),
+      ...apiKeys.filter(k => k.key).map((k) => ({ value: k.key, label: keepExisting ? k.name || "API Key" : k.key })),
+      ...savedKeys.map((p) => ({ value: `saved:${p.name}`, label: keepExisting ? p.name : p.key, url: p.key, saved: true })),
       { value: CUSTOM_VALUE, label: "Custom...", url: "" },
     ],
-    [apiKeys, savedKeys]
+    [apiKeys, savedKeys, keepExisting]
   );
 
   // Derive the active option from value — no sync effects needed when the parent updates it
@@ -70,7 +71,7 @@ export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabl
     onChange(fallback ? (fallback.url ?? fallback.value) : "");
   };
 
-  if (noKeys) {
+  if (noKeys && !keepExisting) {
     return (
       <span className={`min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5 ${className}`}>
         {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
@@ -82,6 +83,7 @@ export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabl
     <div className={`flex flex-col gap-1.5 ${className}`}>
       <div className="flex items-center gap-2">
         <select
+          aria-label="API Key"
           value={mode}
           onChange={handleSelect}
           className="flex-1 min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"

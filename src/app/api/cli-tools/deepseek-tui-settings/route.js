@@ -1,7 +1,8 @@
 "use server";
 
+import { publicToolConfig } from "../publicToolConfig.js";
 import { NextResponse } from "next/server";
-import { resolveCliApiKey } from "../resolveApiKey.js";
+import { resolveCliApiKey, CliKeySelectionError } from "../resolveApiKey.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -113,7 +114,7 @@ export async function GET() {
         const config = parseToml(toml);
         return NextResponse.json({
             installed: true,
-            settings: config,
+            settings: publicToolConfig(config),
             has9Router: has9RouterConfig(config),
             configPath: getDeepSeekConfigPath(),
         });
@@ -133,7 +134,9 @@ export async function POST(request) {
         const dir = getDeepSeekDir();
         await fs.mkdir(dir, { recursive: true });
 
-        const newConfig = build9RouterConfig(baseUrl, await resolveCliApiKey(apiKey), model);
+        const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : baseUrl + "/v1";
+        const previous = parseToml(await readConfigToml())["providers.openai"];
+        const newConfig = build9RouterConfig(baseUrl, resolveCliApiKey(apiKey, normalizedBaseUrl, previous?.base_url, previous?.api_key), model);
         await fs.writeFile(getDeepSeekConfigPath(), newConfig);
 
         return NextResponse.json({
@@ -142,6 +145,7 @@ export async function POST(request) {
             configPath: getDeepSeekConfigPath(),
         });
     } catch (error) {
+    if (error instanceof CliKeySelectionError) return NextResponse.json({ error: { message: error.message } }, { status: 400 });
         console.log("Error updating deepseek-tui settings:", error);
         return NextResponse.json({ error: "Failed to update deepseek-tui settings" }, { status: 500 });
     }

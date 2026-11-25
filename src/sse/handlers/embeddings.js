@@ -1,3 +1,4 @@
+import { dispatchMedia } from "@/lib/observability/mediaDispatch.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -122,7 +123,7 @@ export async function handleEmbeddings(request) {
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleEmbeddingsCore({
+    const result = await dispatchMedia(handleEmbeddingsCore, {
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,

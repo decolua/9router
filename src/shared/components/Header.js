@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import PropTypes from "prop-types";
+import { useDashboardRole } from "@/shared/hooks/useDashboardRole";
 import ProviderIcon from "@/shared/components/ProviderIcon";
+import NotificationBell from "./NotificationBell";
 import HeaderMenu from "@/shared/components/HeaderMenu";
 import HeaderLanguage from "@/shared/components/HeaderLanguage";
 import ThemeToggle from "@/shared/components/ThemeToggle";
@@ -181,45 +183,20 @@ const getPageInfo = (pathname) => {
 
 export default function Header({ onMenuClick, showMenuButton = true }) {
   const pathname = usePathname();
-  const [displayName, setDisplayName] = useState("");
-  const [loginMethod, setLoginMethod] = useState("");
+  const router = useRouter();
+  const { role, displayName, loginMethod } = useDashboardRole();
   const [donateOpen, setDonateOpen] = useState(false);
 
   // Memoize page info to prevent unnecessary recalculations
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
   const { title, description, icon, breadcrumbs } = pageInfo;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadAuthStatus() {
-      try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setDisplayName(data?.displayName || data?.samlName || data?.samlEmail || data?.oidcName || data?.oidcEmail || "");
-          setLoginMethod(data?.loginMethod || "");
-        }
-      } catch {
-        if (!cancelled) {
-          setDisplayName("");
-          setLoginMethod("");
-        }
-      }
-    }
-
-    loadAuthStatus();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const handleLogout = async () => {
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {
-        window.location.assign("/login");
+        router.replace("/login");
+        router.refresh();
       }
     } catch (err) {
       console.error("Failed to logout:", err);
@@ -256,7 +233,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
                     chevron_right
                   </span>
                 )}
-                {crumb.href ? (
+                {crumb.href && role === "admin" ? (
                   <Link
                     href={crumb.href}
                     className="text-text-muted hover:text-primary transition-colors truncate"
@@ -318,6 +295,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           </div>
         )}
         <HeaderSearch />
+        {role && <NotificationBell admin={role === "admin"} />}
         <button
           onClick={() => setDonateOpen(true)}
           className="hidden sm:flex items-center gap-1.5 px-3 h-8 rounded-lg border border-pink-500/30 bg-pink-500/10 text-pink-600 dark:text-pink-400 hover:bg-pink-500/20 transition-colors text-sm font-medium"
@@ -328,7 +306,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
         </button>
         <ThemeToggle />
         <HeaderLanguage />
-        <HeaderMenu onLogout={handleLogout} />
+        <HeaderMenu admin={role === "admin"} onLogout={handleLogout} />
       </div>
       <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />
     </header>

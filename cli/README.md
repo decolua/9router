@@ -95,12 +95,12 @@ That's it! Start coding with FREE AI models.
 Already running 9Router on another machine (e.g. a team server on your LAN)? Point this machine's CLI tools at it — no local server is started:
 
 ```bash
-npx 9router connect http://<server-host>:20128                       # pick tools interactively
-npx 9router connect http://<server-host>:20128 --tools claude,codex  # or choose up front
+npx 9router connect http://<server-host>:20128 --create-key          # first setup; pick tools interactively
+npx 9router connect http://<server-host>:20128 --keep-local-key --tools claude,codex  # reconnect
 npx 9router connect --reset --tools claude,codex                     # undo
 ```
 
-It logs in with the dashboard password (hidden prompt), reuses or creates an API key named `cli-<hostname>`, and writes each tool's config (backing up the original once as `*.bak-9router`).
+On first setup use `--create-key` after dashboard login to issue a new key named `cli-<hostname>`, or pass an existing key with `--api-key`. No key is created implicitly. To apply new model settings later, add `--keep-local-key`. Every selected tool must already have the same key for this exact server; run separately for tools with different keys. The original config is backed up once as `*.bak-9router`.
 
 Supported tools: `claude`, `codex`, `opencode`, `droid`, `crush`, `kilo`, `cline`, `pi`, `omp`, or `all`.
 
@@ -119,22 +119,22 @@ Models come from the **server's own CLI-tools configuration**, so a client gets 
 
 ```bash
 # One Claude tier; the other tiers still come from the server
-npx 9router connect http://<server-host>:20128 --tools claude --sonnet cc/claude-sonnet-5-5
+npx 9router connect http://<server-host>:20128 --keep-local-key --tools claude --sonnet cc/claude-sonnet-5-5
 
 # Every Claude tier
-npx 9router connect http://<server-host>:20128 --tools claude \
+npx 9router connect http://<server-host>:20128 --keep-local-key --tools claude \
   --fable cc/claude-fable-5-2 --opus cc/claude-opus-5-5 \
   --sonnet cc/claude-sonnet-5-5 --haiku cc/claude-haiku-4-5-20251001
 
 # All non-Claude tools at once
-npx 9router connect http://<server-host>:20128 --tools codex,opencode,kilo --model ocg/deepseek-flash
+npx 9router connect http://<server-host>:20128 --keep-local-key --tools codex,opencode,kilo --model ocg/deepseek-flash
 
 # Claude and other tools in one run
-npx 9router connect http://<server-host>:20128 --tools claude,codex --opus cc/claude-opus-5-5 --model gpt-6
+npx 9router connect http://<server-host>:20128 --keep-local-key --tools claude,codex --opus cc/claude-opus-5-5 --model gpt-6
 
 # A different model per tool: --model covers every non-Claude tool in a run, so run once per tool
-npx 9router connect http://<server-host>:20128 --tools codex --model gpt-6
-npx 9router connect http://<server-host>:20128 --tools opencode --model ocg/glm-5.3
+npx 9router connect http://<server-host>:20128 --keep-local-key --tools codex --model gpt-6
+npx 9router connect http://<server-host>:20128 --keep-local-key --tools opencode --model ocg/glm-5.3
 ```
 
 A model the server doesn't list is still written, with a `not listed by server` warning. To see the ids it serves: `curl http://<server-host>:20128/v1/models -H "Authorization: Bearer <your key>"`.
@@ -170,7 +170,9 @@ Tools not pointed at 9router are listed as `not configured`. For Codex, OpenCode
 | `--password <pw>` | Dashboard password (or `NINE_ROUTER_PASSWORD`); prompted if omitted — preferred, keeps it out of shell history |
 | `--save` | After a successful login, save the password for this server to `~/.9router/connect.env` (plain text, mode 600) so later runs skip the prompt. Delete the file to forget it |
 | `--api-key <key>` | Use this key and skip login. The server's models can't be read without a login, so pass model flags |
-| `--key-name <name>` | API key name to reuse/create (default `cli-<hostname>`) |
+| `--key-name <name>` | Name for lookup or explicit creation (default `cli-<hostname>`) |
+| `--create-key` | Create after checking the name is unused, including paused keys |
+| `--keep-local-key` | Validate and keep the configured key; incompatible with `--key-name` and `--print-env` |
 | `--print-env` | Also print `OPENAI_BASE_URL` / `OPENAI_API_KEY` for other CLIs |
 | `--reset` | Remove the 9router settings from the selected tools |
 

@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
@@ -8,7 +9,7 @@ import { createProviderConnection } from "@/models";
  * credential — there is no refresh token. It is validated against the Amazon
  * Q model catalog, then stored with authMethod="api_key".
  */
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const { apiKey, region } = await request.json();
 
@@ -65,3 +66,5 @@ export async function POST(request) {
     );
   }
 }
+
+export const POST = withProviderAudit(postHandler);

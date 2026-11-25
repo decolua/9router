@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
 
@@ -7,7 +8,7 @@ const GITLAB_DEFAULT_BASE = "https://gitlab.com";
  * POST /api/oauth/gitlab/pat
  * Authenticate GitLab Duo with a Personal Access Token (PAT)
  */
-export async function POST(request) {
+async function postHandler(request) {
   try {
     let body;
     try {
@@ -60,3 +61,5 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export const POST = withProviderAudit(postHandler);

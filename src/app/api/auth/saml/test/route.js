@@ -1,23 +1,12 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
 import { formatX509Certificate } from "@/lib/auth/saml.js";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
-
-async function canAccessTestRoute() {
-  const settings = await getSettings();
-  if (settings.requireLogin === false) return true;
-
-  const cookieStore = await cookies();
-  const token = cookieStore.get("auth_token")?.value;
-  return await verifyDashboardAuthToken(token);
-}
+import { requireDashboardAdmin } from "@/dashboardGuard";
 
 export async function POST(request) {
   try {
-    if (!(await canAccessTestRoute())) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denied = await requireDashboardAdmin(request);
+    if (denied) return denied;
 
     const body = await request.json().catch(() => ({}));
     const settings = await getSettings();

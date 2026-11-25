@@ -1,7 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
 import { Card, Button, Toggle, Input } from "@/shared/components";
+import NotificationSettings from "./NotificationSettings";
+import LogSettings from "./LogSettings";
+import SessionSettings from "./SessionSettings";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -19,12 +23,16 @@ function getLocaleFromCookie() {
   return normalizeLocale(value);
 }
 
+const subscribeToHost = () => () => {};
+const remoteHost = () => !["localhost", "127.0.0.1", "::1", "[::1]"].includes(window.location.hostname);
 export default function ProfilePage() {
+  const router = useRouter();
   const { theme, setTheme, isDark } = useTheme();
   const [locale, setLocale] = useState(() => getLocaleFromCookie());
   const [langOpen, setLangOpen] = useState(false);
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
+  const [adminSettingsLoaded, setAdminSettingsLoaded] = useState(false);
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
@@ -81,15 +89,14 @@ export default function ProfilePage() {
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
-  const [isRemoteHost, setIsRemoteHost] = useState(false);
-  useEffect(() => {
-    if (typeof window !== "undefined")
-      setIsRemoteHost(!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
-  }, []);
+  const isRemoteHost = useSyncExternalStore(subscribeToHost, remoteHost, () => false);
 
   useEffect(() => {
     fetch("/api/settings")
-      .then((res) => res.json())
+      .then((res) => {
+        setAdminSettingsLoaded(res.ok);
+        return res.json();
+      })
       .then((data) => {
         setSettings(data);
         setOidcForm({
@@ -250,7 +257,7 @@ export default function ProfilePage() {
       const data = await res.json();
 
       if (res.ok) {
-        setPassStatus({ type: "success", message: "Password updated successfully" });
+        window.location.replace("/login");
         setPasswords({ current: "", new: "", confirm: "" });
       } else {
         setPassStatus({ type: "error", message: data.error || "Failed to update password" });
@@ -756,7 +763,8 @@ export default function ProfilePage() {
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {
-        window.location.assign("/login");
+        router.replace("/login");
+        router.refresh();
       }
     } catch (err) {
       console.error("Failed to logout:", err);
@@ -940,6 +948,10 @@ export default function ProfilePage() {
             )}
           </div>
         </Card>
+
+        {Array.isArray(settings.ssoAdminEmails) && Array.isArray(settings.ssoAdminGroups) && (
+          <SessionSettings settings={settings} />
+        )}
 
         {/* Single Sign-On (SSO) */}
         <Card>
@@ -1610,7 +1622,7 @@ export default function ProfilePage() {
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm sm:text-base">Enable Observability</p>
               <p className="text-xs sm:text-sm text-text-muted">
-                Record request details for inspection in the logs view
+                Record request metadata without prompts or responses
               </p>
             </div>
             <Toggle
@@ -1620,6 +1632,9 @@ export default function ProfilePage() {
             />
           </div>
         </Card>
+
+        {adminSettingsLoaded && <NotificationSettings />}
+        {settings.canManageLogs === true && <LogSettings settings={settings} />}
 
         {/* Account actions */}
         <div className="flex flex-col sm:flex-row gap-2">

@@ -1,3 +1,4 @@
+import { audit, sessionActor } from "@/lib/observability/audit";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
@@ -9,6 +10,7 @@ import {
   pickOidcEmail,
   verifyOidcIdToken,
 } from "@/lib/auth/oidc";
+import { ssoRole } from "@/lib/auth/dashboardRoles";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 
 function clearOidcCookies(cookieStore) {
@@ -17,7 +19,7 @@ function clearOidcCookies(cookieStore) {
   cookieStore.delete("oidc_code_verifier");
 }
 
-export async function GET(request) {
+async function callback(request, outcome) {
   const url = new URL(request.url);
   const error = url.searchParams.get("error");
   if (error) {
@@ -72,16 +74,28 @@ export async function GET(request) {
     });
 
     clearOidcCookies(cookieStore);
-    await setDashboardAuthCookie(cookieStore, request, {
+    const claims = {
+      role: ssoRole(config, payload.email_verified === true ? payload.email : null, payload.groups),
       oidc: true,
       oidcSub: payload.sub || null,
       oidcEmail: pickOidcEmail(payload) || null,
       oidcName: pickOidcDisplayName(payload),
-    });
+    };
+    await setDashboardAuthCookie(cookieStore, request, claims, config);
+    outcome.identity = sessionActor(claims);
 
     return NextResponse.redirect(new URL("/dashboard", getPublicOrigin(request)));
   } catch (error) {
     clearOidcCookies(cookieStore);
     return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error.message || "oidc_callback_failed")}`, getPublicOrigin(request)));
+  }
+}
+
+export async function GET(request) {
+  const outcome = {};
+  try { return await callback(request, outcome); }
+  finally {
+    await audit(request, "login", { identity: outcome.identity ?? { actor: "oidc", actorRole: "anonymous" },
+      result: outcome.identity ? "success" : "failure" });
   }
 }

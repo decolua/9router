@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
 import { normalizeKiroExternalIdpAuth } from "@/lib/oauth/kiroExternalIdp";
@@ -6,7 +7,7 @@ import { normalizeKiroExternalIdpAuth } from "@/lib/oauth/kiroExternalIdp";
  * POST /api/oauth/kiro/import-cli-proxy
  * Import Kiro CLIProxyAPI auth JSON for Microsoft external_idp accounts.
  */
-export async function POST(request) {
+async function postHandler(request) {
   try {
     const body = await request.json();
     const rawAuth = body?.cliProxyAuth ?? body?.auth ?? body?.json ?? body;
@@ -38,3 +39,5 @@ export async function POST(request) {
     );
   }
 }
+
+export const POST = withProviderAudit(postHandler);

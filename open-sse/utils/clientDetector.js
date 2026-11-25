@@ -49,6 +49,40 @@ export function detectClientTool(headers = {}, body = {}) {
   return null;
 }
 
+function versionFrom(ua, patterns) {
+  for (const pattern of patterns) {
+    const match = ua.match(pattern);
+    if (match) return match[1] || null;
+  }
+  return null;
+}
+
+// Human-readable client identity for observability. Keep this independent from
+// passthrough detection: unknown clients still get a useful label.
+export function detectClientDetails(headers = {}, body = {}) {
+  const ua = String(headers["user-agent"] || headers["User-Agent"] || "").trim();
+  const lower = ua.toLowerCase();
+  if (lower.includes("claude-code") || lower.includes("claude-cli") || lower.includes("claude code")) {
+    return { name: "Claude Code", version: versionFrom(ua, [/claude(?:[- ]code|[- ]cli)[/ ]v?([\d.]+)/i]) };
+  }
+  if (lower.includes("codex")) {
+    // codex_cli_rs/0.169.0, codex-tui/0.1, Codex Desktop/1.2
+    return { name: "Codex", version: versionFrom(ua, [/codex[\w-]*(?: desktop)?[/ ]v?(\d[\d.]*)/i]) };
+  }
+  if (lower.startsWith("curl/")) return { name: "curl", version: versionFrom(ua, [/curl\/([\d.]+)/i]) };
+  if (lower.includes("python-requests")) return { name: "python-requests", version: versionFrom(ua, [/python-requests\/([\d.]+)/i]) };
+  // openai-python/1.x, openai-node/4.x and the SDKs' "OpenAI/Python 1.99.0" form
+  if (/openai[-/ ](?:python|node|js)/i.test(ua)) {
+    return { name: "OpenAI SDK", version: versionFrom(ua, [/openai[-/ ](?:python|node|js)[/ ]v?(\d[\d.]*)/i]) };
+  }
+  if (body?.userAgent === "antigravity") return { name: "Antigravity", version: null };
+  if (ua) {
+    const token = ua.split(/[\s/]/)[0];
+    return { name: token.slice(0, 48), version: null };
+  }
+  return { name: "Unknown client", version: null };
+}
+
 /**
  * Check if this CLI tool + provider pair should be passed through losslessly.
  * @param {string|null} clientTool - Result of detectClientTool()

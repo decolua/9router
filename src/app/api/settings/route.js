@@ -1,7 +1,14 @@
+import { isCompressionProfile } from "open-sse/config/compressionProfiles.js";
+import { validateHeadroomUrl } from "@/lib/headroom/transport.js";
+import { audit, auditActor } from "@/lib/observability/audit";
+import { ACCOUNT_STRATEGIES } from "@/shared/constants/accountRouting";
+import { normalizeRoleList } from "@/lib/auth/dashboardRoles";
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { requireDashboardAdmin } from "@/dashboardGuard";
+import { validRetention } from "@/lib/db/logRetention";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +19,9 @@ const SETTINGS_RESPONSE_HEADERS = {
 };
 
 // Secrets must never be mass-assigned from request body (CWE-915)
-const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted", "sessionEpoch", "debugBodyLoggingUntil", "canManageLogs"];
 
-export async function GET() {
+export async function GET(request) {
   try {
     const settings = await getSettings();
     const { password, oidcClientSecret, ...safeSettings } = settings;
@@ -26,6 +33,7 @@ export async function GET() {
     return NextResponse.json({ 
       ...safeSettings, 
       enableRequestLogs,
+      canManageLogs: !!request?.cookies && !(await requireDashboardAdmin(request, { requireCredential: true })),
       enableTranslator,
       hasPassword: !!password
     }, { headers: SETTINGS_RESPONSE_HEADERS });
@@ -39,8 +47,22 @@ export async function PATCH(request) {
   try {
     const body = await request.json();
 
+    if (Object.hasOwn(body, "compressionProfile") && !isCompressionProfile(body.compressionProfile))
+      return NextResponse.json({ error: "Invalid compression profile" }, { status: 400 });
+    if (Object.hasOwn(body, "headroomUrl")) {
+      try { validateHeadroomUrl(body.headroomUrl); }
+      catch { return NextResponse.json({ error: "Expected a loopback or public HTTP(S) Headroom URL" }, { status: 400 }); }
+    }
+
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
+
+    for (const key of ["ssoAdminEmails", "ssoAdminGroups"]) {
+      if (!Object.hasOwn(body, key)) continue;
+      const list = normalizeRoleList(body[key], key === "ssoAdminEmails");
+      if (!list) return NextResponse.json({ error: key + " must be a list of strings" }, { status: 400 });
+      body[key] = list;
+    }
 
     // If updating password, hash it
     if (body.newPassword) {
@@ -76,7 +98,21 @@ export async function PATCH(request) {
       }
     }
 
-    const settings = await updateSettings(body);
+    const { providerRouting, ...updates } = body;
+    if (providerRouting !== undefined && (!providerRouting || typeof providerRouting.provider !== "string" ||
+        !/^[a-z0-9][a-z0-9._-]*$/i.test(providerRouting.provider) ||
+        Object.hasOwn(Object.prototype, providerRouting.provider) ||
+        !(providerRouting.strategy === "" || Object.hasOwn(ACCOUNT_STRATEGIES, providerRouting.strategy)) ||
+        (providerRouting.strategy === "round-robin" && !(Number.isSafeInteger(providerRouting.stickyLimit) && providerRouting.stickyLimit > 0)))) {
+      return NextResponse.json({ error: "Invalid provider routing settings" }, { status: 400 });
+    }
+    if ("auditRetentionDays" in updates && !validRetention(updates.auditRetentionDays))
+      return NextResponse.json({ error: "auditRetentionDays must be an integer from 1 to 3650" }, { status: 400 });
+    const identity = await auditActor(request);
+    const settings = await updateSettings(updates, { providerRouting });
+
+    if (Object.hasOwn(updates, "password")) await audit(request, "password.change", { identity });
+    if (Object.keys(body).length) await audit(request, "settings.update", { identity, fields: Object.keys(body) });
 
     // Apply outbound proxy settings immediately (no restart required)
     if (

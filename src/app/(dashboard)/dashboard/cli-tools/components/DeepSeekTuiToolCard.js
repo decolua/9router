@@ -51,12 +51,6 @@ export default function DeepSeekTuiToolCard({
   const configStatus = getConfigStatus();
 
   useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
     if (initialStatus) setDeepseekStatus(initialStatus);
   }, [initialStatus]);
 
@@ -116,9 +110,7 @@ export default function DeepSeekTuiToolCard({
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+      const keyToUse = selectedApiKey.trim();
 
       const res = await fetch(ENDPOINT, {
         method: "POST",
@@ -136,7 +128,7 @@ export default function DeepSeekTuiToolCard({
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkStatus();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to apply settings" });
+        setMessage({ type: "error", text: data.error?.message || data.error || "Failed to apply settings" });
       }
     } catch (error) {
       setMessage({ type: "error", text: error.message });
@@ -285,7 +277,7 @@ model = "${selectedModel || "provider/model-id"}"
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect keepExisting value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">

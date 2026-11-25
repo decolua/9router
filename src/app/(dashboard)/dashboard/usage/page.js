@@ -1,10 +1,14 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import { useDashboardRole } from "@/shared/hooks/useDashboardRole";
 import { useSearchParams, useRouter } from "next/navigation";
 import { RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
 import UsageStats from "@/shared/components/UsageStats";
+import dynamic from "next/dynamic";
 import RequestDetailsTab from "./components/RequestDetailsTab";
+
+const Analytics = dynamic(() => import("./components/Analytics"));
 
 const PERIODS = [
   { value: "today", label: "Today" },
@@ -29,8 +33,10 @@ function UsageContent() {
 
   const [period, setPeriod] = useState("today");
 
+  const { role } = useDashboardRole();
+
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "logs", "details"].includes(tabFromUrl)
+  const activeTab = tabFromUrl === "analytics" && role === "admin" ? "analytics" : tabFromUrl && ["overview", "logs", "details"].includes(tabFromUrl)
     ? tabFromUrl
     : "overview";
 
@@ -49,6 +55,7 @@ function UsageContent() {
           options={[
             { value: "overview", label: "Overview" },
             { value: "details", label: "Details" },
+            ...(role === "admin" ? [{ value: "analytics", label: "Analytics" }] : []),
           ]}
           value={activeTab}
           onChange={handleTabChange}
@@ -70,8 +77,9 @@ function UsageContent() {
           <UsageStats period={period} setPeriod={setPeriod} hidePeriodSelector />
         </Suspense>
       )}
+      {activeTab === "analytics" && (role === "admin" ? <Analytics /> : <CardSkeleton />)}
       {activeTab === "logs" && <RequestLogger />}
-      {activeTab === "details" && <RequestDetailsTab />}
+      {activeTab === "details" && <RequestDetailsTab key={searchParams.get("requestId")} requestId={searchParams.get("requestId")} />}
     </div>
   );
 }

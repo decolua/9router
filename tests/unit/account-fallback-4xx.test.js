@@ -4,6 +4,7 @@
 // the first error. A 400 "maximum context length" from one session therefore
 // looked like the same failure in unrelated sessions.
 import { describe, expect, it } from "vitest";
+import { parseUpstreamError } from "../../open-sse/utils/error.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 
 describe("checkFallbackError — request-scoped vs account-scoped failures", () => {
@@ -19,7 +20,7 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
   });
 
   it("still falls back for account-scoped statuses", () => {
-    for (const status of [401, 402, 403, 404, 429]) {
+    for (const status of [401, 402, 403, 404, 408, 429, 504]) {
       expect(checkFallbackError(status, "nope").shouldFallback).toBe(true);
     }
   });
@@ -44,6 +45,10 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     });
   });
 
+  it("does not rotate a malformed request", () => {
+    expect(checkFallbackError(400, "improperly formed request").shouldFallback).toBe(false);
+  });
+
   it("does not fall back for an ordinary bad request", () => {
     expect(checkFallbackError(400, "Bad request")).toEqual({
       shouldFallback: false, cooldownMs: 0, requestScoped: true,
@@ -57,3 +62,14 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     expect(result.cooldownMs).toBeGreaterThan(0);
   });
 });
+
+it.each([["x-ratelimit-reset-requests","1h2s",3602000],["ratelimit-reset","90",90000]])(
+  "maps %s into a routing deadline, without rotating validation errors", async (k,v,ms) => {
+    const t = Date.now();
+    const parse = status => parseUpstreamError(new Response("bad", {status, headers:{[k]:v}}));
+    const limited = await parse(429);
+    expect(limited.accountWide).toBe(true);
+    expect(limited.resetsAtMs).toBeGreaterThanOrEqual(t+ms);
+    expect(limited.resetsAtMs).toBeLessThanOrEqual(Date.now()+ms);
+    expect((await parse(400)).resetsAtMs).toBeUndefined();
+  });

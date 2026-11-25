@@ -15,7 +15,7 @@ function getTimeString() {
  * @param {string} options.provider - Provider name
  * @param {string} options.model - Model name
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model, reqTag = "" } = {}) {
+export function createStreamController({ onDisconnect, onError, onSettled, log, provider, model, reqTag = "" } = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
@@ -40,6 +40,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleDisconnect: (reason = "client_closed") => {
       if (disconnected) return;
       disconnected = true;
+      onSettled?.();
 
       // Debug-only: Responses API has no [DONE] sentinel, so codex/droid close the
       // socket on every completed request. "📊 done" is the authoritative outcome line.
@@ -57,6 +58,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleComplete: () => {
       if (disconnected) return;
       disconnected = true;
+      onSettled?.();
 
       if (abortTimeout) {
         clearTimeout(abortTimeout);
@@ -68,6 +70,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleError: (error) => {
       if (disconnected) return;
       disconnected = true;
+      onSettled?.();
 
       if (abortTimeout) {
         clearTimeout(abortTimeout);
@@ -136,7 +139,8 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         // Controller already closed = downstream ended; not an upstream error, skip noisy log.
         const msg0 = error?.message || "";
         const isControllerClosed = msg0.includes("already closed") || msg0.includes("Invalid state");
-        if (!isControllerClosed) streamController.handleError(error);
+        if (isControllerClosed) streamController.handleDisconnect("closed");
+        else streamController.handleError(error);
         reader.cancel().catch(() => {});
         writer.abort().catch(() => {});
 

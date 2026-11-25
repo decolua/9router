@@ -10,6 +10,7 @@ import * as log from "../utils/logger.js";
 
 // In-memory cache: connectionId → { [modelId]: { remainingPercentage, resetAt } }
 const quotaCache = new Map();
+const providerReadings = new WeakMap();
 // Track last refresh per connection to avoid hammering
 const lastRefreshAt = new Map();
 // In-flight refresh promises — dedup concurrent 409/429 bursts
@@ -254,6 +255,7 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
     // Update in-memory cache. Caller logs CACHE_BLOCK only if requested model is exhausted.
     // Strike blocks are re-asserted after every refresh so an optimistic
     // upstream reading cannot resurrect a pair we just circuit-broke.
+    providerReadings.set(usage.quotas, { ...usage.quotas });
     quotaCache.set(connectionId, applyActiveStrikeBlocks(connectionId, usage.quotas));
 
     return usage.quotas;
@@ -268,12 +270,14 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
  * Called from chat handler error path.
  * @returns {number|null} resetAt timestamp ms (for resetsAtMs passthrough) or null
  */
-export async function handleAntigravityQuotaError(connectionId, status, model, accessToken, providerSpecificData) {
+export async function handleAntigravityQuotaError(connectionId, status, model, accessToken, providerSpecificData, onReading) {
   log.info("AG_QUOTA", `${connectionId.slice(0, 8)} | ${status} on ${model} — refreshing quota`);
 
   // Throttle applies to error paths too: one quota request per account/30s.
   // The first 409/429 populates cache; concurrent or repeated errors reuse it.
   const quotas = await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData);
+  const reported = providerReadings.get(quotas);
+  if (reported) onReading?.(getAntigravityModelQuota(reported, model));
   const quota = getAntigravityModelQuota(quotas, model);
 
   // Strike breaker: count every 429 whose quota reading is either optimistic

@@ -1,3 +1,4 @@
+import { inferenceRoute } from "@/lib/observability/inferenceRoute.js";
 import { handleSystemone } from "@/sse/handlers/systemone.js";
 
 /**
@@ -16,6 +17,4 @@ export async function OPTIONS() {
 /**
  * POST /v1/systemone - System One (Jev) decision endpoint
  */
-export async function POST(request) {
-  return await handleSystemone(request);
-}
+export const POST = inferenceRoute(handleSystemone);

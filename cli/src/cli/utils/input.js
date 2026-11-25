@@ -67,6 +67,19 @@ async function select(question, options) {
   }
 }
 
+async function multiSelect(options) {
+  const { MultiSelect } = require("enquirer");
+  return suspendRawFor(async () => {
+    const picker = new MultiSelect(options);
+    try {
+      return await picker.run();
+    } catch (error) {
+      if (picker.state.cancelled) return null;
+      throw error;
+    }
+  });
+}
+
 async function confirm(question) {
   while (true) {
     const answer = await prompt(`${question} (y/n): `);
@@ -152,5 +165,6 @@ module.exports = {
   confirm,
   pause,
   selectMenu,
+  multiSelect,
   COLORS
 };

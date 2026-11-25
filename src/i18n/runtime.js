@@ -38,7 +38,10 @@ export function translate(text) {
   const trimmed = text.trim();
   if (!trimmed) return text;
   if (currentLocale === "en") return text;
-  return translationMap[trimmed] || text;
+  const translated = translationMap[trimmed];
+  if (!translated) return text;
+  // Keep the surrounding spaces: "Created " + date must not become "Oluşturuldu23.11.2026".
+  return text.slice(0, text.indexOf(trimmed)) + translated + text.slice(text.indexOf(trimmed) + trimmed.length);
 }
 
 // Get current locale - exported for use in components

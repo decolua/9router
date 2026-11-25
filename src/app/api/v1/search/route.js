@@ -1,3 +1,4 @@
+import { inferenceRoute } from "@/lib/observability/inferenceRoute.js";
 import { handleSearch } from "@/sse/handlers/search.js";
 
 /**
@@ -16,6 +17,4 @@ export async function OPTIONS() {
 /**
  * POST /v1/search - Web search endpoint
  */
-export async function POST(request) {
-  return await handleSearch(request);
-}
+export const POST = inferenceRoute(handleSearch);

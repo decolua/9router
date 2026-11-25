@@ -1,3 +1,5 @@
+import { format } from "node:util";
+import { redactLogValue } from "./observability/logPrivacy.js";
 import { EventEmitter } from "events";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config.js";
 
@@ -41,26 +43,17 @@ function scheduleFlush() {
   state.flushTimer?.unref?.();
 }
 
-function toLogLine(level, args) {
-  return args.map(formatArg).join(" ");
-}
-
-// Strip ANSI escape codes so terminal colors don't bleed into UI
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
-
-function stripAnsi(str) {
-  return str.replace(ANSI_RE, "");
-}
-
-function formatArg(arg) {
-  if (typeof arg === "string") return stripAnsi(arg);
-  if (arg instanceof Error) return stripAnsi(arg.stack || arg.message || String(arg));
+// Redact structured arguments before formatting, then check the final line for
+// split credentials such as console.warn("Bearer %s", token).
+function safeLine(args) {
   try {
-    return stripAnsi(JSON.stringify(arg));
-  } catch {
-    return stripAnsi(String(arg));
-  }
+    const parts = args.map(arg => arg instanceof Error ? arg.stack || arg.message :
+      typeof arg === "object" ? redactLogValue(arg) : arg);
+    return redactLogValue(format(...parts).replace(ANSI_RE, ""));
+  } catch { return "[REDACTED]"; }
 }
+
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
 function appendLine(line) {
   state.logs.push(line);
@@ -86,8 +79,9 @@ export function initConsoleLogCapture() {
   for (const level of consoleLevels) {
     state.originals[level] = console[level];
     console[level] = (...args) => {
-      appendLine(toLogLine(level, args));
-      state.originals[level](...args);
+      const safe = safeLine(args);
+      appendLine(`[${level.toUpperCase()}] ${safe}`);
+      state.originals[level](safe);
     };
   }
 

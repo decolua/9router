@@ -1,3 +1,4 @@
+import { dispatchMedia } from "@/lib/observability/mediaDispatch.js";
 import {
   extractApiKey, isValidApiKey,
   getProviderCredentials, markAccountUnavailable,
@@ -79,7 +80,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style });
+    const result = await dispatchMedia(handleTtsCore, { provider, model, input: body.input, responseFormat, language, style });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
@@ -100,7 +101,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
       }
       if (excludeConnectionIds.size === 0) {
         if (provider === "ollama-local") {
-          const result = await handleTtsCore({ provider, model, input: body.input, credentials: null, responseFormat, language, style });
+          const result = await dispatchMedia(handleTtsCore, { provider, model, input: body.input, credentials: null, responseFormat, language, style });
           if (result.success) return result.response;
           return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
         }
@@ -111,7 +112,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style, options: body });
+    const result = await dispatchMedia(handleTtsCore, { provider, model, input: body.input, credentials, responseFormat, language, style, options: body });
 
     if (result.success) return result.response;
 

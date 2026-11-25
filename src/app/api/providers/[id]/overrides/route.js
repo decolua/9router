@@ -1,3 +1,4 @@
+import { audit } from "@/lib/observability/audit";
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { PROVIDERS } from "open-sse/config/providers.js";
@@ -102,6 +103,7 @@ export async function PUT(request, { params }) {
     if (override) next[canonical] = override;
     else delete next[canonical];
     await updateSettings({ providerOverrides: next });
+    await audit(request, "settings.update", { fields: ["providerOverrides"] });
     return NextResponse.json({ headers: override?.headers || {} });
   } catch (error) {
     console.log("Error saving provider overrides:", error);

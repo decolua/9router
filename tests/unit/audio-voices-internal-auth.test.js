@@ -8,6 +8,11 @@ vi.mock("open-sse/handlers/ttsCore.js", () => ({
 vi.mock("@/lib/localDb", () => ({
   getSettings: async () => ({ requireLogin: true }),
   validateApiKey: async (key) => key === "valid-router-key",
+  admitApiKey: async (key, pathname, consume) => {
+    expect(pathname).toBe("/v1/audio/voices");
+    expect(consume).toBe(false);
+    return { status: key === "valid-router-key" ? 200 : 401 };
+  },
 }));
 vi.mock("@/shared/utils/machineId", () => ({ getConsistentMachineId: async () => "internal-cli-key" }));
 vi.mock("@/lib/auth/dashboardSession", () => ({ verifyDashboardAuthToken: async () => false }));

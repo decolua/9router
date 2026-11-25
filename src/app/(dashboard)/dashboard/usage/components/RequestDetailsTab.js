@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
@@ -83,7 +83,7 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
   );
 }
 
-export default function RequestDetailsTab() {
+export default function RequestDetailsTab({ requestId }) {
   const [details, setDetails] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -91,7 +91,7 @@ export default function RequestDetailsTab() {
     totalItems: 0,
     totalPages: 0
   });
-  const [loading, setLoading] = useState(false);
+  const [loadedQuery, setLoadedQuery] = useState(null);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
@@ -102,49 +102,43 @@ export default function RequestDetailsTab() {
     endDate: ""
   });
 
-  const fetchProviders = useCallback(async () => {
-    try {
-      const res = await fetch("/api/usage/providers");
-      const data = await res.json();
-      setProviders(data.providers || []);
-
-      const cache = await fetchProviderNames();
-      setProviderNameCache(cache.providerNameCache);
-    } catch (error) {
-      console.error("Failed to fetch providers:", error);
-    }
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/usage/providers", { signal: controller.signal })
+      .then(res => res.json())
+      .then(async data => {
+        if (controller.signal.aborted) return;
+        setProviders(data.providers || []);
+        const cache = await fetchProviderNames();
+        if (!controller.signal.aborted) setProviderNameCache(cache.providerNameCache);
+      })
+      .catch(error => { if (!controller.signal.aborted) console.error("Failed to fetch providers:", error); });
+    return () => controller.abort();
   }, []);
 
-  const fetchDetails = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        pageSize: pagination.pageSize.toString()
+  const params = new URLSearchParams({ page: pagination.page, pageSize: pagination.pageSize });
+  if (requestId) params.set("requestId", requestId);
+  for (const [name, value] of Object.entries(filters)) if (value) params.set(name, value);
+  const query = params.toString();
+  const loading = query !== loadedQuery;
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/usage/request-details?${query}`, { signal: controller.signal })
+      .then(res => res.json())
+      .then(data => {
+        if (controller.signal.aborted) return;
+        setDetails(data.details || []);
+        setPagination(prev => ({ ...prev, ...data.pagination }));
+        setLoadedQuery(query);
+      })
+      .catch(error => {
+        if (controller.signal.aborted) return;
+        console.error("Failed to fetch request details:", error);
+        setDetails([]);
+        setLoadedQuery(query);
       });
-      if (filters.provider) params.append("provider", filters.provider);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
-
-      const res = await fetch(`/api/usage/request-details?${params}`);
-      const data = await res.json();
-
-      setDetails(data.details || []);
-      setPagination(prev => ({ ...prev, ...data.pagination }));
-    } catch (error) {
-      console.error("Failed to fetch request details:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [pagination.page, pagination.pageSize, filters]);
-
-  useEffect(() => {
-    fetchProviders();
-  }, [fetchProviders]);
-
-  useEffect(() => {
-    fetchDetails();
-  }, [fetchDetails]);
+    return () => controller.abort();
+  }, [query]);
 
   const handleViewDetail = (detail) => {
     setSelectedDetail(detail);

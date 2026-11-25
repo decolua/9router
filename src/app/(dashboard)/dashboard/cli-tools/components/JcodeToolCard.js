@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
@@ -23,18 +23,20 @@ export default function JcodeToolCard({
   tailscaleEnabled,
   tailscaleUrl,
 }) {
-  const [jcodeStatus, setJcodeStatus] = useState(initialStatus || null);
-  const [checkingJcode, setCheckingJcode] = useState(false);
+  const [localStatus, setJcodeStatus] = useState(null);
+  const jcodeStatus = localStatus ?? initialStatus;
+  const checkingJcode = !jcodeStatus;
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
+  const [selection, setSelection] = useState(null);
+  const [keyInputVersion, setKeyInputVersion] = useState(0);
+  const [editedModel, setSelectedModel] = useState(null);
+  const selectedModel = editedModel ?? jcodeStatus?.config?.providers?.["9router"]?.default_model ?? "";
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const hasInitializedModel = useRef(false);
+  const [customBaseUrl, setCustomBaseUrl] = useState(null);
 
   const currentBaseUrl = jcodeStatus?.config?.providers?.["9router"]?.base_url || "";
 
@@ -49,61 +51,28 @@ export default function JcodeToolCard({
   const configStatus = getConfigStatus();
 
   useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setJcodeStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded) {
-      if (!jcodeStatus) checkJcodeStatus();
-      fetchModelAliases();
-    }
+    if (!isExpanded) return;
+    const fetchModelAliases = async () => {
+      try {
+        const res = await fetch("/api/models/alias");
+        const data = await res.json();
+        if (res.ok) setModelAliases(data.aliases || {});
+      } catch {
+        console.log("Error fetching model aliases");
+      }
+    };
+    fetchModelAliases();
   }, [isExpanded]);
 
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
+  const checkJcodeStatus = useCallback(() => {
+    return fetch("/api/cli-tools/jcode-settings")
+      .then(res => res.json())
+      .then(setJcodeStatus, () => setJcodeStatus({ error: "Failed to check settings" }));
+  }, []);
 
   useEffect(() => {
-    if (jcodeStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const provider = jcodeStatus.config?.providers?.["9router"];
-      if (provider) {
-        if (provider.default_model) {
-          setSelectedModel(provider.default_model);
-        }
-        // Try to match API key from env file
-        const envApiKey = jcodeStatus.envApiKey;
-        if (envApiKey && apiKeys?.some(k => k.key === envApiKey)) {
-          setSelectedApiKey(envApiKey);
-        }
-      }
-    }
-  }, [jcodeStatus, apiKeys]);
-
-  const checkJcodeStatus = async () => {
-    setCheckingJcode(true);
-    try {
-      const res = await fetch("/api/cli-tools/jcode-settings");
-      const data = await res.json();
-      setJcodeStatus(data);
-    } catch (error) {
-      setJcodeStatus({ installed: false, error: error.message });
-    } finally {
-      setCheckingJcode(false);
-    }
-  };
+    if (isExpanded && !jcodeStatus) checkJcodeStatus();
+  }, [isExpanded, jcodeStatus, checkJcodeStatus]);
 
   const normalizeLocalhost = (url) => url.replace("://localhost", "://127.0.0.1");
 
@@ -114,37 +83,30 @@ export default function JcodeToolCard({
     return "http://127.0.0.1:20128";
   };
 
-  const getEffectiveBaseUrl = () => {
-    const url = customBaseUrl || getLocalBaseUrl();
-    return url.endsWith("/v1") ? url : `${url}/v1`;
-  };
-
-  const getDisplayUrl = () => {
-    const url = customBaseUrl || getLocalBaseUrl();
-    return url.endsWith("/v1") ? url : `${url}/v1`;
-  };
+  const url = (customBaseUrl ?? getLocalBaseUrl() ?? "").trim().replace(/\/+$/, "");
+  const endpoint = !url || url.endsWith("/v1") ? url : url + "/v1";
+  const selectedApiKey = selection?.endpoint === endpoint ? selection.key : "";
+  const setSelectedApiKey = key => setSelection(key ? { endpoint, key } : null);
 
   const handleApplySettings = async () => {
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
-
       const res = await fetch("/api/cli-tools/jcode-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyToUse,
+          baseUrl: endpoint,
+          apiKey: selectedApiKey.trim(),
           models: selectedModel ? [selectedModel] : [],
         }),
       });
       const data = await res.json();
       if (res.ok) {
+        setSelectedApiKey("");
+        setKeyInputVersion(v => v + 1);
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(endpoint, { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkJcodeStatus();
       } else {
@@ -184,13 +146,11 @@ export default function JcodeToolCard({
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+    const keyToUse = selectedApiKey.trim() || "<API_KEY_FROM_DASHBOARD>";
 
     const configToml = `[providers.9router]
 type = "openai-compatible"
-base_url = "${getEffectiveBaseUrl()}"
+base_url = "${endpoint}"
 auth = "bearer"
 api_key_env = "JCODE_9ROUTER_API_KEY"
 env_file = "provider-9router.env"
@@ -243,7 +203,11 @@ id = "${selectedModel || "cc/claude-opus-4-7"}"`;
             </div>
           )}
 
-          {!checkingJcode && jcodeStatus && !jcodeStatus.installed && (
+          {jcodeStatus?.error && (
+            <p role="alert" className="text-sm text-red-600">{jcodeStatus.error}</p>
+          )}
+
+          {!checkingJcode && jcodeStatus?.installed === false && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <div className="flex items-start gap-3">
@@ -293,8 +257,11 @@ id = "${selectedModel || "cc/claude-opus-4-7"}"`;
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <BaseUrlSelect
-                    value={customBaseUrl || getDisplayUrl()}
-                    onChange={setCustomBaseUrl}
+                    value={customBaseUrl ?? endpoint}
+                    onChange={url => {
+                      if (url !== customBaseUrl) setSelectedApiKey("");
+                      setCustomBaseUrl(url);
+                    }}
                     requiresExternalUrl={tool.requiresExternalUrl}
                     tunnelEnabled={tunnelEnabled}
                     tunnelPublicUrl={tunnelPublicUrl}
@@ -319,7 +286,7 @@ id = "${selectedModel || "cc/claude-opus-4-7"}"`;
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <ApiKeySelect key={`${endpoint}:${keyInputVersion}`} keepExisting value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Default Model */}
@@ -349,7 +316,7 @@ id = "${selectedModel || "cc/claude-opus-4-7"}"`;
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedModel} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!endpoint || !selectedModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!jcodeStatus?.has9Router} loading={restoring}>

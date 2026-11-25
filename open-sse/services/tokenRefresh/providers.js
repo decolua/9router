@@ -1,3 +1,4 @@
+import { OAUTH_PERMANENT_MARKERS } from "../../config/inferenceErrors.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
@@ -245,12 +246,7 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   const code = parsed?.error?.code || parsed?.error || parsed?.error_code || "";
   const description = parsed?.error_description || parsed?.message || errorText || "";
   const combined = `${code} ${description}`.toLowerCase();
-  const permanent = [
-    "refresh_token_expired",
-    "refresh_token_reused",
-    "refresh_token_invalidated",
-    "invalid_grant",
-  ].some((marker) => combined.includes(marker));
+  const permanent = OAUTH_PERMANENT_MARKERS.some((marker) => combined.includes(marker));
 
   return { status, code, description, permanent };
 }

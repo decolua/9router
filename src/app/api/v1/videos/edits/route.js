@@ -1,3 +1,4 @@
+import { inferenceRoute } from "@/lib/observability/inferenceRoute.js";
 import { handleVideoCreate } from "@/sse/handlers/videoGeneration.js";
 
 export async function OPTIONS() {
@@ -11,6 +12,8 @@ export async function OPTIONS() {
 }
 
 /** POST /v1/videos/edits - async video edit (xAI Grok Imagine) */
-export async function POST(request) {
+export const POST = inferenceRoute(dispatchPost);
+
+async function dispatchPost(request) {
   return await handleVideoCreate(request, "edits");
 }

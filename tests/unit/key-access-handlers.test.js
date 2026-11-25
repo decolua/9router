@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const fx = vi.hoisted(() => ({
+  strategies: {},
   combos: [
     { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
   ],
@@ -15,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/localDb", () => ({
-  getSettings: async () => ({ requireApiKey: false, comboStrategy: "fallback" }),
+  getSettings: async () => ({ requireApiKey: false, comboStrategy: "fallback", comboStrategies: fx.strategies }),
   getModelAliases: async () => ({}),
   getComboByName: async (name) => fx.combos.find((c) => c.name === name) || null,
   getProviderNodes: async () => [],
@@ -140,6 +141,24 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
     expect(text).toContain("from-model-b");
     const tried = mocks.handleChatCore.mock.calls.map(([a]) => a.modelInfo.model);
     expect(tried).toEqual(["model-a", "model-b"]);
+  });
+  it("keeps quota fallback inside the granted combo", async () => {
+    const second = sse([CONTENT("allowed"), DONE]);
+    mocks.handleChatCore.mockResolvedValueOnce({success:false, status:429, error:"quota exceeded",
+      response:Response.json({error:"quota exceeded"}, {status:429})}).mockResolvedValueOnce({success:true,response:second});
+    const response = await chat("Main", "sk-combo");
+    expect(await response.text()).toContain("allowed");
+    expect(mocks.handleChatCore.mock.calls.map(([args]) => args.modelInfo.model)).toEqual(["model-a","model-b"]);
+  });
+  it.each(["smart", "fusion"])("never dispatches a restricted combo outside its members (%s)", async strategy => {
+    fx.strategies.Main = {fallbackStrategy:strategy, routerModel:"openai/outside", judgeModel:"openai/outside"};
+    mocks.handleChatCore.mockImplementation(async ({ modelInfo }) => ({ success:true,
+      response:Response.json({ choices:[{message:{content:modelInfo.model}}] }) }));
+    try {
+      expect((await chat("Main", "sk-combo")).status).toBe(200);
+      expect(mocks.getProviderCredentials.mock.calls.map(args => args[2])).not.toContain("outside");
+      expect(mocks.handleChatCore.mock.calls.every(([a]) => ["model-a","model-b"].includes(a.modelInfo.model))).toBe(true);
+    } finally { delete fx.strategies.Main; }
   });
   it("bypass check: a restricted key sent as x-goog-api-key on the Gemini-compatible route is still restricted", async () => {
     const res = await geminiRoute.POST(

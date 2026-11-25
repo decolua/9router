@@ -1,3 +1,4 @@
+import { inferenceRoute } from "@/lib/observability/inferenceRoute.js";
 import { handleFetch } from "@/sse/handlers/fetch.js";
 
 /**
@@ -16,6 +17,4 @@ export async function OPTIONS() {
 /**
  * POST /v1/web/fetch - Web URL fetch/extract endpoint
  */
-export async function POST(request) {
-  return await handleFetch(request);
-}
+export const POST = inferenceRoute(handleFetch);

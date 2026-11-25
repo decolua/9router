@@ -1,8 +1,9 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
 
 // PUT /api/provider-nodes/[id] - Update provider node
-export async function PUT(request, { params }) {
+async function putHandler(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
@@ -81,7 +82,7 @@ export async function PUT(request, { params }) {
 }
 
 // DELETE /api/provider-nodes/[id] - Delete provider node and its connections
-export async function DELETE(request, { params }) {
+async function deleteHandler(request, { params }) {
   try {
     const { id } = await params;
     const node = await getProviderNodeById(id);
@@ -99,3 +100,6 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ error: "Failed to delete provider node" }, { status: 500 });
   }
 }
+
+export const PUT = withProviderAudit(putHandler);
+export const DELETE = withProviderAudit(deleteHandler);

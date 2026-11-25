@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 11;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -78,7 +78,12 @@ export const TABLES = {
   apiKeys: {
     columns: {
       id: "TEXT PRIMARY KEY",
-      key: "TEXT UNIQUE NOT NULL",
+      key_ciphertext: "TEXT NOT NULL",
+      key_verifier: "TEXT",
+      key_version: "INTEGER NOT NULL DEFAULT 1",
+      allowedConnections: "TEXT",
+      connectionProviders: "TEXT",
+      description: "TEXT", owner: "TEXT", project: "TEXT",
       name: "TEXT",
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
@@ -87,8 +92,27 @@ export const TABLES = {
       // syncSchemaFromTables() on boot; existing rows read as unrestricted (0).
       accessRestricted: "INTEGER DEFAULT 0",
       accessAllow: "TEXT",
+      budget: "TEXT",
+      hourlyRequestLimit: "INTEGER", requestHour: "INTEGER NOT NULL DEFAULT -1", hourlyRequests: "INTEGER NOT NULL DEFAULT 0",
+      dailyRequestLimit: "INTEGER", requestDay: "INTEGER NOT NULL DEFAULT -1", dailyRequests: "INTEGER NOT NULL DEFAULT 0",
+      monthlyRequestLimit: "INTEGER", requestMonth: "INTEGER NOT NULL DEFAULT -1", monthlyRequests: "INTEGER NOT NULL DEFAULT 0",
+      rpmLimit: "INTEGER",
+      rpmMinute: "INTEGER NOT NULL DEFAULT -1",
+      rpmUsed: "INTEGER NOT NULL DEFAULT 0",
+      expiresAt: "TEXT",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
+    indexes: ["CREATE UNIQUE INDEX IF NOT EXISTS idx_key_verifier ON apiKeys(key_verifier)"],
+  },
+  retiredKeyFingerprints: {
+    columns: { fingerprint: "TEXT PRIMARY KEY", keyId: "TEXT NOT NULL REFERENCES apiKeys(id) ON DELETE CASCADE" },
+  },
+  budgetReservations: {
+    columns: {
+      requestId: "TEXT PRIMARY KEY", keyId: "TEXT NOT NULL", createdAt: "TEXT NOT NULL",
+      state: "TEXT NOT NULL", policy: "TEXT NOT NULL", reservedTokens: "INTEGER NOT NULL",
+      reservedMicros: "INTEGER NOT NULL", inputTokens: "INTEGER", outputTokens: "INTEGER", actualMicros: "INTEGER",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_budget_key ON budgetReservations(keyId)"],
   },
   combos: {
     columns: {
@@ -112,6 +136,7 @@ export const TABLES = {
   },
   usageHistory: {
     columns: {
+      requestId: "TEXT",
       id: "INTEGER PRIMARY KEY AUTOINCREMENT",
       timestamp: "TEXT NOT NULL",
       provider: "TEXT",
@@ -139,6 +164,43 @@ export const TABLES = {
       data: "TEXT NOT NULL",
     },
   },
+  notifications: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT", type: "TEXT NOT NULL", target: "TEXT NOT NULL",
+      subject: "TEXT NOT NULL", label: "TEXT", severity: "TEXT NOT NULL", state: "TEXT NOT NULL", firstAt: "INTEGER NOT NULL",
+      lastAt: "INTEGER NOT NULL", count: "INTEGER NOT NULL DEFAULT 1", readAt: "INTEGER",
+    },
+    indexes: [
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_open ON notifications(type,subject) WHERE state='open'",
+      "CREATE INDEX IF NOT EXISTS idx_notification_recent ON notifications(lastAt DESC,id DESC)",
+    ],
+  },
+  notificationChannels: {
+    columns: { id: "TEXT PRIMARY KEY", kind: "TEXT NOT NULL", config: "TEXT NOT NULL", perMinute: "INTEGER NOT NULL" },
+  },
+  notificationMutes: {
+    columns: { id: "INTEGER PRIMARY KEY", type: "TEXT", target: "TEXT", untilAt: "INTEGER NOT NULL" },
+  },
+  notificationDeliveries: {
+    columns: { id: "INTEGER PRIMARY KEY", channel: "TEXT NOT NULL REFERENCES notificationChannels(id) ON DELETE CASCADE",
+      event: "TEXT NOT NULL", severity: "TEXT NOT NULL", state: "TEXT NOT NULL", target: "TEXT NOT NULL",
+      at: "INTEGER NOT NULL", attemptedAt: "INTEGER" },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_delivery_channel ON notificationDeliveries(channel,attemptedAt,id)"],
+  },
+  notificationOutages: {
+    columns: { target: "TEXT PRIMARY KEY", since: "INTEGER NOT NULL" },
+  },
+  auditLog: {
+    columns: {
+      id: "INTEGER PRIMARY KEY", timestamp: "TEXT NOT NULL", actorRole: "TEXT NOT NULL",
+      actor: "TEXT NOT NULL", action: "TEXT NOT NULL", target: "TEXT", result: "TEXT NOT NULL",
+      ip: "TEXT", detail: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_audit_time ON auditLog(timestamp DESC, id DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_audit_action ON auditLog(action, timestamp DESC, id DESC)",
+    ],
+  },
   requestDetails: {
     columns: {
       id: "TEXT PRIMARY KEY",
@@ -147,6 +209,7 @@ export const TABLES = {
       model: "TEXT",
       connectionId: "TEXT",
       status: "TEXT",
+      bodyExpiresAt: "TEXT",
       data: "TEXT NOT NULL",
     },
     indexes: [

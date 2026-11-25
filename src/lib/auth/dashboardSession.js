@@ -6,6 +6,8 @@ import crypto from "node:crypto";
 import { DATA_DIR } from "@/lib/dataDir";
 import { getSettings } from "@/lib/localDb";
 
+import { ADMIN, VIEWER, sessionEpoch } from "./dashboardRoles.js";
+
 const DEFAULT_PASSWORD = "123456";
 const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
 
@@ -30,8 +32,9 @@ export function shouldUseSecureCookie(request) {
   return forceSecureCookie || isHttpsRequest;
 }
 
-export async function createDashboardAuthToken(claims = {}) {
-  return new SignJWT({ authenticated: true, ...claims })
+export async function createDashboardAuthToken(claims, settings = null) {
+  if (![ADMIN, VIEWER].includes(claims?.role)) throw new Error("Invalid dashboard role");
+  return new SignJWT({ ...claims, authenticated: true, sessionEpoch: sessionEpoch(settings ?? await getSettings()) })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("24h")
@@ -39,27 +42,22 @@ export async function createDashboardAuthToken(claims = {}) {
 }
 
 export async function verifyDashboardAuthToken(token) {
-  if (!token) return false;
-  try {
-    await jwtVerify(token, SECRET);
-    return true;
-  } catch {
-    return false;
-  }
+  return !!(await getDashboardAuthSession(token));
 }
 
 export async function getDashboardAuthSession(token) {
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, SECRET);
-    return payload;
+    const { payload } = await jwtVerify(token, SECRET, { algorithms: ["HS256"], requiredClaims: ["exp"] });
+    if (payload.authenticated !== true || ![ADMIN, VIEWER].includes(payload.role)) return null;
+    return payload.sessionEpoch === sessionEpoch(await getSettings()) ? payload : null;
   } catch {
     return null;
   }
 }
 
-export async function setDashboardAuthCookie(cookieStore, request, claims = {}) {
-  const token = await createDashboardAuthToken(claims);
+export async function setDashboardAuthCookie(cookieStore, request, claims, settings) {
+  const token = await createDashboardAuthToken(claims, settings);
   cookieStore.set("auth_token", token, {
     httpOnly: true,
     secure: shouldUseSecureCookie(request),

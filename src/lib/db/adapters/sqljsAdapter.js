@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
@@ -21,9 +22,20 @@ export async function createSqlJsAdapter(filePath) {
   let saveTimer = null;
   const SAVE_DEBOUNCE_MS = 100;
 
+  function snapshot() {
+    const fk = get("PRAGMA foreign_keys").foreign_keys;
+    const data = db.export(); // sql.js closes/reopens its connection on export.
+    db.exec(PRAGMA_SQL);
+    db.exec("PRAGMA foreign_keys=" + (fk ? "ON" : "OFF"));
+    return data;
+  }
+
   function persist() {
-    const data = db.export();
-    fs.writeFileSync(filePath, Buffer.from(data));
+    const temp = filePath + "." + randomUUID();
+    try {
+      fs.writeFileSync(temp, snapshot(), { flag: "wx", mode: 0o600, flush: true });
+      fs.renameSync(temp, filePath);
+    } finally { fs.rmSync(temp, { force: true }); }
     dirty = false;
   }
 
@@ -43,14 +55,14 @@ export async function createSqlJsAdapter(filePath) {
     return params;
   }
 
-  function run(sql, params = []) {
+  function run(sql, params = [], { saveOnlyIfChanged = false } = {}) {
     const stmt = db.prepare(sql);
     try {
       stmt.bind(paramsObj(params));
       stmt.step();
       const changes = db.getRowsModified();
       const lastInsertRowid = db.exec("SELECT last_insert_rowid() as id")[0]?.values?.[0]?.[0] ?? null;
-      scheduleSave();
+      if (!saveOnlyIfChanged || changes) scheduleSave();
       return { changes, lastInsertRowid };
     } finally {
       stmt.free();
@@ -111,5 +123,16 @@ export async function createSqlJsAdapter(filePath) {
   process.on("SIGINT", flush);
   process.on("SIGTERM", flush);
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+  // ATTACH paths live in WASM memory. Export an independent compact copy to
+  // the host filesystem so destructive migrations have a real recovery file.
+  function backupLite(dest, excluded) {
+    const copy = new SQLLib.Database(snapshot());
+    try {
+      for (const name of excluded) copy.run("DROP TABLE IF EXISTS " + name);
+      copy.run("VACUUM");
+      fs.writeFileSync(dest, copy.export(), { flag: "wx", mode: 0o600, flush: true });
+    } finally { copy.close(); }
+  }
+
+  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db, backupLite, flush: persist };
 }

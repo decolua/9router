@@ -1,3 +1,5 @@
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { reportedReset, classifyInferenceError } from "../services/inferenceError.js";
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
 
 /**
@@ -56,12 +58,24 @@ export async function writeStreamError(writer, statusCode, message) {
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
  * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
  */
-export async function parseUpstreamError(response, executor = null) {
+export async function parseUpstreamError(response, executor = null, observe = null) {
   let bodyText = "";
   try {
     bodyText = await response.text();
   } catch {
     bodyText = "";
+  }
+
+  function cooldown(status, specificReset) {
+    const specific = Number.isFinite(specificReset) && specificReset > Date.now();
+    if (status === HTTP_STATUS.RATE_LIMITED || status === HTTP_STATUS.SERVICE_UNAVAILABLE) {
+      const reset = reportedReset(response.headers);
+      if (reset) return {
+        resetsAtMs: Math.max(Date.parse(reset), specific ? specificReset : 0),
+        headerReset: true, accountWide: !specific && status === HTTP_STATUS.RATE_LIMITED,
+      };
+    }
+    return specific ? { resetsAtMs: specificReset } : {};
   }
 
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
@@ -70,7 +84,9 @@ export async function parseUpstreamError(response, executor = null) {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        observe?.(classifyInferenceError({ status: parsed.status || response.status, body: parsed.status && parsed.status !== response.status ? msg : bodyText,
+          headers: response.headers, resetsAtMs: parsed.resetsAtMs }));
+        return { statusCode: parsed.status || response.status, message: msg, ...cooldown(parsed.status || response.status, parsed.resetsAtMs) };
       }
     } catch { /* fall through to default parsing */ }
   }
@@ -86,7 +102,8 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  observe?.(classifyInferenceError({ status: response.status, body: bodyText, headers: response.headers }));
+  return { statusCode: response.status, message: finalMessage, ...cooldown(response.status) };
 }
 
 /**
@@ -115,6 +132,9 @@ export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders 
  * @returns {Response}
  */
 export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman, extraHeaders = null) {
+  if (!retryAfter) {
+    return Response.json({ error: { message } }, { status: statusCode, headers: extraHeaders || {} });
+  }
   const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
   const msg = `${message} (${retryAfterHuman})`;
   return new Response(

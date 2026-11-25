@@ -503,6 +503,16 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const proxyUrl = connectionProxyUrl || envProxyUrl;
   const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options?.forceFreshSocket === true;
 
+  // Financially metered requests cannot be replayed after an ambiguous
+  // transport failure. Preserve proxy selection and require valid TLS.
+  if (options.singleAttempt) {
+    if (!proxyUrl && proxyOptions?.strictProxy && (proxyOptions.proxyPoolId || proxyOptions.connectionProxyEnabled)) {
+      throw new Error("Required proxy unavailable");
+    }
+    const dispatcher = await getDispatcher(proxyUrl, false, false);
+    return rawFetch(url, { ...options, dispatcher, redirect: "error" });
+  }
+
   // Protocol adapters that own their transport (wreq-js TLS impersonation)
   // cannot use an undici dispatcher: they must drive the proxy themselves.
   // Only adapters that declare `proxyCapable` opt in — any other adapter
@@ -586,6 +596,8 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
  * Patched global fetch with env-proxy support and MITM DNS bypass
  */
 async function patchedFetch(url, options = {}) {
+  // Callers with an explicit transport own DNS, TLS and redirect policy.
+  if (options.dispatcher) return rawFetch(url, options);
   return proxyAwareFetch(url, options, null);
 }
 

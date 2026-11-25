@@ -1,3 +1,4 @@
+import { withProviderAudit } from "@/lib/observability/providerAudit";
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
 import { decodeXaiIdTokenEmail, extractEmailFromAccessToken } from "@/lib/oauth/providerHelpers";
@@ -18,7 +19,7 @@ import { decodeXaiIdTokenEmail, extractEmailFromAccessToken } from "@/lib/oauth/
  *   email
  *   expires_in / expiresIn / expires_at / expiresAt
  */
-export async function POST(request) {
+async function postHandler(request) {
   let body;
   try {
     body = await request.json();
@@ -114,3 +115,5 @@ export async function POST(request) {
     results,
   });
 }
+
+export const POST = withProviderAudit(postHandler);

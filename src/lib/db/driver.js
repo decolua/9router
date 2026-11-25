@@ -1,3 +1,4 @@
+import { startLogMaintenance } from "./logRetention.js";
 import { ensureDirs, DATA_FILE } from "./paths.js";
 import { stripNullBytes } from "./helpers/nullBytes.js";
 
@@ -75,7 +76,7 @@ function withNullByteSafeParams(adapter) {
   const clean = (params) => (Array.isArray(params) ? params.map(stripNullBytes) : params);
   return {
     ...adapter,
-    run: (sql, params = []) => adapter.run(sql, clean(params)),
+    run: (sql, params = [], options) => adapter.run(sql, clean(params), options),
     get: (sql, params = []) => adapter.get(sql, clean(params)),
     all: (sql, params = []) => adapter.all(sql, clean(params)),
   };
@@ -100,7 +101,11 @@ async function initAdapter() {
   }
 
   const { runMigrationOnce } = await import("./migrate.js");
-  await runMigrationOnce(adapter);
+  try { await runMigrationOnce(adapter); }
+  catch (error) { adapter.close(); throw error; }
+  const timer = startLogMaintenance(adapter);
+  const close = adapter.close;
+  adapter.close = () => { clearInterval(timer); close(); };
   return adapter;
 }
 

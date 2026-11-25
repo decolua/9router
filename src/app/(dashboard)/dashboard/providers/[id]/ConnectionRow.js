@@ -4,15 +4,26 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
+import { useDashboardRole } from "@/shared/hooks/useDashboardRole";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+const healthLabels = { healthy: "Healthy", degraded: "Degraded", rate_limited: "Rate limited",
+  needs_reauth: "Reauthorization required", unavailable: "Unavailable", disabled: "Disabled", unknown: "Unknown" };
+
+export default function ConnectionRow({ health, connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+  const role = useDashboardRole()?.role;
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
   const proxyBtnRef = useRef(null);
   const [proxyDropdownStyle, setProxyDropdownStyle] = useState(null);
+
+  const linkedKeysBadge = (
+    <Badge size="sm">
+      <span>Linked keys</span>: {connection.pinnedKeyCount}
+    </Badge>
+  );
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
@@ -211,6 +222,22 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
           )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+            {health && (
+              <Tooltip text={<span><span>Last error category</span>: {health.lastErrorCategory ?? <span>Unknown</span>} · <span>Rate limit reset</span>: {health.rateLimitResetAt ?? <span>Unknown</span>}</span>}>
+                <Badge size="sm" variant={health.state === "healthy" ? "success" : "default"}>{healthLabels[health.state]}</Badge>
+              </Tooltip>
+            )}
+            {role === "admin" && Number.isInteger(connection.pinnedKeyCount) && (
+              connection.pinnedKeys?.length ? (
+                <Tooltip text={(
+                  <ul data-i18n-skip>
+                    {connection.pinnedKeys.map(key => <li key={key.id}>{key.name}</li>)}
+                  </ul>
+                )}>
+                  {linkedKeysBadge}
+                </Tooltip>
+              ) : linkedKeysBadge
+            )}
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
@@ -331,11 +358,17 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
 }
 
 ConnectionRow.propTypes = {
+  health: PropTypes.object,
   connection: PropTypes.shape({
     id: PropTypes.string,
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
+    pinnedKeyCount: PropTypes.number,
+    pinnedKeys: PropTypes.arrayOf(PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      name: PropTypes.string.isRequired,
+    })),
     modelLockUntil: PropTypes.string,
     testStatus: PropTypes.string,
     isActive: PropTypes.bool,
