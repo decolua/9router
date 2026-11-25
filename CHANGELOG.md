@@ -4,6 +4,8 @@
 - **QwenWork**: add QwenWork (千问办公) on the Qoder COSY protocol — the public cloud (`qwenwork`, gateway.qwenwork.cn) and the enterprise flagship (`qwenwork-enterprise`). The public cloud signs with QwenWork's desktop client identity (ClientType 6, IDE 1.1.59), reads its quota from the account-context API, and has no PAT. The enterprise flagship asks for the company domain at sign-in (https-only, host-only input; bare IPs, ports, paths and `localhost`/`.local`/`.internal` names are refused), sends no `redirect_uri` on its device flow, and routes every runtime request — chat, model list, token refresh, usage — to that domain, so the enterprise's tokens never leave it; when its catalog service answers 503 the built-in model list (`flash`/`pro`/`qwen3.8-max-preview`) is served instead, and an expired device token refreshes through `/api/v1/deviceToken/refresh` instead of lapsing the account.
 
 ## Fixes
+- **QwenWork**: send the built-in COSY scene and business headers for both editions, resolve chat models from the site's `qwork` catalog, and fix enterprise OAuth registration, account naming and quota lookup. Show both editions together on the Providers page with the desktop app icon.
+- **QwenWork Enterprise**: show the connected account's live model catalog on the provider detail page, using the static list when the live catalog is unavailable.
 - **CodeBuddy CN**: preserve system prompt content instead of rewriting it; keep normalizing the `developer` role to `system`.
 # v0.5.123 (2026-11-22)
 

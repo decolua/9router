@@ -36,7 +36,7 @@ const MCODE_LEASE_PROVIDERS = new Set(["minimax-code", "minimax-code-global"]);
 // Providers whose registry list is only an offline fallback: the dashboard
 // renders the live per-connection catalog from GET /api/providers/[id]/models
 // when one resolves, and falls back to the static rows otherwise.
-const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode", "antigravity"]);
+const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode", "antigravity", "qwenwork-enterprise"]);
 
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
@@ -497,6 +497,8 @@ export default function ProviderDetailPage() {
       return;
     }
 
+    const enterprisePrefix = providerId === "qwenwork-enterprise" ? `${providerId}/` : null;
+    if (enterprisePrefix) setLiveModels([]);
     const connection = connections.find((item) => item.isActive !== false);
     if (!connection?.id) {
       setLiveModels([]);
@@ -511,7 +513,12 @@ export default function ProviderDetailPage() {
       .then(({ ok, data }) => {
         if (cancelled) return;
         if (ok && Array.isArray(data?.models) && data.models.length > 0) {
-          setLiveModels(data.models);
+          // QwenWork's resolver returns qualified IDs; rows add the alias themselves.
+          setLiveModels(enterprisePrefix
+            ? data.models.map((model) => model.id.startsWith(enterprisePrefix)
+              ? { ...model, id: model.id.slice(enterprisePrefix.length) }
+              : model)
+            : data.models);
           if (providerId === "zed" && data?.warning) setLiveModelsError(data.warning);
           return;
         }

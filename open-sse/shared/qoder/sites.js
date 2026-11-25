@@ -9,7 +9,11 @@
  *   id         unique provider id ("qoder", "qoder-cn", …)
  *   bases      per-site gateway hosts (see QODER_REGION_BASES for the shape)
  *   cosy       COSY header/signing overrides (undefined ⇒ Qoder IDE defaults
- *              from constants.js; rsaPublicKey currently shared by all sites)
+ *              from constants.js; rsaPublicKey currently shared by all sites).
+ *              QwenWork sites add modelScene / businessProduct; Qoder leaves
+ *              both undefined ⇒ "app" / the `chat` listing
+ *              modelScene drives both the Cosy-Scene header and the
+ *              /algo/api/v2/model/list array this site reads its catalog from
  *   deviceFlow device-flow specifics: redirectUri (null ⇒ omit redirect_uri)
  *   catalog    model catalog fallback (503) and site-specific model list path
  *   usage      quota endpoint: kind "quotaApi" (default) or "accountContext";
@@ -77,6 +81,8 @@ export const QODER_SITE_QWENWORK = Object.freeze({
     // rsaPublicKey is the same RSA key as Qoder's.
     clientType: "6",
     ideVersion: "1.1.59",
+    modelScene: "qwork",
+    businessProduct: "qoder_work",
     rsaPublicKey: QODER_RSA_PUBLIC_KEY,
   }),
   deviceFlow: Object.freeze({ redirectUri: "qwenwork-cn://" }),
@@ -113,6 +119,8 @@ export const QODER_SITE_QWENWORK_ENTERPRISE = Object.freeze({
     // Same clientId/COSY values as the public cloud (magpie PR #319).
     clientType: "6",
     ideVersion: "1.1.59",
+    modelScene: "qwork",
+    businessProduct: "qoder_work",
     rsaPublicKey: QODER_RSA_PUBLIC_KEY,
   }),
   // 企业旗舰版 /device/selectAccounts 拒绝 redirect_uri；真实主机在登录时

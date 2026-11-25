@@ -219,7 +219,7 @@ export async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = n
   const headers = {
     Accept: "application/json",
     "Accept-Encoding": "identity",
-    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds, { site: site?.cosy }),
+    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds, { site: siteObj.cosy }),
   };
 
   const controller = new AbortController();
@@ -257,19 +257,28 @@ export async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = n
   // answers 503 "Model catalog is unavailable") falls back to the site's
   // built-in list. Any other status — 500 included — stays a hard miss so
   // a transient server error isn't masked by stale fallback data.
-  if (response.status === 503 && site?.catalog?.fallbackModels) {
-    return { models: null, rawConfigs: null, fallback: site.catalog.fallbackModels };
+  if (response.status === 503 && siteObj.catalog?.fallbackModels) {
+    return { models: null, rawConfigs: null, fallback: siteObj.catalog.fallbackModels };
   }
   if (!response.ok) return null;
-
   const body = await response.json().catch(() => null);
-  if (!body || !Array.isArray(body.chat)) return null;
+  // The listing array is chosen per site: a site whose cosy block declares
+  // `modelScene` (QwenWork ⇒ "qwork") reads that scene; sites without one
+  // (Qoder) read `chat`. The same field names the Cosy-Scene header
+  // (buildCosyHeaders), so one value drives both. A missing array makes the
+  // catalog unusable, an empty one is a valid empty listing.
+  // "auto"/"default"/"" are routing aliases, not models.
+  const scene = typeof siteObj?.cosy?.modelScene === "string" && siteObj.cosy.modelScene ? siteObj.cosy.modelScene : null;
+  const entries = scene
+    ? (Array.isArray(body?.[scene]) ? body[scene] : [])
+    : (Array.isArray(body?.chat) ? body.chat : null);
+  if (!entries) return null;
   const models = [];
   const rawConfigs = new Map();
-  for (const entry of body.chat) {
+  for (const entry of entries) {
     if (!entry || typeof entry !== "object") continue;
-    const key = entry.key;
-    if (!key) continue;
+    const key = typeof entry.key === "string" ? entry.key.trim() : "";
+    if (!key || key === "auto" || key === "default") continue;
 
     // enable:false 的模型仍可在 IDE 使用，保留其配置并展示上游名称。
     rawConfigs.set(key, entry);

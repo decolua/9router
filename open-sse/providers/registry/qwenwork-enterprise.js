@@ -6,7 +6,7 @@
 // enterpriseHost (see shared/qoder/sites.js qoderInferenceBaseForSite).
 export default {
   id: "qwenwork-enterprise",
-  priority: 30,
+  priority: 117,
   alias: "qwwe",
   uiAlias: "qwwe",
   display: {
