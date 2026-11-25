@@ -135,6 +135,18 @@ export function tryParseJSON(str) {
   return safeParseJSON(str, null);
 }
 
+// OpenAI tool message content for a Gemini functionResponse.response (a Struct).
+// Gemini CLI wraps the tool's text as `{ output }`: pass that text through instead
+// of JSON-encoding the wrapper. `{ result }` unwraps to its JSON value; presence is
+// checked so falsy results (0, false, "", null) are not replaced by the wrapper.
+export function functionResponseToToolContent(response) {
+  const payload = response && typeof response === "object" && !Array.isArray(response) ? response : {};
+  if (Object.hasOwn(payload, "output")) {
+    return typeof payload.output === "string" ? payload.output : JSON.stringify(payload.output ?? null);
+  }
+  return JSON.stringify((Object.hasOwn(payload, "result") ? payload.result : payload) ?? null);
+}
+
 // Generate request ID
 export function generateRequestId() {
   return `agent-${crypto.randomUUID()}`;

@@ -213,7 +213,10 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
           for (const tc of msg.tool_calls) {
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
-            const args = tryParseJSON(tc.function?.arguments || "{}");
+            // Gemini args must be an object; keep malformed arguments instead of sending null.
+            const rawArgs = tc.function?.arguments || "{}";
+            const parsedArgs = tryParseJSON(rawArgs);
+            const args = parsedArgs && typeof parsedArgs === "object" && !Array.isArray(parsedArgs) ? parsedArgs : { _raw: rawArgs };
             const cachedSig = tc.id ? getGeminiThoughtSignatureSync(tc.id, sessionId, model) : null;
             // First call gets cached signature or fallback; sibling calls remain unsigned if no cached sig
             const callSig = cachedSig || (!firstFunctionCallSeen ? signature : undefined);

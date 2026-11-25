@@ -5,6 +5,7 @@ import {
   openaiToAntigravityRequest,
   openaiToGeminiRequest,
 } from "../../open-sse/translator/request/openai-to-gemini.js";
+import { geminiToOpenAIRequest } from "../../open-sse/translator/request/gemini-to-openai.js";
 import { geminiToOpenAIResponse } from "../../open-sse/translator/response/gemini-to-openai.js";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 
@@ -168,7 +169,114 @@ describe("Responses custom-tool metadata across provider translators", () => {
 
 });
 
-describe("Gemini-family tool names", () => {
+describe("Gemini-family tool output decoding", () => {
+  it("passes Gemini CLI output text through and keeps falsy result values", () => {
+    const cases = [
+      [{ output: "plain text" }, "plain text"],
+      [{ output: '"JSON string"' }, '"JSON string"'],
+      [{ output: "0" }, "0"],
+      [{ output: "false" }, "false"],
+      [{ output: "null" }, "null"],
+      [{ output: "" }, ""],
+      [{ output: { value: 1 } }, '{"value":1}'],
+      [{ result: "plain text" }, '"plain text"'],
+      [{ result: 0 }, "0"],
+      [{ result: false }, "false"],
+      [{ result: "" }, '""'],
+      [{ result: null }, "null"],
+      [{ value: 1 }, '{"value":1}'],
+    ];
+
+    const actual = cases.map(([response], index) => {
+      const decoded = geminiToOpenAIRequest("gemini-2.5-pro", {
+        contents: [{
+          role: "user",
+          parts: [{
+            functionResponse: {
+              id: `call_${index}`,
+              name: "lookup",
+              response,
+            },
+          }],
+        }],
+      }, true);
+      return decoded.messages[0]?.content;
+    });
+
+    expect(actual).toEqual(cases.map(([, expected]) => expected));
+  });
+});
+
+describe("Gemini-family tool history integrity", () => {
+  it("pairs parallel idless calls by occurrence instead of collapsing same-name calls", () => {
+    const decoded = geminiToOpenAIRequest("gemini-2.5-pro", {
+      contents: [
+        {
+          role: "model",
+          parts: [
+            { functionCall: { name: "search", args: { query: "first" } } },
+            { functionCall: { name: "search", args: { query: "second" } } },
+          ],
+        },
+        {
+          role: "user",
+          parts: [{ functionResponse: { name: "search", response: { output: "one" } } }],
+        },
+        {
+          role: "user",
+          parts: [{ functionResponse: { name: "search", response: { output: "two" } } }],
+        },
+      ],
+    }, true);
+
+    const assistant = decoded.messages.find((message) => message.tool_calls);
+    const callIds = assistant?.tool_calls?.map((call) => call.id) || [];
+    const toolIds = decoded.messages
+      .filter((message) => message.role === "tool")
+      .map((message) => message.tool_call_id);
+
+    expect({
+      callCount: callIds.length,
+      distinctCallCount: new Set(callIds).size,
+      toolCount: toolIds.length,
+      pairedInOrder: JSON.stringify(toolIds) === JSON.stringify(callIds),
+    }).toEqual({
+      callCount: 2,
+      distinctCallCount: 2,
+      toolCount: 2,
+      pairedInOrder: true,
+    });
+  });
+
+  it("does not silently replace malformed tool arguments with null or an empty value", () => {
+    const translated = openaiToGeminiRequest("gemini-2.5-pro", {
+      messages: [
+        { role: "user", content: "Run the tool" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{
+            id: "call_bad",
+            type: "function",
+            function: { name: "lookup", arguments: "{bad" },
+          }],
+        },
+      ],
+    }, true);
+    const functionCall = translated.contents
+      .flatMap((content) => content.parts || [])
+      .find((part) => part.functionCall)
+      ?.functionCall;
+
+    expect({
+      isNull: functionCall?.args === null,
+      retainsRawInput: JSON.stringify(functionCall?.args).includes("{bad"),
+    }).toEqual({
+      isNull: false,
+      retainsRawInput: true,
+    });
+  });
+
   it("keeps colliding Antigravity-Claude tool names unique through executor normalization", () => {
     const translated = openaiToAntigravityRequest("claude-sonnet-4-5", {
       messages: [{ role: "user", content: "test" }],
