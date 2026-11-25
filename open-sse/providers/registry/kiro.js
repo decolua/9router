@@ -29,8 +29,6 @@ export default {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/vnd.amazon.eventstream",
-      "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
-      "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
     },
     tokenUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
     authUrl: "https://prod.us-east-1.auth.desktop.kiro.dev",

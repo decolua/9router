@@ -1,3 +1,5 @@
+import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
+
 const BASE64_BLOCK_SIZE = 4;
 
 function validateXaiOAuthEndpoint(rawUrl, field) {
@@ -59,6 +61,7 @@ export async function fetchKiroProfileArn(accessToken) {
         "Content-Type": "application/json",
         Accept: "application/json",
         Authorization: `Bearer ${accessToken}`,
+        ...buildKiroIdentityHeaders({ accessToken }),
       },
       body: JSON.stringify({ maxResults: 10 }),
     });
