@@ -262,7 +262,10 @@ export function normalizeClaudePassthrough(body, model = "") {
 
       // Copy-on-write: the caller's body is reused across account-fallback
       // attempts, so folding must never mutate the original message.
-      const block = { type: CLAUDE_BLOCK.TEXT, text };
+      // Keep the client's marker on the folded text: anchorClaudeCache reads its TTL
+      // (Claude Code puts its 1h message breakpoint on this trailing system turn).
+      const marker = Array.isArray(msg.content) ? msg.content.findLast((b) => b?.cache_control)?.cache_control : null;
+      const block = { type: CLAUDE_BLOCK.TEXT, text, ...(marker ? { cache_control: { ...marker } } : {}) };
       const prev = messages[messages.length - 1];
       if (prev?.role === ROLE.USER) {
         const content = typeof prev.content === "string"
@@ -358,15 +361,27 @@ export function ensureTrailingUserTurn(messages, originalLastRole) {
   return [...messages, { role: ROLE.USER, content: [{ type: CLAUDE_BLOCK.TEXT, text: TRAILING_USER_PLACEHOLDER }] }];
 }
 
-// Put a 5m breakpoint on the last cache-eligible block of a message.
+// Claude Code asks for a 1h TTL on its message breakpoints. Re-anchoring drops the
+// client's markers, so carry its TTL over: a 5m tail expires during any pause and the
+// whole conversation is written to the cache again. Read before markers are stripped.
+function clientMessageCacheControl(messages) {
+  if (!Array.isArray(messages)) return CACHE_CONTROL_5M;
+  for (const msg of messages) {
+    const blocks = Array.isArray(msg?.content) ? msg.content : [msg?.content];
+    if (blocks.some((b) => b?.cache_control?.ttl === "1h")) return CACHE_CONTROL_1H;
+  }
+  return CACHE_CONTROL_5M;
+}
+
+// Put a breakpoint (5m unless the client asked for 1h) on the last cache-eligible block of a message.
 // thinking/redacted_thinking blocks do not accept cache_control.
-function markLastCacheableBlock(msg) {
+function markLastCacheableBlock(msg, cacheControl = CACHE_CONTROL_5M) {
   if (!Array.isArray(msg?.content)) return false;
   for (let i = msg.content.length - 1; i >= 0; i--) {
     const block = msg.content[i];
     if (typeof block !== "object" || block === null) continue;
     if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) continue;
-    block.cache_control = { ...CACHE_CONTROL_5M };
+    block.cache_control = { ...cacheControl };
     return true;
   }
   return false;
@@ -377,14 +392,14 @@ function markLastCacheableBlock(msg) {
 // full input price, and the next request (which appends to them) writes them
 // into the cache. When the 4-marker budget has room, a 5m breakpoint on that
 // final user turn caches them now, and the next request reads them.
-function markFinalToolResults(body) {
+function markFinalToolResults(body, cacheControl = CACHE_CONTROL_5M) {
   const messages = body?.messages;
   const last = Array.isArray(messages) ? messages[messages.length - 1] : null;
   if (last?.role !== ROLE.USER || !Array.isArray(last.content)) return false;
   if (!last.content.some((block) => block?.type === CLAUDE_BLOCK.TOOL_RESULT)) return false;
   if (last.content.some((block) => block?.cache_control)) return false;
   if (countCacheControlBlocks(body) >= 4) return false;
-  return markLastCacheableBlock(last);
+  return markLastCacheableBlock(last, cacheControl);
 }
 
 // Re-anchor cache breakpoints on a Claude passthrough body (same policy as
@@ -394,6 +409,7 @@ function markFinalToolResults(body) {
 // (normalize, tool dedupe, token savers) — otherwise the anchor drifts off the tail.
 export function anchorClaudeCache(body) {
   if (!body || typeof body !== "object") return body;
+  const messageCacheControl = clientMessageCacheControl(body.messages);
   if (Array.isArray(body.messages)) {
     for (const msg of body.messages) normalizeMessageContent(msg);
   }
@@ -446,19 +462,19 @@ export function anchorClaudeCache(body) {
       // Prefer the last assistant turn: it ends a completed exchange, so the
       // prefix up to it stays byte-stable across the following requests.
       if (anchored || msg.role !== ROLE.ASSISTANT) continue;
-      anchored = markLastCacheableBlock(msg);
+      anchored = markLastCacheableBlock(msg, messageCacheControl);
     }
 
     // First turn of a conversation has no assistant yet — anchor the final
     // message instead, so the opening prompt is cached rather than paid twice.
     if (!anchored) {
       for (let i = body.messages.length - 1; i >= 0 && !anchored; i--) {
-        anchored = markLastCacheableBlock(body.messages[i]);
+        anchored = markLastCacheableBlock(body.messages[i], messageCacheControl);
       }
     }
 
     // ...and a tool loop's final tool results, so the next step reads them.
-    markFinalToolResults(body);
+    markFinalToolResults(body, messageCacheControl);
   }
 
   return body;
@@ -558,6 +574,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   }
 
   // 2. Messages: process in optimized passes
+  const messageCacheControl = clientMessageCacheControl(body.messages);
   if (body.messages && Array.isArray(body.messages)) {
     const len = body.messages.length;
     const originalLastRole = body.messages[len - 1]?.role;
@@ -617,7 +634,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           for (let j = msg.content.length - 1; j >= 0; j--) {
             const block = msg.content[j];
             if (block.type !== CLAUDE_BLOCK.THINKING && block.type !== CLAUDE_BLOCK.REDACTED_THINKING) {
-              block.cache_control = { type: "ephemeral" };
+              block.cache_control = { ...messageCacheControl };
               break;
             }
           }
@@ -736,7 +753,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   }
 
   // A tool loop's final tool results: cached now, so the next step reads them.
-  markFinalToolResults(body);
+  markFinalToolResults(body, messageCacheControl);
 
   // Apply cloaking for OAuth tokens (billing header + fake user ID)
   // session_id in user_id must match X-Claude-Code-Session-Id for fingerprint consistency
