@@ -535,6 +535,22 @@ button:disabled,
   animation: topology-edge-dash 0.18s linear infinite, topology-edge-flicker 0.22s steps(3) infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .topology-router-core,
+  .topology-router-icon,
+  .topology-router-label,
+  .topology-edge-kame,
+  .topology-edge-halo,
+  .topology-edge-plasma {
+    animation: none;
+  }
+
+  /* SMIL particles ignore CSS animation; hide them instead */
+  .topology-edge-electric circle {
+    display: none;
+  }
+}
+
 /* React Flow controls: match app theme */
 .react-flow-controls-custom {
   background: var(--color-surface);

@@ -1,6 +1,8 @@
 // Provider icon paths under /public/providers.
 // Alias related brands; session-cache 404s so one miss never spams again.
 
+import { isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
+
 const ICON_ALIASES = {
   "perplexity-agent": "perplexity",
   "gitlab-duo": "gitlab",
@@ -40,6 +42,15 @@ export function resolveProviderIconId(providerId) {
 export function getProviderIconSrc(providerId) {
   const id = resolveProviderIconId(providerId);
   return id ? `/providers/${id}.png` : null;
+}
+
+/** Icon for display: compatible nodes use the shared OpenAI/Anthropic-compatible marks. */
+export function getProviderDisplayIconSrc(providerId, apiType) {
+  if (isOpenAICompatibleProvider(providerId)) {
+    return apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
+  }
+  if (isAnthropicCompatibleProvider(providerId)) return "/providers/anthropic-m.png";
+  return getProviderIconSrc(providerId);
 }
 
 /** Call from img onError so later mounts skip the request. */
