@@ -10,8 +10,8 @@ vi.mock("open-sse/services/inferenceError.js", () => ({ classifyInferenceError: 
 vi.mock("../../src/lib/db/repos/usageRepo.js", () => ({ saveRequestUsage: mocks.saveRequestUsage }));
 
 const { inferenceRoute } = await import("../../src/lib/observability/inferenceRoute.js");
-const { usageTrace } = await import("../../src/lib/observability/requestContext.js");
-const { getLiveRoutesSnapshot, resetLiveRoutes } = await import("../../src/lib/observability/liveRoutes.js");
+const { bindInference, currentInference, usageTrace } = await import("../../src/lib/observability/requestContext.js");
+const { endLiveRoute, getLiveRoutesSnapshot, resetLiveRoutes } = await import("../../src/lib/observability/liveRoutes.js");
 
 function request(path = "/v1/chat/completions", signal) {
   return new Request(`http://localhost${path}`, {
@@ -46,5 +46,19 @@ describe("inferenceRoute live route integration", () => {
     await reader.read();
     await reader.cancel("client disconnected");
     expect(getLiveRoutesSnapshot()[0].status).toBe("error");
+  });
+
+  it("closes a stalled stream from the stream-error hook even if the response never ends", async () => {
+    // Mirrors chat.js: the stall watchdog reports through a callback bound to the request.
+    let reportStall;
+    const route = inferenceRoute(async () => {
+      reportStall = bindInference(() => endLiveRoute(currentInference(), { status: "error" }));
+      return new Response(new ReadableStream({ start() {} }), { headers: { "content-type": "text/event-stream" } });
+    });
+    await route(request("/v1/responses"));
+    expect(getLiveRoutesSnapshot()[0].status).toBe("running");
+    reportStall();
+    expect(getLiveRoutesSnapshot()[0].status).toBe("error");
+    expect(mocks.saveRequestUsage).not.toHaveBeenCalled();
   });
 });

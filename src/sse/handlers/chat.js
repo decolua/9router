@@ -1,5 +1,5 @@
 import { bindInference, currentInference, noteAttempt } from "@/lib/observability/requestContext.js";
-import { updateLiveRoute } from "@/lib/observability/liveRoutes.js";
+import { endLiveRoute, updateLiveRoute } from "@/lib/observability/liveRoutes.js";
 import { observeConnection } from "@/lib/observability/providerHealth.js";
 import { classifyInferenceError } from "open-sse/services/inferenceError.js";
 import { inferenceRoute } from "@/lib/observability/inferenceRoute.js";
@@ -343,6 +343,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           if (trace.connectionId !== credentials.connectionId || trace.model !== model) return;
           trace.failure = classifyInferenceError({ error });
           void observeConnection(credentials.connectionId, trace.failure);
+          // The stall watchdog and upstream errors land here even when the client
+          // stream never closes, so the live route must not wait for usage to be saved.
+          endLiveRoute(trace, { status: "error" });
         }),
         body: { ...body, model: `${provider}/${model}` },
         modelInfo: { provider, model },
