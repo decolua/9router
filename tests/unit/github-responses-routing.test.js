@@ -5,8 +5,18 @@
  * fail with a misleading 400 "does not support Responses API".
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { GithubExecutor } from "../../open-sse/executors/github.js";
+import { proxyAwareFetch } from "../../open-sse/utils/proxyFetch.js";
+
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: vi.fn(),
+}));
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.resetAllMocks();
+});
 
 describe("GithubExecutor.supportsResponsesEndpoint", () => {
   const exec = new GithubExecutor();
@@ -52,5 +62,72 @@ describe("GithubExecutor.execute cached-route guard (#1062)", () => {
     expect(respSpy).not.toHaveBeenCalled();
     expect(baseSpy).toHaveBeenCalled();
     expect(result.via).toBe("chat");
+  });
+
+});
+
+describe("GithubExecutor unsupported params on upstream routes", () => {
+  const cases = ["gpt-5.4", "gpt-6.1-sol"].flatMap(model =>
+    ["chat", "fallback", "cached"].map(route => ({ model, route }))
+  );
+
+  it.each(cases)("strips temperature for $model on the $route route", async ({ model, route }) => {
+    const exec = new GithubExecutor();
+    const body = {
+      model,
+      messages: [{ role: "user", content: "hello" }],
+      temperature: 0.7,
+    };
+    if (route === "cached") exec.knownCodexModels.add(model);
+    if (route === "fallback") {
+      proxyAwareFetch.mockResolvedValueOnce(new Response(
+        JSON.stringify({ error: { message: "not accessible via the /chat/completions endpoint" } }),
+        { status: 400 }
+      ));
+    }
+    proxyAwareFetch.mockResolvedValueOnce(new Response("data: [DONE]\n\n", { status: 200 }));
+
+    const result = await exec.execute({
+      model, body, stream: true, credentials: { accessToken: "test-token" },
+    });
+
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(route === "fallback" ? 2 : 1);
+    for (const [, options] of proxyAwareFetch.mock.calls) {
+      const sent = JSON.parse(options.body);
+      expect(sent).not.toHaveProperty("temperature");
+      expect(sent.model).toBe(model);
+    }
+    expect(result.url).toBe(route === "chat" ? exec.config.baseUrl : exec.config.responsesUrl);
+    expect(body.temperature).toBe(0.7);
+    if (route !== "chat") {
+      expect(result.transformedBody.input).toEqual([{
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "hello" }],
+      }]);
+    }
+  });
+
+  it.each([
+    { model: "gpt-6.1-sol", stripTemperature: true },
+    { model: "gpt-5.3-codex", stripTemperature: false },
+  ])("filters an already-Responses-format request for $model", async ({ model, stripTemperature }) => {
+    const exec = new GithubExecutor();
+    exec.knownCodexModels.add(model);
+    const body = {
+      input: [{ role: "user", content: "hello" }],
+      temperature: 0.7,
+      max_output_tokens: 1024,
+    };
+    proxyAwareFetch.mockResolvedValueOnce(new Response("data: [DONE]\n\n", { status: 200 }));
+
+    await exec.execute({ model, body, stream: true, credentials: { accessToken: "test-token" } });
+
+    const sent = JSON.parse(proxyAwareFetch.mock.calls[0][1].body);
+    if (stripTemperature) expect(sent).not.toHaveProperty("temperature");
+    else expect(sent.temperature).toBe(0.7);
+    expect(sent.input).toEqual(body.input);
+    expect(sent.max_output_tokens).toBe(1024);
+    expect(body.temperature).toBe(0.7);
   });
 });

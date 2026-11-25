@@ -169,6 +169,7 @@ export class GithubExecutor extends BaseExecutor {
     const headers = this.buildHeaders(credentials, stream);
 
     const transformedBody = openaiToOpenAIResponsesRequest(model, body, stream, credentials);
+    stripUnsupportedParams("github", model, transformedBody);
 
     log?.debug("GITHUB", "Sending translated request to /responses");
 
