@@ -86,9 +86,9 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
 });
 
 describe("forced-SSE JSON path for a Responses-API client behind a chat upstream", () => {
-  const sseCtx = (sourceFormat, targetFormat) => {
+  const sseCtx = (sourceFormat, targetFormat, rawOverride = null) => {
     const encoder = new TextEncoder();
-    const raw = [
+    const raw = rawOverride || [
       'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_9","type":"function","function":{"name":"shell","arguments":""}}]},"finish_reason":null}]}',
       'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"cmd\\":\\"pwd\\"}"}}]},"finish_reason":null}]}',
       'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
@@ -144,5 +144,33 @@ describe("forced-SSE JSON path for a Responses-API client behind a chat upstream
     const json = await result.response.json();
     expect(json.object).toBe("chat.completion");
     expect(json.choices[0].message.tool_calls[0].function.name).toBe("shell");
+  });
+
+  it("rejects an SSE error envelope without notifying success", async () => {
+    const onRequestSuccess = vi.fn();
+    const raw = [
+      `data: ${JSON.stringify({ error: { message: "overloaded" } })}`,
+      "",
+    ].join("\n\n");
+    const ctx = sseCtx(FORMATS.OPENAI, FORMATS.OPENAI, raw);
+    ctx.onRequestSuccess = onRequestSuccess;
+
+    const result = await handleForcedSSEToJson(ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.errorKind).toBe("upstream_payload_error");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("rejects EOF without finish_reason or [DONE]", async () => {
+    const raw = [
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: null }] })}`,
+      "",
+    ].join("\n\n");
+    const result = await handleForcedSSEToJson(sseCtx(FORMATS.OPENAI, FORMATS.OPENAI, raw));
+
+    expect(result.success).toBe(false);
+    expect(result.errorKind).toBe("upstream_incomplete");
   });
 });

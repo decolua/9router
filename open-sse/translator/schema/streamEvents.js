@@ -5,6 +5,7 @@ export const CLAUDE_EVENT = {
   CONTENT_BLOCK_START: "content_block_start",
   CONTENT_BLOCK_DELTA: "content_block_delta",
   MESSAGE_DELTA: "message_delta",
+  MESSAGE_STOP: "message_stop",
 };
 
 // Anthropic content_block_delta delta types.
@@ -23,7 +24,13 @@ export const RESPONSES_EVENT = {
   OUTPUT_TEXT_DONE: "response.output_text.done",
   FUNCTION_CALL_ARGUMENTS_DELTA: "response.function_call_arguments.delta",
   CUSTOM_TOOL_CALL_INPUT_DELTA: "response.custom_tool_call_input.delta",
+  REASONING_TEXT_DELTA: "response.reasoning_text.delta",
+  REASONING_SUMMARY_TEXT_DELTA: "response.reasoning_summary_text.delta",
   COMPLETED: "response.completed",
+  DONE: "response.done",
   INCOMPLETE: "response.incomplete",
   FAILED: "response.failed",
 };
+
+// In-stream error event name shared by the Responses API and Anthropic Messages.
+export const STREAM_ERROR_EVENT = "error";

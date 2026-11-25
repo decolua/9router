@@ -4,6 +4,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getExecutor } from "../executors/index.js";
 import { getImageAdapter } from "./imageProviders/index.js";
 import { urlToBase64 } from "./imageProviders/_base.js";
+import { evaluateImageJson, OUTCOME_ERROR, outcomeErrorResult } from "../utils/upstreamOutcome.js";
 
 function serializeRequestBody(requestBody) {
   if (typeof FormData !== "undefined" && requestBody instanceof FormData) return requestBody;
@@ -57,9 +58,11 @@ export async function handleImageGenerationCore({
     try {
       log?.debug?.("IMAGE", `${provider.toUpperCase()} | ${model} | prompt="${body.prompt.slice(0, 50)}..." (executor)`);
       const responseBody = await adapter.executeViaExecutor(model, body, credentials, log);
-      if (onRequestSuccess) await onRequestSuccess();
       const normalized = adapter.normalize(responseBody, body.prompt);
       const finalBody = (normalized.created && Array.isArray(normalized.data)) ? normalized : responseBody;
+      const outcome = evaluateImageJson(finalBody);
+      if (!outcome.ok) return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, outcome.message, outcome.errorKind);
+      if (onRequestSuccess) await onRequestSuccess();
 
       if (binaryOutput) {
         const first = finalBody.data?.[0];
@@ -211,13 +214,22 @@ export async function handleImageGenerationCore({
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parseError.message || `Invalid response from ${provider}`);
   }
 
-  if (onRequestSuccess) await onRequestSuccess();
-
   // Normalize → OpenAI-compatible shape
-  const normalized = adapter.normalize(parsed, body.prompt);
+  let normalized;
+  try {
+    normalized = adapter.normalize(parsed, body.prompt);
+  } catch (error) {
+    return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, error.message || `Invalid response from ${provider}`, OUTCOME_ERROR.INVALID);
+  }
 
   // Already in OpenAI shape? skip re-normalize
   const finalBody = (normalized.created && Array.isArray(normalized.data)) ? normalized : parsed;
+
+  // An HTTP 200 error envelope or a body without any image is a failure: route it
+  // like an upstream error and leave the account state untouched.
+  const outcome = evaluateImageJson(finalBody);
+  if (!outcome.ok) return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, outcome.message, outcome.errorKind);
+  if (onRequestSuccess) await onRequestSuccess();
 
   // Binary output: decode first b64_json (or fetch url) into raw bytes
   if (binaryOutput) {

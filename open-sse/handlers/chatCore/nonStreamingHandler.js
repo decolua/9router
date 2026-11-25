@@ -13,6 +13,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { evaluateChatJson, OUTCOME_ERROR, outcomeErrorResult } from "../../utils/upstreamOutcome.js";
 
 /**
  * Convert an OpenAI Chat Completions non-streaming response body into the
@@ -239,9 +240,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
 
-  if (contentType.includes("text/event-stream")) {
+  const isSSE = contentType.includes("text/event-stream");
+  if (isSSE) {
     const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
+    const parsed = parseSSEToOpenAIResponse(sseText, model, { strict: true });
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
@@ -252,7 +254,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         ? upstreamStatus
         : HTTP_STATUS.BAD_GATEWAY;
       appendLog({ status: `FAILED ${status}` });
-      return createErrorResult(status, parsed.error.message || "Upstream SSE stream failed");
+      return outcomeErrorResult(status, parsed.error.message || "Upstream SSE stream failed", parsed.errorKind || OUTCOME_ERROR.PAYLOAD_ERROR);
     }
     responseBody = parsed;
   } else {
@@ -271,6 +273,29 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   responseBody = unwrapClineEnvelope(responseBody, provider);
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+
+  // HTTP 200 is not success on its own: an error envelope or a reply with no
+  // output is routed like an upstream error (502) so the account loop and combos
+  // can fall back, and the account is not marked healthy.
+  const outcome = evaluateChatJson(responseBody, isSSE ? FORMATS.OPENAI : targetFormat);
+  if (!outcome.ok) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, outcome.message, outcome.errorKind);
+  }
+
+  // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
+  responseBody = decloakToolNames(responseBody, toolNameMap);
+
+  let translatedResponse;
+  try {
+    translatedResponse = needsTranslation(targetFormat, sourceFormat)
+      ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+      : responseBody;
+  } catch (error) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, error?.message || "Failed to translate upstream response", OUTCOME_ERROR.INVALID);
+  }
+
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -279,17 +304,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       });
   }
 
-  // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
-  responseBody = decloakToolNames(responseBody, toolNameMap);
-
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
-
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
-    : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
   // `choices`; skip the Chat-Completions-specific post-processing below for it.

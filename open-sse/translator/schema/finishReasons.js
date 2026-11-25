@@ -21,6 +21,7 @@ export const CLAUDE_STOP = {
 
 // OpenAI Responses API terminal statuses and response.incomplete_details.reason values.
 export const RESPONSES_STATUS = {
+  IN_PROGRESS: "in_progress",
   COMPLETED: "completed",
   INCOMPLETE: "incomplete",
   FAILED: "failed",

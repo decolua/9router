@@ -4,7 +4,7 @@
 // dispatcher resolves baseUrl from the static registry entry
 // (`synthesizeViaConfig` reads `cfg.baseUrl`) and never looks at the connection,
 // which is exactly the limitation this provider exists to lift.
-import { Buffer } from "node:buffer";
+import { responseToBase64 } from "./_base.js";
 
 const DEFAULT_BASE_URL = "http://localhost:8880";
 const DEFAULT_MODEL = "kokoro";
@@ -63,7 +63,6 @@ export default {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error?.message || `Self-hosted TTS failed: ${res.status}`);
     }
-    const buf = await res.arrayBuffer();
-    return { base64: Buffer.from(buf).toString("base64"), format: responseFormat };
+    return responseToBase64(res, responseFormat);
   },
 };

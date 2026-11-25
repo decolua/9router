@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { getTtsAdapter, synthesizeViaConfig } from "./ttsProviders/index.js";
+import { evaluateAudioResult, outcomeErrorResult } from "../utils/upstreamOutcome.js";
 
 // Re-export voice fetchers + voices APIs for backward compat with existing routes
 export {
@@ -14,6 +15,9 @@ export {
 
 // ── Response Formatter (DRY) ───────────────────────────────────
 function createTtsResponse(base64Audio, format, responseFormat) {
+  // A 200 that carried no decodable audio is an upstream failure, not a success.
+  const outcome = evaluateAudioResult({ base64: base64Audio });
+  if (!outcome.ok) return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, outcome.message, outcome.errorKind);
   const audioBuffer = Buffer.from(base64Audio, "base64");
 
   // JSON format: return base64 encoded audio
@@ -70,6 +74,7 @@ export async function handleTtsCore({ provider, model, input, credentials, respo
 
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support TTS via this route.`);
   } catch (err) {
-    return createErrorResult(err.status || HTTP_STATUS.BAD_GATEWAY, err.message || "TTS synthesis failed");
+    const result = createErrorResult(err.status || HTTP_STATUS.BAD_GATEWAY, err.message || "TTS synthesis failed");
+    return err.errorKind ? { ...result, errorKind: err.errorKind } : result;
   }
 }

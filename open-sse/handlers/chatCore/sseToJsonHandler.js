@@ -8,6 +8,7 @@ import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { extractReasoningText } from "../../translator/concerns/reasoning.js";
+import { evaluateChatJson, OUTCOME_ERROR, outcomeErrorResult } from "../../utils/upstreamOutcome.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -111,31 +112,44 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
 /**
  * Parse OpenAI-style SSE text into a single chat completion JSON.
  * Used when provider forces streaming but client wants non-streaming.
+ *
+ * With `strict`, a malformed data line or a body that ends without a
+ * finish_reason or [DONE] is reported as an error ({ error, errorKind }) instead
+ * of being assembled into a truncated "successful" completion.
  */
-export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
+export function parseSSEToOpenAIResponse(rawSSE, fallbackModel, { strict = false } = {}) {
   const chunks = [];
   let streamError = null;
+  let doneSeen = false;
+  let malformedSeen = false;
 
   for (const line of String(rawSSE || "").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) continue;
     const payload = trimmed.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
+    if (!payload) continue;
+    if (payload === "[DONE]") {
+      doneSeen = true;
+      continue;
+    }
     try {
       const chunk = JSON.parse(payload);
       if (chunk?.error) streamError = chunk.error;
       else chunks.push(chunk);
-    } catch { /* ignore malformed lines */ }
+    } catch {
+      malformedSeen = true;
+    }
   }
 
   if (streamError) return { error: streamError };
+  if (strict && malformedSeen) return { error: { message: "Upstream SSE contained malformed JSON" }, errorKind: OUTCOME_ERROR.INVALID };
   if (chunks.length === 0) return null;
 
   const first = chunks[0];
   const contentParts = [];
   const reasoningParts = [];
   const toolCallMap = new Map(); // index -> { id, type, function: { name, arguments } }
-  let finishReason = "stop";
+  let finishReason = null;
   let usage = null;
 
   for (const chunk of chunks) {
@@ -171,12 +185,16 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     message.tool_calls = [...toolCallMap.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
   }
 
+  if (strict && !finishReason && !doneSeen) {
+    return { error: { message: "Upstream SSE ended without finish_reason or [DONE]" }, errorKind: OUTCOME_ERROR.INCOMPLETE };
+  }
+
   const result = {
     id: first.id || `chatcmpl-${Date.now()}`,
     object: "chat.completion",
     created: first.created || Math.floor(Date.now() / 1000),
     model: first.model || fallbackModel || "unknown",
-    choices: [{ index: 0, message, finish_reason: finishReason }]
+    choices: [{ index: 0, message, finish_reason: finishReason || "stop" }]
   };
   if (usage) result.usage = usage;
   return result;
@@ -207,6 +225,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      // Reject a failed, errored or truncated stream. A completed response with no
+      // output is still returned as an (empty) answer on this path.
+      const outcome = evaluateChatJson(jsonResponse, FORMATS.OPENAI_RESPONSES);
+      if (!outcome.ok && outcome.errorKind !== OUTCOME_ERROR.EMPTY) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, outcome.message, outcome.errorKind);
+      }
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
@@ -302,7 +327,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   // Standard Chat Completions SSE path
   try {
     const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
+    const parsed = parseSSEToOpenAIResponse(sseText, model, { strict: true });
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     if (parsed.error) {
       // Structured error chunks may carry the real upstream status (e.g. the
@@ -313,9 +338,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const status = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
         ? upstreamStatus
         : HTTP_STATUS.BAD_GATEWAY;
-      return createErrorResult(
+      return outcomeErrorResult(
         status,
-        parsed.error.message || "Upstream SSE stream failed"
+        parsed.error.message || "Upstream SSE stream failed",
+        parsed.errorKind || OUTCOME_ERROR.PAYLOAD_ERROR
       );
     }
 

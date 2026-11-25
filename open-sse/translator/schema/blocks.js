@@ -45,6 +45,8 @@ export const RESPONSES_ITEM = {
   INPUT_TEXT: "input_text",
   INPUT_IMAGE: "input_image",
   SUMMARY_TEXT: "summary_text",
+  IMAGE_GENERATION_CALL: "image_generation_call",
+  COMPUTER_CALL: "computer_call",
 };
 
 // Valid OpenAI block types (used by filterToOpenAIFormat).

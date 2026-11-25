@@ -1,7 +1,8 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } from "../../utils/stream.js";
-import { pipeWithDisconnect } from "../../utils/streamHandler.js";
+import { createOutcomeTrackingStream, createPrecommitStream, pipeWithDisconnect, streamFromPrecommit } from "../../utils/streamHandler.js";
+import { createStreamingOutcomeTracker, OUTCOME_ERROR, OUTCOME_STATE, outcomeErrorResult, supportsOutcome } from "../../utils/upstreamOutcome.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { HTTP_STATUS, STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
@@ -24,7 +25,7 @@ const CODEX_SOURCE_TO_TARGET = {
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
-function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials }) {
+function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials, outcomeTracker }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
   // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
   const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
@@ -32,30 +33,36 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
+    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials, outcomeTracker);
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
+    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials, outcomeTracker);
   }
 
   // The passthrough path has no format translation, so the fingerprint's tool
   // rename map (read -> read_client) has to be handed over explicitly —
   // otherwise the client receives a call to a tool it never declared (#4986).
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, toolNameMap);
+  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, toolNameMap, outcomeTracker);
 }
 
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log, credentials }) {
-  if (onRequestSuccess) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestSignal, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, appendLog, pxpipe, reqTag, log, credentials }) {
+  const notifySuccess = () => {
+    if (!onRequestSuccess) return;
     Promise.resolve()
       .then(onRequestSuccess)
       .catch(err => {
         console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
       });
-  }
+  };
+
+  // Streams in a dialect the outcome tracker understands are judged before and
+  // after commit; any other executor stream keeps the plain pass-through path.
+  const outcomeTracker = supportsOutcome(targetFormat) ? createStreamingOutcomeTracker({ format: targetFormat }) : null;
+  if (!outcomeTracker) notifySuccess();
 
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
@@ -63,7 +70,8 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // pull a short human-readable message from the <title>, sanitize it, and
   // return a clean JSON error instead. The message is stripped of HTML tags
   // and clamped so untrusted upstream text never reaches the client verbatim
-  // (the UI may render error.message as HTML).
+  // (the UI may render error.message as HTML). Nothing was sent yet, so this is
+  // a routable 502 rather than a success.
   const upstreamContentType = (providerResponse.headers.get('content-type') || '').toLowerCase();
   if (upstreamContentType && !upstreamContentType.includes('text/event-stream') && !upstreamContentType.includes('application/json')) {
     const bodyText = await providerResponse.text().catch(() => '');
@@ -71,20 +79,46 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
     const shortMsg = sanitizedTitle
       || (bodyText.length < 200 ? bodyText.replace(/<[^>]*>/g, '').trim().slice(0, 160) : `Upstream returned non-SSE response (${upstreamContentType})`);
-    const status = providerResponse.status || 502;
-    if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · non-SSE (${upstreamContentType})\n    ${shortMsg}`);
-    else console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${status}]`);
-    streamController?.handleError?.(new Error(`upstream non-SSE: ${status}`));
-    return {
-      success: false,
-      response: new Response(JSON.stringify({ error: { message: `[${status}]: ${shortMsg}` } }), {
-        status,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      }),
-    };
+    if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${HTTP_STATUS.BAD_GATEWAY} · ${provider}/${model} · non-SSE (${upstreamContentType})\n    ${shortMsg}`);
+    else console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${HTTP_STATUS.BAD_GATEWAY}]`);
+    streamController?.handleError?.(new Error(`upstream non-SSE: ${providerResponse.status}`));
+    appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    return outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${HTTP_STATUS.BAD_GATEWAY}]: ${shortMsg || "Upstream returned invalid streaming content"}`, OUTCOME_ERROR.INVALID_CONTENT_TYPE);
   }
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials });
+  const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
+  let upstreamResponse = providerResponse;
+  if (outcomeTracker) {
+    // Hold the stream until it shows usable output: an error event, an empty
+    // terminal or a reset before that point is still routable to another account
+    // or combo member, because the client has not received a byte yet.
+    const precommit = await createPrecommitStream(providerResponse, outcomeTracker, {
+      signal: requestSignal || streamController?.signal,
+      stallTimeoutMs,
+    });
+    if (!precommit.ok) {
+      const { outcome } = precommit;
+      const aborted = outcome.state === OUTCOME_STATE.CLIENT_ABORTED;
+      const status = aborted ? 499 : HTTP_STATUS.BAD_GATEWAY;
+      if (aborted) streamController?.handleDisconnect?.("client_aborted");
+      else streamController?.handleError?.(new Error(`${outcome.errorKind}: ${outcome.error}`));
+      appendLog?.({ status: `FAILED ${status}` });
+      onStreamComplete?.({ content: "", thinking: "" }, null, null, outcome);
+      return aborted
+        ? outcomeErrorResult(499, "Request aborted", OUTCOME_ERROR.ABORTED)
+        : outcomeErrorResult(HTTP_STATUS.BAD_GATEWAY, outcome.error, outcome.errorKind);
+    }
+    upstreamResponse = new Response(
+      streamFromPrecommit(precommit).pipeThrough(createOutcomeTrackingStream(outcomeTracker)),
+      { status: providerResponse.status, statusText: providerResponse.statusText, headers: providerResponse.headers }
+    );
+  }
+
+  const finalizeStream = (contentObj, usage, ttftAt, outcome) => {
+    if (outcomeTracker && outcome?.ok) notifySuccess();
+    onStreamComplete?.(contentObj, usage, ttftAt, outcome);
+  };
+  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete: finalizeStream, apiKey, credentials, outcomeTracker });
 
   // Terminal bytes when the stream aborts after HTTP 200 was already sent, so the
   // client sees a real error instead of a silently truncated stream.
@@ -94,8 +128,19 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const onAbortTerminal = isResponsesPassthrough
     ? buildAbortedResponsesTerminalBytes
     : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
-  const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  // A reset, stall or client cancel after commit never reaches flush(); report it
+  // so usage, account success and the request detail reflect the real outcome.
+  const lifecycle = outcomeTracker ? {
+    onError: (error) => {
+      outcomeTracker.fail(error?.errorKind || OUTCOME_ERROR.RESET, error?.message || "Upstream stream failed after commit");
+      transformStream.finalizeOutcome();
+    },
+    onCancel: (reason) => {
+      outcomeTracker.abortClient(typeof reason === "string" ? reason : "Client disconnected");
+      transformStream.finalizeOutcome();
+    },
+  } : {};
+  const transformedBody = pipeWithDisconnect(upstreamResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, lifecycle);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
@@ -123,11 +168,30 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, outcome = null) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
+
+    if (outcome && !outcome.ok) {
+      const aborted = outcome.state === OUTCOME_STATE.CLIENT_ABORTED;
+      saveRequestDetail(buildRequestDetail({
+        provider, model, connectionId,
+        latency,
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        request: extractRequestConfig(body, stream),
+        providerRequest: finalBody || translatedBody || null,
+        providerResponse: { error: outcome.error, errorKind: outcome.errorKind },
+        response: { error: outcome.error, errorKind: outcome.errorKind, type: "streaming" },
+        pxpipe,
+        status: aborted ? "aborted" : "error"
+      }, { id: streamDetailId })).catch(err => {
+        console.error("[RequestDetail] Failed to update streaming content:", err.message);
+      });
+      return;
+    }
+
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
