@@ -2,7 +2,7 @@
 // Mirrors magpie-community/plugins PR #319: no PAT support, account login only.
 export default {
   id: "qwenwork",
-  priority: 119,
+  priority: 116,
   alias: "qww",
   uiAlias: "qww",
   display: {

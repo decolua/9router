@@ -164,7 +164,8 @@ export function deriveMachineId(seed) {
  * @param {object} [options.site]          Site cosy block (see sites.js).
  *   Undefined keys fall back to the Qoder IDE constants, so existing
  *   callers are unchanged. A site may override clientType / ideVersion /
- *   machineType / machineOs / dataPolicy / loginVersion / rsaPublicKey.
+ *   machineType / machineOs / dataPolicy / loginVersion / rsaPublicKey /
+ *   modelScene / businessProduct.
  * @returns {Record<string, string>} Header map ready to merge onto fetch().
  */
 export function buildCosyHeaders(body, requestUrl, creds, options = {}) {
@@ -232,6 +233,11 @@ export function buildCosyHeaders(body, requestUrl, creds, options = {}) {
     "Cosy-Bodylength": bodyLength,
     "Cosy-Sigpath": sigPath,
     "Cosy-Data-Policy": dataPolicy,
+    ...(site.modelScene && { "Cosy-Scene": site.modelScene }),
+    ...(site.businessProduct && {
+      "Cosy-Business-Product": site.businessProduct,
+      "Cosy-Business-Type": "agent",
+    }),
     "Cosy-Organization-Id": "",
     "Cosy-Organization-Tags": "",
     "Login-Version": loginVersion,

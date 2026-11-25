@@ -75,9 +75,9 @@ export default {
     const baseResult = base.mapTokens(tokens);
     if (!domain) return baseResult;
     // Tell the same person's public and enterprise accounts apart.
-    const labeled = displayName.endsWith(`(${domain})`)
-      ? displayName
-      : `${displayName} (${domain})`.trim();
+    const labeled = baseResult.displayName?.endsWith(`(${domain})`)
+      ? baseResult.displayName
+      : `${baseResult.displayName || ""} (${domain})`.trim();
     return {
       ...baseResult,
       displayName: labeled,

@@ -242,14 +242,18 @@ function truncate(s, n) {
  */
 async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl", site = null }) {
   const qoderKey = String(model || "").replace(/^qoder\//, "");
+  // Chat credentials may omit the provider; the executor owns the routed site.
+  const catalogCredentials = site && credentials.provider !== site.id
+    ? { ...credentials, provider: site.id }
+    : credentials;
 
   // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
   // This allows support for new Qoder models (e.g., qmodel_latest) without code changes.
-  let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal, region });
+  let modelConfig = await getQoderModelConfig(catalogCredentials, qoderKey, { log, proxyOptions, signal, region });
   if (!modelConfig) {
     // Try a forced refresh once before giving up — the cache may simply
     // not be populated yet on first ever call for this credential.
-    const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal, region });
+    const refreshed = await resolveQoderModels(catalogCredentials, { forceRefresh: true, log, proxyOptions, signal, region });
     const retried = refreshed?.rawConfigs.get(qoderKey);
     if (retried) {
       modelConfig = { ...retried, key: qoderKey };

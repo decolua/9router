@@ -15,6 +15,7 @@ import iflow from "./iflow.js";
 import qoder from "./qoder.js";
 import qoderCn from "./qoder-cn.js";
 import qwenwork from "./qwenwork.js";
+import qwenworkEnterprise from "./qwenwork-enterprise.js";
 import github from "./github.js";
 import kiro from "./kiro.js";
 import cursor from "./cursor.js";
