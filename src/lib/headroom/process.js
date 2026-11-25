@@ -1,8 +1,8 @@
 import fs from "fs";
 import path from "path";
-import { spawn } from "child_process";
+import { execFileSync, spawn } from "child_process";
 import { DATA_DIR } from "@/lib/dataDir.js";
-import { findHeadroomBinary, findPython310, HEADROOM_COMPRESSION_EXTRAS, EXTRA_MARKERS, getInstalledHeadroomExtras } from "./detect.js";
+import { findHeadroomBinary, findPython310, HEADROOM_COMPRESSION_EXTRAS, EXTRA_MARKERS, getInstalledHeadroomExtras, probeProxyRunning } from "./detect.js";
 
 const HEADROOM_DIR = path.join(DATA_DIR, "headroom");
 const PID_FILE = path.join(HEADROOM_DIR, "proxy.pid");
@@ -52,8 +52,24 @@ function extrasProxyArgs({ codeAware, kompress } = {}) {
   return args;
 }
 
-export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = false, kompress = true } = {}) {
-  const safePort = Number(port) > 0 && Number(port) < 65536 ? Number(port) : DEFAULT_PORT;
+function validateProxyOptions(binary, flags) {
+  if (!flags.length) return;
+  let help;
+  try {
+    help = execFileSync(binary, ["proxy", "--help"], { encoding: "utf8", timeout: 5000, windowsHide: true });
+  } catch {
+    throw new Error("Could not check which proxy options the installed Headroom CLI supports");
+  }
+  const supported = help.match(/--[\w-]+/g) || [];
+  const unsupported = flags.filter((flag) => !supported.includes(flag));
+  if (unsupported.length) {
+    const error = new Error(`The installed Headroom CLI does not support: ${unsupported.join(", ")}`);
+    error.code = "UNSUPPORTED_PROXY_OPTION";
+    throw error;
+  }
+}
+
+function getProxyCommand(options) {
   const binary = findHeadroomBinary();
   if (!binary) {
     const err = new Error("Headroom CLI not installed");
@@ -61,14 +77,34 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
     throw err;
   }
 
+  const flags = extrasProxyArgs(options);
+  validateProxyOptions(binary, flags);
+  return { binary, flags };
+}
+
+export function startHeadroomProxy(options = {}) {
+  return startProxy(options);
+}
+
+async function startProxy({ url, port = DEFAULT_PORT, ...options }, command) {
+  const safePort = Number(port) > 0 && Number(port) < 65536 ? Number(port) : DEFAULT_PORT;
+  const healthUrl = url || `http://localhost:${safePort}`;
+  const external = { running: true, external: true, alreadyRunning: true };
   const existing = getManagedPid();
   if (existing) return { pid: existing, alreadyRunning: true };
+
+  const healthy = await probeProxyRunning(healthUrl);
+  const concurrentPid = getManagedPid();
+  if (concurrentPid) return { pid: concurrentPid, alreadyRunning: true };
+  if (healthy) return external;
+
+  const { binary, flags } = command || getProxyCommand(options);
 
   ensureDir();
   // spawn stdio requires fd numbers, not WriteStream objects.
   const outFd = fs.openSync(LOG_FILE, "a");
 
-  const args = ["proxy", "--port", String(safePort), ...extrasProxyArgs({ codeAware, kompress })];
+  const args = ["proxy", "--port", String(safePort), ...flags];
   const child = spawn(binary, args, {
     stdio: ["ignore", outFd, outFd],
     detached: true,
@@ -87,24 +123,35 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
   writePid(child.pid);
 
   // Wait until the process either stays alive briefly (success) or exits fast (failure).
-  await new Promise((resolve, reject) => {
-    const startupTimer = setTimeout(() => {
-      if (isPidAlive(child.pid)) resolve();
-      else reject(new Error("headroom proxy exited during startup — see proxy.log"));
-    }, STARTUP_TIMEOUT_MS);
+  try {
+    await new Promise((resolve, reject) => {
+      const startupTimer = setTimeout(() => {
+        if (isPidAlive(child.pid)) resolve();
+        else {
+          const error = new Error("headroom proxy exited during startup — see proxy.log");
+          error.code = "EARLY_EXIT";
+          reject(error);
+        }
+      }, STARTUP_TIMEOUT_MS);
 
-    child.once("exit", (code) => {
-      clearTimeout(startupTimer);
-      clearPid();
-      fs.closeSync(outFd);
-      const e = new Error(`headroom proxy exited early (code=${code}) — see proxy.log`);
-      e.code = "EARLY_EXIT";
-      reject(e);
+      child.once("exit", (code) => {
+        clearTimeout(startupTimer);
+        if (readPid() === child.pid) clearPid();
+        const error = new Error(`headroom proxy exited early (code=${code}) — see proxy.log`);
+        error.code = "EARLY_EXIT";
+        reject(error);
+      });
     });
-  });
-
-  // Close parent's copy of the fd; child retains its own after unref.
-  fs.closeSync(outFd);
+  } catch (error) {
+    if (error.code === "EARLY_EXIT" && await probeProxyRunning(healthUrl)) {
+      const managedPid = getManagedPid();
+      return managedPid ? { pid: managedPid, alreadyRunning: true } : external;
+    }
+    throw error;
+  } finally {
+    // Close the parent's copy once. The child retains its own after unref.
+    fs.closeSync(outFd);
+  }
 
   return { pid: child.pid, alreadyRunning: false };
 }
@@ -134,6 +181,7 @@ export function stopHeadroomProxy() {
 // with the given flags. Used when toggling active extras that require a restart.
 export async function restartHeadroomProxy(opts = {}) {
   const pid = getManagedPid();
+  const command = pid ? getProxyCommand(opts) : null;
   if (pid) {
     try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
     // Wait up to ~3s for graceful exit, force-kill if still alive.
@@ -146,7 +194,7 @@ export async function restartHeadroomProxy(opts = {}) {
     }
     clearPid();
   }
-  return startHeadroomProxy(opts);
+  return startProxy(opts, command);
 }
 
 export function getHeadroomLogTail(maxLines = 200) {

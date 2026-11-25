@@ -23,13 +23,14 @@ export async function POST() {
     }
     const port = parsePortFromUrl(url) || 8787;
     const result = await startHeadroomProxy({
+      url,
       port,
       codeAware: settings.headroomCodeAware === true,
       kompress: settings.headroomKompress !== false,
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
-    const status = error.code === "NOT_INSTALLED" ? 400 : 500;
+    const status = ["NOT_INSTALLED", "UNSUPPORTED_PROXY_OPTION"].includes(error.code) ? 400 : 500;
     return NextResponse.json({ error: error.message, code: error.code || null }, { status });
   }
 }
