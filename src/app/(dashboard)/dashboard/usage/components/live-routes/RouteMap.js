@@ -290,7 +290,7 @@ export default function RouteMap({ summary, reveal, filter, onFilter }) {
         <span>{summary.records.length ? "Follow · now" : "Waiting for traffic"}</span>
         {summary.models.slice(0, 8).map(model => <span key={model.id} className="inline-flex items-center gap-1"><i className="size-2 rounded-full" style={{ backgroundColor: modelColor(model.id, modelIds) }} />{model.id}</span>)}
       </div>
-      {recordForHover && <RouteTooltip record={recordForHover} x={pointer.x} y={pointer.y} reveal={reveal} />}
+      {recordForHover && <RouteTooltip record={recordForHover} x={pointer.x} y={pointer.y} reveal={reveal} now={summary.asOf} />}
       <style jsx>{`
         .route-live-flow { animation: route-flow var(--route-speed, 1.8s) linear infinite; }
         @keyframes route-flow { to { stroke-dashoffset: -24; } }

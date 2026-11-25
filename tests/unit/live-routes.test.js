@@ -98,14 +98,27 @@ describe("live route aggregation", () => {
       { ...base, id: "3", startedAt: now - 60_000, status: "running" },
     ];
     const summary = summarizeLiveRoutes(rows, { window: "30s", now });
-    expect(summary.requestsInWindow).toBe(2);
+    // The request that began 60 s ago is still running, so it overlaps the window.
+    expect(summary.requestsInWindow).toBe(3);
+    expect(summary.inProgress).toBe(1);
     expect(summary.successRate).toBe(50);
     expect(summary.outputTokPerSec).toBeCloseTo(100 / 30, 4);
     expect(summary.avgLatency).toBe(750);
     expect(summary.accountModel).toHaveLength(1);
     expect(summary.modelClient).toHaveLength(1);
     expect(summary.clientSession).toHaveLength(1);
-    expect(summary.links[0].requests).toBe(2);
+    expect(summary.links[0].requests).toBe(3);
+  });
+
+  it("drops finished requests that ended before the window", () => {
+    const now = Date.now();
+    const base = { provider: "codex", connectionId: "a", model: "gpt-6", client: { name: "Codex" }, sessionId: "s" };
+    const summary = summarizeLiveRoutes([
+      { ...base, id: "old", startedAt: now - 90_000, endedAt: now - 40_000, status: "ok" },
+      { ...base, id: "spans", startedAt: now - 45_000, endedAt: now - 10_000, status: "ok" },
+    ], { window: "30s", now });
+    expect(summary.records.map(record => record.id)).toEqual(["spans"]);
+    expect(summary.inProgress).toBe(0);
   });
 
   it("limits nodes into one more row and assigns overlapping bars greedily", () => {

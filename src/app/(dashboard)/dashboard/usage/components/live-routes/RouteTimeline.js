@@ -145,7 +145,7 @@ export default function RouteTimeline({ records, windowMs, reveal, filter, pause
         <span>Local time</span>
         <button type="button" className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" onClick={() => { setFollow(true); if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }}>{follow ? "Follow · now" : "Follow now"}</button>
       </div>
-      {hoverRecord && <RouteTooltip record={hoverRecord} x={pointer.x} y={pointer.y} reveal={reveal} />}
+      {hoverRecord && <RouteTooltip record={hoverRecord} x={pointer.x} y={pointer.y} reveal={reveal} now={now} />}
       <style jsx>{`
         .route-timeline-running { animation: route-scan calc(var(--route-speed, 1.8s) * .7) linear infinite; }
         @keyframes route-scan { to { background-position: 16px 0; } }

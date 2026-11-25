@@ -27,7 +27,9 @@ export function clientKeyOf(record) {
 export function windowRecords(records = [], window = "30s", timestamp = Date.now()) {
   const duration = typeof window === "number" ? window : LIVE_WINDOWS[window] || LIVE_WINDOWS["30s"];
   const cutoff = timestamp - duration;
-  return records.filter(record => (record.startedAt || 0) >= cutoff && (record.startedAt || 0) <= timestamp);
+  // A request belongs to the window while it overlaps it: long requests that began
+  // earlier and are still running stay on the map and in "in progress".
+  return timelineRecords(records, cutoff, timestamp);
 }
 
 export function maskEmail(value, reveal = false) {
@@ -189,7 +191,7 @@ export function summarizeLiveRoutes(records = [], { window = "30s", now = Date.n
     requests: rows.length,
     requestsInWindow: rows.length,
     inProgress: rows.filter(record => record.status === "running").length,
-    successRate: completed ? (successful / completed) * 100 : 0,
+    successRate: completed ? (successful / completed) * 100 : null, // null until something has finished
     outputTokPerSec: outputTokens / seconds,
     avgLatency: completed ? duration / completed : 0,
     comboName: comboNames.size === 1 ? [...comboNames][0] : null,

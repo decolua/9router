@@ -26,7 +26,7 @@ function Row({ label, value }) {
 }
 
 // One request on hover. Kept inside the viewport: flips left/up near the edges.
-export default function RouteTooltip({ record, x = 0, y = 0, reveal = false }) {
+export default function RouteTooltip({ record, x = 0, y = 0, reveal = false, now = null }) {
   const ref = useRef(null);
   const [position, setPosition] = useState({ left: x + OFFSET, top: y + OFFSET });
 
@@ -58,7 +58,7 @@ export default function RouteTooltip({ record, x = 0, y = 0, reveal = false }) {
         <Row label="Client" value={client} />
         <Row label="Session" value={record.sessionId || "—"} />
         <Row label="API key" value={record.keyName || "—"} />
-        <Row label="Latency" value={record.status === "running" ? "…" : ms(record.latencyMs)} />
+        <Row label={record.status === "running" ? "Running for" : "Latency"} value={record.status === "running" ? (now ? ms(now - record.startedAt) : "…") : ms(record.latencyMs)} />
         <Row label="First token" value={ms(record.ttftMs)} />
         <Row label="Tokens in / out" value={`${count(record.inputTokens)} / ${count(record.outputTokens)}`} />
         {record.fallbacks > 0 && <Row label="Fallbacks" value={record.fallbacks} />}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Card, SegmentedControl } from "@/shared/components";
 import { LIVE_WINDOWS, summarizeLiveRoutes } from "@/shared/utils/liveRoutes";
 import useLiveRoutes from "./useLiveRoutes";
@@ -27,9 +27,17 @@ export default function LiveRoutes() {
     accountLabel: accountMap[record.connectionId]?.label || record.connectionId,
     providerName: accountMap[record.connectionId]?.providerName || record.providerName,
   })), [records, accountMap]);
+  // Re-evaluate the window every second, not only when events arrive, so finished
+  // requests leave the stats and long ones keep counting while no new events come in.
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (paused) return undefined;
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [paused]);
   const summary = useMemo(
-    () => summarizeLiveRoutes(enriched, { window, filter }),
-    [enriched, window, filter],
+    () => summarizeLiveRoutes(enriched, { window, filter, now: clock }),
+    [enriched, window, filter, clock],
   );
   const statusLabel = status === "connected" ? "Connected · Live" : status === "paused" ? "Paused" : "Reconnecting…";
   const statusColor = status === "connected" ? "bg-success" : status === "paused" ? "bg-text-muted" : "bg-warning";

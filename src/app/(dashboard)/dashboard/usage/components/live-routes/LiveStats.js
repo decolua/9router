@@ -7,7 +7,7 @@ export default function LiveStats({ summary }) {
   const items = [
     ["Requests in window", summary.requestsInWindow, "text-text-main"],
     ["In progress", summary.inProgress, "text-warning"],
-    ["Success rate", `${summary.successRate.toFixed(1)}%`, "text-success"],
+    ["Success rate", summary.successRate == null ? "—" : `${summary.successRate.toFixed(1)}%`, "text-success"],
     ["Output tok/s", formatRate(summary.outputTokPerSec), "text-primary"],
     ["Avg latency", formatLatency(summary.avgLatency), "text-info"],
   ];
