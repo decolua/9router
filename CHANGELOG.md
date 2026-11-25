@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **QwenWork**: add the public-cloud and enterprise editions with OAuth device sign-in, quota tracking, and QwenWork-specific COSY headers. Enterprise connections use their configured domain and show the account's live model catalog, with a built-in catalog fallback when the upstream returns 503.
+
 # v0.5.123 (2026-11-22)
 
 ## Features

@@ -35,6 +35,7 @@ import {
   getQoderStaticModelConfig,
   qoderInferenceBase,
 } from "../shared/qoder/constants.js";
+import { qoderSiteOf, qoderInferenceBaseForSite } from "../shared/qoder/sites.js";
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
 import { encodeDataUri } from "../translator/concerns/image.js";
@@ -239,16 +240,20 @@ function truncate(s, n) {
 /**
  * Map the OpenAI-style request body into the exact shape Qoder expects.
  */
-async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl" }) {
+async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl", site = null }) {
   const qoderKey = String(model || "").replace(/^qoder\//, "");
+  // Chat credentials may omit the provider; the executor owns the routed site.
+  const catalogCredentials = site && credentials.provider !== site.id
+    ? { ...credentials, provider: site.id }
+    : credentials;
 
   // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
   // This allows support for new Qoder models (e.g., qmodel_latest) without code changes.
-  let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal, region });
+  let modelConfig = await getQoderModelConfig(catalogCredentials, qoderKey, { log, proxyOptions, signal, region });
   if (!modelConfig) {
     // Try a forced refresh once before giving up — the cache may simply
     // not be populated yet on first ever call for this credential.
-    const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal, region });
+    const refreshed = await resolveQoderModels(catalogCredentials, { forceRefresh: true, log, proxyOptions, signal, region });
     const retried = refreshed?.rawConfigs.get(qoderKey);
     if (retried) {
       modelConfig = { ...retried, key: qoderKey };
@@ -285,6 +290,7 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
       proxyOptions,
       signal,
       uploadFn,
+      site,
     });
   } catch (err) {
     log?.warn?.("QODER", `attachment rewrite failed: ${err.message}`);
@@ -648,11 +654,12 @@ async function wrapQoderSSE(response, model, log = null) {
 export class QoderExecutor extends BaseExecutor {
   constructor(provider = "qoder") {
     super(provider, PROVIDERS[provider]);
+    this.site = qoderSiteOf(provider);
     this.region = provider === "qoder-cn" ? "cn" : "intl";
   }
 
   buildUrl(credentials) {
-    return `${qoderInferenceBase(credentials, this.region)}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
+    return `${qoderInferenceBaseForSite(credentials, this.site)}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
   }
 
   // Override execute entirely — Qoder needs:
@@ -702,7 +709,7 @@ export class QoderExecutor extends BaseExecutor {
     let qoderKey;
     let payload;
     try {
-      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, region: this.region }));
+      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, region: this.region, site: this.site }));
     } catch (err) {
       const fakeResp = new Response(
         JSON.stringify({ error: { message: err.message } }),
@@ -730,6 +737,7 @@ export class QoderExecutor extends BaseExecutor {
           // rejoins the back of the model queue. Derive a stable one instead.
           machineId: psd.machineId || deriveMachineId(psd.userId),
         },
+        { site: this.site.cosy },
       );
     } catch (err) {
       // cosy.js throws synchronously on missing userId/authToken — surface
@@ -772,7 +780,7 @@ export class QoderExecutor extends BaseExecutor {
           name: credentials.displayName || "",
           email: credentials.email || "",
           machineId: psd.machineId || deriveMachineId(psd.userId),
-        });
+        }, { site: this.site.cosy });
       } catch (err) {
         const fakeResp = new Response(
           JSON.stringify({ error: { message: `qoder cosy signing failed: ${err.message}` } }),
@@ -847,7 +855,7 @@ export class QoderExecutor extends BaseExecutor {
                 name: credentials.displayName || "",
                 email: credentials.email || "",
                 machineId: psd.machineId || deriveMachineId(psd.userId),
-              }),
+              }, { site: this.site.cosy }),
             },
             signal,
           },
@@ -1043,11 +1051,52 @@ export class QoderExecutor extends BaseExecutor {
   // Qoder device tokens don't refresh through OAuth — the upstream returns
   // 403 for our flow. Surfacing failure via 401-on-chat is enough; the
   // dashboard tells users to re-login when their token expires (~30 days).
-  async refreshCredentials() {
-    return null;
+  //
+  // QwenWork (both clouds) is different: its device token IS the chat token
+  // and its refresh endpoint (/api/v1/deviceToken/refresh) honors the device
+  // refresh token. The site flags it with deviceRefresh.enabled.
+  async refreshCredentials(credentials, log, proxyOptions = null) {
+    const site = this.site;
+    if (!site?.deviceRefresh?.enabled) return null;
+    const refresh = credentials?.refreshToken;
+    if (!refresh) return null;
+    // Enterprise credentials route to their own host; the public cloud to
+    // the site's gateway.
+    const host = qoderInferenceBaseForSite(credentials, site);
+    const url = `${host}/api/v1/deviceToken/refresh`;
+    const body = { refresh_token: refresh, ...(site.deviceRefresh.target ? { target: site.deviceRefresh.target } : {}) };
+    try {
+      const response = await proxyAwareFetch(
+        url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(body),
+        },
+        proxyOptions,
+      );
+      if (!response.ok) {
+        log?.warn?.("QODER", `${site.id} device token refresh: HTTP ${response.status}`);
+        return null;
+      }
+      const data = await response.json().catch(() => null);
+      const token = data?.token || data?.device_token || "";
+      if (!token || !data?.refresh_token) return null;
+      const expiresAt = data?.expires_at || (data?.expires_in ? Date.now() + data.expires_in * 1000 : null);
+      return { accessToken: token, refreshToken: data.refresh_token, ...(expiresAt ? { expiresAt } : {}) };
+    } catch (err) {
+      log?.warn?.("QODER", `${site.id} device token refresh failed: ${err.message}`);
+      return null;
+    }
   }
 
-  needsRefresh() {
+  needsRefresh(credentials) {
+    // QwenWork's device token is the chat token: expired means unusable.
+    if (this.site?.deviceRefresh?.enabled) {
+      const expiresAt = credentials?.expiresAt ? Date.parse(credentials.expiresAt) : NaN;
+      if (Number.isFinite(expiresAt)) return expiresAt <= Date.now() + 60_000;
+      return false;
+    }
     return false;
   }
 }

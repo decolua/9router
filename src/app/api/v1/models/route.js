@@ -111,6 +111,8 @@ const LIVE_MODEL_RESOLVERS = {
   },
   qoder: async (conn) => resolveQoderLiveModels(conn, "qoder"),
   "qoder-cn": async (conn) => resolveQoderLiveModels(conn, "qoder-cn"),
+  qwenwork: async (conn) => resolveQoderLiveModels(conn, "qwenwork"),
+  "qwenwork-enterprise": async (conn) => resolveQoderLiveModels(conn, "qwenwork-enterprise"),
   kimchi: async (conn) => {
     const result = await resolveKimchiModels({
       accessToken: conn.accessToken,

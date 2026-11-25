@@ -102,6 +102,9 @@ export function createQoderProvider(config) {
           userId,
           machineId: tokens._qoderMachineId || "",
           organizationId: tokens._qoderOrganizationId || "",
+          // QwenWork sets siteId: "qwenwork" so executors/usage can route
+          // to the Qoder-family site config; qoder/qoder-cn leave it absent.
+          ...(config.siteId ? { siteId: config.siteId } : {}),
         },
       };
     },

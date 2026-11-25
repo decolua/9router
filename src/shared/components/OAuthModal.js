@@ -46,6 +46,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // trae/windsurf: choose between browser OAuth (proxy) and paste-token (import)
   const [authMode, setAuthMode] = useState("browser"); // "browser" | "paste-token"
   const [pasteToken, setPasteToken] = useState("");
+  // QwenWork enterprise: the company domain asked before the device flow.
+  const [enterpriseDomain, setEnterpriseDomain] = useState("");
+  const [domainError, setDomainError] = useState(null);
+  const enterpriseDomainRef = useRef("");
   const [ideStatus, setIdeStatus] = useState(null);
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
@@ -264,6 +268,20 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     if (!popupRef.current) setStep("input"); // popup blocked → fall back to manual paste
   }, [stopOwnedProxy]);
 
+  // QwenWork enterprise: validate the company domain locally (shape only —
+  // the route re-validates with validateEnterpriseDomain), then start the
+  // device flow against that host.
+  const handleDomainSubmit = () => {
+    const value = enterpriseDomain.trim();
+    if (!value) {
+      setDomainError("请输入企业域名");
+      return;
+    }
+    enterpriseDomainRef.current = value;
+    setStep("waiting");
+    startOAuthFlowRef.current();
+  };
+
   // Start OAuth flow (plain function by design: it is only invoked from the
   // open effect via ref and from user actions, so memoization would only add
   // an identity that re-triggers effects on every parent re-render).
@@ -290,6 +308,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "codebuddy-intl",
         "qoder",
         "qoder-cn",
+        "qwenwork",
+        "qwenwork-enterprise",
         "grok-cli",
         "muse",
         "glm",
@@ -308,6 +328,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             deviceCodeUrl.searchParams.set("region", idcConfig.region);
           }
           deviceCodeUrl.searchParams.set("auth_method", "idc");
+        }
+        // QwenWork enterprise: the company domain entered in the domain step.
+        if (provider === "qwenwork-enterprise") {
+          deviceCodeUrl.searchParams.set("domain", enterpriseDomainRef.current || "");
         }
         const res = await fetch(deviceCodeUrl.toString());
         const data = await res.json();
@@ -330,11 +354,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _authMethod: data._authMethod,
               _startUrl: data._startUrl,
             }
-          : (provider === "qoder" || provider === "qoder-cn")
+          : (provider === "qoder" || provider === "qoder-cn" || provider === "qwenwork" || provider === "qwenwork-enterprise")
           ? {
               _qoderNonce: data._qoderNonce,
               _qoderMachineId: data._qoderMachineId,
               _qoderVerifier: data.codeVerifier,
+              // The enterprise flow keys its poll+mapTokens on the domain.
+              _qwenworkDomain: data._qwenworkDomain,
             }
           : (provider === "kimi" || provider === "kimi-coding")
           ? { _kimiDeviceId: data._kimiDeviceId }
@@ -495,8 +521,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     setIsDeviceCode(false);
     setDeviceData(null);
     setPolling(false);
+    setStep(provider === "qwenwork-enterprise" ? "domain" : "waiting");
     setAuthMode("browser");
     setPasteToken("");
+    setEnterpriseDomain("");
+    setDomainError(null);
+    enterpriseDomainRef.current = "";
     setIdeStatus(null);
     pollingAbortRef.current = false;
     flowRef.current = { proxyStarted: false, proxyProvider: null, stopSent: false };
@@ -507,6 +537,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         .then((data) => setIdeStatus(data))
         .catch(() => setIdeStatus({ installed: false, path: null }));
     }
+    // QwenWork enterprise asks for the company domain first — no network
+    // call until the user submits one (startOAuthFlow runs from
+    // handleDomainSubmit; every later request targets that host).
+    if (provider === "qwenwork-enterprise") return;
     startOAuthFlowRef.current();
   }, [isOpen, provider]);
 
@@ -905,7 +939,36 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           </>
         )}
 
-        {/* Device Code Flow - Waiting */}
+        {/* QwenWork enterprise: company domain input before the device flow */}
+        {step === "domain" && provider === "qwenwork-enterprise" && (
+          <>
+            <div className="text-center py-2">
+              <p className="text-sm text-text-muted mb-1">
+                千问办公旗舰版部署在你企业自己的域名上：
+              </p>
+              <p className="text-xs text-text-muted">
+                输入企业管理后台地址栏的域名（如 your-company.vpc.qwenwork.cn，或 https:// 开头的完整地址），不要带路径。
+              </p>
+            </div>
+            <Input
+              label="企业域名"
+              placeholder="your-company.vpc.qwenwork.cn"
+              value={enterpriseDomain}
+              onChange={(e) => {
+                setEnterpriseDomain(e.target.value);
+                setDomainError(null);
+              }}
+              error={domainError}
+              onEnter={() => handleDomainSubmit()}
+            />
+            <div className="flex gap-2 mt-2">
+              <Button onClick={handleDomainSubmit} variant="primary" fullWidth>
+                继续
+              </Button>
+            </div>
+          </>
+        )}
+
         {step === "waiting" && isDeviceCode && deviceData && (
           <>
             <div className="text-center py-4">

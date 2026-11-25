@@ -152,6 +152,8 @@ import p155 from "./synthetic.js";
 import p156 from "./opendesign-go.js";
 import p157 from "./deeprelay.js";
 import p158 from "./qwencloud.js";
+import p159 from "./qwenwork.js";
+import p160 from "./qwenwork-enterprise.js";
 export default [
   p0,
   p1,
@@ -304,4 +306,6 @@ export default [
   p156,
   p157,
   p158,
+  p159,
+  p160,
 ];

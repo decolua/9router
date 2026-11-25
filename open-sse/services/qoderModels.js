@@ -35,6 +35,7 @@ import {
   qoderInferenceBase,
   QODER_STATIC_MODEL_CONFIGS,
 } from "../shared/qoder/constants.js";
+import { qoderSiteOf, qoderInferenceBaseForSite } from "../shared/qoder/sites.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
@@ -178,8 +179,10 @@ export async function resolveQoderCredentials(credentials, proxyOptions = null, 
 function cacheKey(credentials) {
   const psd = credentials?.providerSpecificData || {};
   const seed = psd.userId || credentials?.refreshToken || credentials?.accessToken || "anonymous";
-  const region = qoderRegionOf(credentials?.provider);
-  return createHash("sha256").update(`qoder:${region}:${seed}`).digest("hex");
+  // Site id (qoder / qoder-cn / …) keeps catalogs for different deployables
+  // apart; unknown providers fall back to the qoder intl site.
+  const siteId = qoderSiteOf(credentials?.provider).id;
+  return createHash("sha256").update(`qoder:${siteId}:${seed}`).digest("hex");
 }
 
 /**
@@ -202,18 +205,21 @@ function cosyCredsFromConnection(credentials) {
  *     rawConfigs: Map<modelKey, modelConfigObject> }
  * or `null` on any error.
  */
-async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, region = "intl") {
+export async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, region = "intl", site = null) {
   const creds = cosyCredsFromConnection(credentials);
   if (!creds.userId || !creds.authToken) return null;
 
   // Intl job-token traffic is rejected by api3 ("Login expired" 403) — the
   // official qodercli serves it from api2 instead; CN uses the single gateway.
-  const modelListUrl = `${qoderInferenceBase(credentials, region)}/algo/api/v2/model/list`;
+  // Other sites (qwenwork…) are single-gateway too: their chat base serves all
+  // token kinds, so the region split does not apply.
+  const siteObj = site || qoderSiteOf(credentials?.provider);
+  const modelListUrl = `${qoderInferenceBaseForSite(credentials, siteObj)}/algo/api/v2/model/list`;
 
   const headers = {
     Accept: "application/json",
     "Accept-Encoding": "identity",
-    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds),
+    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds, { site: siteObj.cosy }),
   };
 
   const controller = new AbortController();
@@ -247,17 +253,32 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, re
     if (signal && abortListener) signal.removeEventListener("abort", abortListener);
   }
 
+  // A deployable with no catalog service (QwenWork's enterprise flagship
+  // answers 503 "Model catalog is unavailable") falls back to the site's
+  // built-in list. Any other status — 500 included — stays a hard miss so
+  // a transient server error isn't masked by stale fallback data.
+  if (response.status === 503 && siteObj.catalog?.fallbackModels) {
+    return { models: null, rawConfigs: null, fallback: siteObj.catalog.fallbackModels };
+  }
   if (!response.ok) return null;
-
   const body = await response.json().catch(() => null);
-  if (!body || !Array.isArray(body.chat)) return null;
-
+  // The listing array is chosen per site: a site whose cosy block declares
+  // `modelScene` (QwenWork ⇒ "qwork") reads that scene; sites without one
+  // (Qoder) read `chat`. The same field names the Cosy-Scene header
+  // (buildCosyHeaders), so one value drives both. A missing array makes the
+  // catalog unusable, an empty one is a valid empty listing.
+  // "auto"/"default"/"" are routing aliases, not models.
+  const scene = typeof siteObj?.cosy?.modelScene === "string" && siteObj.cosy.modelScene ? siteObj.cosy.modelScene : null;
+  const entries = scene
+    ? (Array.isArray(body?.[scene]) ? body[scene] : [])
+    : (Array.isArray(body?.chat) ? body.chat : null);
+  if (!entries) return null;
   const models = [];
   const rawConfigs = new Map();
-  for (const entry of body.chat) {
+  for (const entry of entries) {
     if (!entry || typeof entry !== "object") continue;
-    const key = entry.key;
-    if (!key) continue;
+    const key = typeof entry.key === "string" ? entry.key.trim() : "";
+    if (!key || key === "auto" || key === "default") continue;
 
     // enable:false 的模型仍可在 IDE 使用，保留其配置并展示上游名称。
     rawConfigs.set(key, entry);
@@ -331,8 +352,35 @@ export async function resolveQoderModels(credentials, options = {}) {
   }
 
   const fetchPromise = (async () => {
-    const fetched = await fetchQoderCatalogRaw(resolved, options.signal, options.proxyOptions, region);
+    const fetched = await fetchQoderCatalogRaw(resolved, options.signal, options.proxyOptions, region, qoderSiteOf(resolved?.provider || credentials?.provider));
     if (!fetched) return null;
+    // A 503 fallback (see fetchQoderCatalogRaw) carries the site's raw
+    // listing — normalize it into the same { models, rawConfigs } shape.
+    if (fetched.fallback) {
+      const models = [];
+      const rawConfigs = new Map();
+      for (const entry of fetched.fallback) {
+        if (!entry?.key) continue;
+        rawConfigs.set(entry.key, entry);
+        models.push({
+          id: entry.key,
+          name: `${entry.display_name || entry.key}`,
+          contextLength: Number(entry.max_input_tokens) || 131_072,
+          isVL: !!entry.is_vl,
+          isReasoning: !!entry.is_reasoning,
+          maxOutputTokens: Number(entry.max_output_tokens) || 0,
+          description: entry.description || "",
+        });
+      }
+      const entry = {
+        expiresAt: Date.now() + CACHE_TTL_MS,
+        models,
+        rawConfigs,
+        fetched: true,
+      };
+      catalogCache.set(key, entry);
+      return entry;
+    }
     const entry = {
       expiresAt: Date.now() + CACHE_TTL_MS,
       models: fetched.models,

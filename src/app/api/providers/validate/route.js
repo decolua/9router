@@ -628,7 +628,9 @@ export async function POST(request) {
         }
 
         case "qoder":
-        case "qoder-cn": {
+        case "qoder-cn":
+        case "qwenwork":
+        case "qwenwork-enterprise": {
           // PAT (pt-...) needs the job-token exchange before it can sign
           // anything — the generic OpenAI-compat probe below can't validate it.
           try {

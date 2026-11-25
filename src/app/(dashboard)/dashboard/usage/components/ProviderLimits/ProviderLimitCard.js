@@ -46,6 +46,8 @@ export default function ProviderLimitCard({
       kiro: "#FF9900",
       qoder: "#EC4899",
       "qoder-cn": "#EC4899",
+      qwenwork: "#8B5CF6",
+      "qwenwork-enterprise": "#6D28D9",
       claude: "#D97757",
     };
     return colors[provider?.toLowerCase()] || "#6B7280";

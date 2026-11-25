@@ -95,6 +95,21 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     refreshable: false,
   },
+  qwenwork: {
+    // Same shape as qoder, QwenWork CN gateway host (oauth-only, no PAT).
+    url: "https://gateway.qwenwork.cn/api/v1/userinfo",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: false,
+  },
+  "qwenwork-enterprise": {
+    // Enterprise flagship (oauth-only): no static probe URL — the reachable
+    // host is the connection's providerSpecificData.enterpriseHost, probed by
+    // a dedicated branch in testOAuthConnection (the registry's public-gateway
+    // placeholder URLs don't resolve for enterprise deployments).
+    refreshable: false,
+  },
   kimi: { checkExpiry: true, refreshable: true },
   "kimi-coding": { checkExpiry: true, refreshable: true },
   cursor: { tokenExists: true },
@@ -441,6 +456,35 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     accessToken = tokens.accessToken;
     return await tryProbe(accessToken);
   }
+  if (connection.provider === "qwenwork-enterprise") {
+    // Enterprise flagship: probe the connection's own enterprise host (the
+    // registry URLs are public-gateway placeholders that don't resolve for an
+    // enterprise deployment). Without an enterpriseHost there is nothing
+    // safely probeable, so fall back to token-exists only.
+    const host = String((connection.providerSpecificData || {}).enterpriseHost || "").trim().toLowerCase();
+    if (!host) {
+      return { valid: true, error: null, refreshed: false, newTokens: null };
+    }
+    try {
+      const res = await fetchWithConnectionProxy(
+        `https://${host}/api/v1/adapter/user/account-context?include=user`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+        effectiveProxy,
+      );
+      if (res.ok) return { valid: true, error: null, refreshed, newTokens };
+      if (res.status === 401) {
+        return { valid: false, error: "Invalid or expired token", refreshed, newTokens };
+      }
+      // Host-side failures (5xx, DNS, firewall) say nothing about the token:
+      // keep the connection active and surface the reason as a soft warning.
+      const warn = `Could not verify token: API returned ${res.status}`;
+      return { valid: true, error: warn, warning: warn, refreshed, newTokens };
+    } catch (err) {
+      const warn = `Could not verify token: ${err.message}`;
+      return { valid: true, error: warn, warning: warn, refreshed, newTokens };
+    }
+  }
+
 
   try {
     const testUrl = config.buildUrl ? config.buildUrl(accessToken) : config.url;
@@ -926,6 +970,17 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           effectiveProxy,
         );
         return { valid: exRes.ok, error: exRes.ok ? null : "Invalid Personal Access Token" };
+      }
+      case "qwenwork":
+      case "qwenwork-enterprise": {
+        // QwenWork gateway hosts userinfo directly (oauth-only, no PAT).
+        // The enterprise flagship never lands here (authType oauth routes to
+        // testOAuthConnection), but if a stale apikey-type row exists the
+        // public-gateway probe is still the best available check.
+        const res = await fetchWithConnectionProxy("https://gateway.qwenwork.cn/api/v1/userinfo", {
+          headers: { Authorization: `Bearer ${connection.accessToken}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid token" };
       }
 case "llm7": {
         const baseUrl = connection.providerSpecificData?.baseUrl || "https://api.llm7.io/v1";
