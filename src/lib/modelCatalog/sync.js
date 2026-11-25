@@ -37,6 +37,11 @@ export const PROVIDER_ALIASES = {
   "hunyuan": "tencent",
   "doubao": "volcengine",
   "cloudflare-ai": "cloudflare-workers-ai",
+  // Reseller/gateway providers that proxy OpenRouter or Kilo
+  "kilocode": "openrouter",
+  "kilo-gateway": "openrouter",
+  "nous": "openrouter",
+  "particle-ai": "openrouter",
 };
 
 let state = { running: false, lastSync: null, lastError: null, lastResult: null, etag: null, fileVersion: null };
