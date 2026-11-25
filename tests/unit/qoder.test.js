@@ -13,7 +13,10 @@ import { describe, it, expect, beforeEach } from "vitest";
 import crypto from "crypto";
 
 import { qoderEncodeBody } from "../../src/lib/qoder/encoding.js";
-import { buildCosyHeaders } from "../../src/lib/qoder/cosy.js";
+import {
+  buildCosyHeaders,
+  computeCosySignature,
+} from "../../src/lib/qoder/cosy.js";
 import { QoderService } from "../../src/lib/oauth/services/qoder.js";
 import {
   QODER_CHAT_URL_ENCODED,
@@ -210,6 +213,32 @@ describe("buildCosyHeaders", () => {
     const expectedHash = crypto.createHash("md5").update(body).digest("hex");
     expect(headers["Cosy-Bodyhash"]).toBe(expectedHash);
     expect(headers["Cosy-Bodylength"]).toBe(String(body.length));
+  });
+
+  it("can sign a different canonical body without changing body integrity headers", () => {
+    const body = Buffer.from("multipart body", "utf8");
+    const signatureBody = Buffer.from(String(body.length), "ascii");
+    const headers = buildCosyHeaders(body, QODER_MODEL_LIST_URL, creds, { signatureBody });
+    const expectedHash = crypto.createHash("md5").update(body).digest("hex");
+    expect(headers["Cosy-Bodyhash"]).toBe(expectedHash);
+    expect(headers["Cosy-Bodylength"]).toBe(String(body.length));
+
+    const payloadB64 = headers.Authorization.split(".")[1];
+    const expectedSignature = computeCosySignature({
+      payloadB64,
+      cosyKey: headers["Cosy-Key"],
+      timestamp: headers["Cosy-Date"],
+      body: signatureBody,
+      sigPath: headers["Cosy-Sigpath"],
+    });
+    expect(headers.Authorization.split(".")[2]).toBe(expectedSignature);
+    expect(expectedSignature).not.toBe(computeCosySignature({
+      payloadB64,
+      cosyKey: headers["Cosy-Key"],
+      timestamp: headers["Cosy-Date"],
+      body,
+      sigPath: headers["Cosy-Sigpath"],
+    }));
   });
 
   it("empty body produces the canonical empty-MD5 hash", () => {

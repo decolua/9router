@@ -29,6 +29,11 @@ export function normalizeModel(raw) {
 export function modelKind(model) {
   return model?.kind || model?.type || MODEL_DEFAULTS.kind;
 }
+// Extra request parameters a model declares (e.g. ["input_type"]). Explicit opt-in
+// only — an absent list means the model takes no extra params.
+export function modelParams(model) {
+  return Array.isArray(model?.params) ? model.params : [];
+}
 export function modelQuotaFamily(model) {
   return model?.quotaFamily || MODEL_DEFAULTS.quotaFamily;
 }

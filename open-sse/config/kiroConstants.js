@@ -26,6 +26,9 @@ export const KIRO_TOOL_ID_MAX_LENGTH = 64;
 export const KIRO_CODEWHISPERER_TARGET =
   "AmazonCodeWhispererStreamingService.GenerateAssistantResponse";
 export const KIRO_ENDPOINT_FALLBACK_STATUSES = new Set([401, 403, 404]);
+// Regions the Kiro runtime data plane serves. Only one of these may be spliced
+// into the hostname that receives the bearer token.
+export const KIRO_RUNTIME_REGIONS = new Set(["us-east-1", "eu-central-1"]);
 
 // Public default CodeWhisperer profile ARNs (us-east-1), keyed by auth method.
 // Used when an account cannot resolve its own profileArn. Builder ID and social
