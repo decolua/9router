@@ -18,9 +18,11 @@ import { resolveClinepassModels, resolveClineModels } from "open-sse/services/cl
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
+import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -56,13 +58,49 @@ function comboSeatCapabilities(seat) {
   const slash = seat.indexOf("/");
   if (slash <= 0) return null;
   const alias = seat.slice(0, slash);
-  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, seat.slice(slash + 1));
+  // Strip a trailing thinking-level override like "(max)" or "(high)" before the
+  // capability lookup — it is not part of the model id. Otherwise the lookup
+  // misses the provider-scoped catalog entry and falls through to a default.
+  const model = seat.slice(slash + 1).replace(/\([^()]+\)\s*$/, "").trim();
+  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, model);
 }
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
 const LIVE_MODEL_RESOLVERS = {
+  opencode: async (conn) => {
+    try {
+      const res = await fetch("https://opencode.ai/zen/v1/models", {
+        headers: { "x-opencode-client": "desktop" },
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const raw = Array.isArray(data?.models) ? data.models : Array.isArray(data?.data) ? data.data : [];
+      const KNOWN_FREE = new Set(["big-pickle"]);
+      const DEAD = new Set(["deepseek-v4-flash-free"]);
+      const models = raw
+        .filter((m) => {
+          const id = m?.id || m?.name;
+          if (typeof id !== "string") return false;
+          return id.endsWith("-free") || KNOWN_FREE.has(id);
+        })
+        .filter((m) => !DEAD.has(m?.id || m?.name))
+        .map((m) => {
+          const id = m.id || m.name;
+          const caps = {};
+          if (m.limit?.context) caps.contextWindow = m.limit.context;
+          if (m.limit?.output) caps.maxOutput = m.limit.output;
+          if (m.capabilities?.reasoning?.supported) caps.reasoning = true;
+          if (m.capabilities?.tools?.supported) caps.tools = true;
+          return { id, name: m.name || id, capabilities: Object.keys(caps).length ? caps : undefined };
+        });
+      return models.length ? { models } : null;
+    } catch {
+      return null;
+    }
+  },
   kiro: async (conn) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,
@@ -157,6 +195,13 @@ const LIVE_MODEL_RESOLVERS = {
           capabilities: m.supportsTools ? { tools: true } : undefined,
         })),
     };
+  },
+  // CommandCode's catalog is public and account-independent, so no per-connection
+  // credentials are needed — the connection only has to exist and be active.
+  commandcode: async () => {
+    const result = await resolveCommandCodeModels();
+    if (!result?.models?.length) return null;
+    return { models: result.models.map(({ id, name }) => ({ id, name })) };
   },
 };
 
@@ -607,6 +652,11 @@ export async function buildModelsList(kindFilter, options = {}) {
           }
           if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
           if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
+          // Selectable reasoning levels (the set the dashboard picker shows) so clients
+          // can build their effort selector from the gateway instead of keeping a
+          // per-model table. Omitted when the model has no reasoning.
+          const thinkingLevels = getThinkingLevels(providerId, modelId);
+          if (Array.isArray(thinkingLevels) && thinkingLevels.length > 0) model.thinking_levels = thinkingLevels;
         }
         models.push(model);
       }

@@ -11,7 +11,7 @@ export function stripCookieInputPrefix(rawValue) {
 }
 
 /**
- * Parse a JSON array of cookie objects and produce a Cookie header string.
+ * Parse a JSON array of cookie objects (or a {cookies: [...]} export) into a header.
  *
  * Accepts the format exported by browser cookie-editor extensions / DevTools:
  * [{"name":"sso","value":"eyJ0eXAi...","domain":".example.com","path":"/"}]
@@ -24,7 +24,7 @@ export function stripCookieInputPrefix(rawValue) {
  */
 export function parseJsonCookiesToHeader(rawValue) {
   const trimmed = (rawValue || "").trim();
-  if (!trimmed || !trimmed.startsWith("[")) return null;
+  if (!trimmed || (!trimmed.startsWith("[") && !trimmed.startsWith("{"))) return null;
 
   let parsed;
   try {
@@ -33,6 +33,7 @@ export function parseJsonCookiesToHeader(rawValue) {
     return null;
   }
 
+  if (!Array.isArray(parsed)) parsed = parsed?.cookies;
   if (!Array.isArray(parsed)) return null;
   if (parsed.length === 0) return "";
 
@@ -52,6 +53,17 @@ export function parseJsonCookiesToHeader(rawValue) {
   }
 
   return parts.join("; ");
+}
+
+/** Normalize a complete cookie jar without treating a bare value as a session. */
+export function normalizeCookieHeaderInput(rawValue) {
+  const stripped = stripCookieInputPrefix(String(rawValue ?? ""));
+  const jsonResult = parseJsonCookiesToHeader(stripped);
+  if (jsonResult !== null) return jsonResult;
+  if (stripped.startsWith("[") || stripped.startsWith("{")) {
+    throw new Error("Invalid cookie JSON: expected an array of cookie objects or an object with a cookies array");
+  }
+  return stripped;
 }
 
 export function normalizeSessionCookieHeader(rawValue, defaultCookieName) {

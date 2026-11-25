@@ -13,14 +13,9 @@ import {
   Cell,
 } from "recharts";
 import Card from "@/shared/components/Card";
+import { fmtCompactTokens } from "./tokenDisplay";
 
 const COLORS = ["#6366f1", "#14b8a6", "#f59e0b", "#ef4444", "#8b5cf6"];
-
-const fmtTokens = (n) => {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return String(n || 0);
-};
 
 const truncate = (s, max = 22) => (s && s.length > max ? s.slice(0, max) + "…" : s || "");
 
@@ -40,7 +35,7 @@ export default function TopModelsChart({ byModel }) {
       .slice(0, 5);
   }, [byModel, viewMode]);
 
-  const fmt = viewMode === "tokens" ? fmtTokens : String;
+  const fmt = viewMode === "tokens" ? fmtCompactTokens : String;
   const label = viewMode === "tokens" ? "Tokens" : "Requests";
 
   return (
