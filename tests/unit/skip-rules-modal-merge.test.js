@@ -1,7 +1,16 @@
 // Skip-rules modal pure logic: provider dropdown merge + row↔rule validation.
 // These live in skipRulesLogic.js (no JSX) so the "node" vitest env can import them.
 import { describe, expect, it } from "vitest";
-import { mergeProviderOptions, rowToRule, ruleToRow } from "../../src/app/(dashboard)/dashboard/profile/skipRulesLogic.js";
+import {
+  mergeProviderOptions,
+  rowToRule,
+  ruleToRow,
+  groupRowsByProvider,
+  insertRowForProvider,
+  findDeadRowIndices,
+  rowSpecificity,
+  describeRow,
+} from "../../src/app/(dashboard)/dashboard/profile/skipRulesLogic.js";
 
 describe("mergeProviderOptions", () => {
   const AI = {
@@ -41,8 +50,16 @@ describe("rowToRule validation (no silent drop, multi-condition)", () => {
     expect(rowToRule(httpRow({ provider: "", status: "429" })).error).toBeTruthy();
   });
 
-  it("flags an http row with neither status nor contains", () => {
-    expect(rowToRule(httpRow({ status: "", contains: "" })).error).toBeTruthy();
+  it("accepts an http row with neither status nor contains as a provider wildcard", () => {
+    // The status field hint says blank = every code; the form must not contradict it.
+    const { rule, error } = rowToRule(httpRow({ status: "", contains: "" }));
+    expect(error).toBeUndefined();
+    expect(rule).toEqual({ provider: "kiro", match: {}, action: "skip" });
+  });
+
+  it("round-trips a wildcard rule: rule -> row -> rule", () => {
+    const original = { provider: "kiro", match: {}, action: "skip" };
+    expect(rowToRule(ruleToRow(original)).rule).toEqual(original);
   });
 
   it("flags an out-of-range status", () => {
@@ -132,5 +149,84 @@ describe("retryAttempts round-trips through the modal", () => {
     const { rule } = rowToRule({ ...ruleToRow({ provider: "kr-ac", match: { status: 502 }, action: "skip", sweep: true }), retryAttempts: "3" });
     expect(rule.sweep).toBe(true);
     expect("retryAttempts" in rule).toBe(false);
+  });
+});
+
+describe("provider grouping for the accordion UI", () => {
+  const row = (provider, o = {}) => ({ provider, matchMode: "http", status: "", contains: "", action: "skip", ...o });
+
+  it("groups by provider, keeping provider and row order, with indices into the flat array", () => {
+    const rows = [row("a", { status: "429" }), row("b"), row("a", { status: "500" })];
+    expect(groupRowsByProvider(rows)).toEqual([
+      { provider: "a", indices: [0, 2] },
+      { provider: "b", indices: [1] },
+    ]);
+  });
+
+  it("tolerates empty and missing input", () => {
+    expect(groupRowsByProvider([])).toEqual([]);
+    expect(groupRowsByProvider(null)).toEqual([]);
+  });
+
+  it("buckets rows with no provider yet under one empty group", () => {
+    expect(groupRowsByProvider([row(""), row("")])).toEqual([{ provider: "", indices: [0, 1] }]);
+  });
+
+  it("inserts a new rule right after the last rule of its provider", () => {
+    const rows = [row("a"), row("b"), row("a")];
+    const next = insertRowForProvider(rows, "a", row("a", { status: "429" }));
+    expect(next.map(r => r.provider)).toEqual(["a", "b", "a", "a"]);
+    expect(next[3].status).toBe("429");
+    // Group stays contiguous so the accordion never has to reorder the array.
+    expect(groupRowsByProvider(next)).toEqual([
+      { provider: "a", indices: [0, 2, 3] },
+      { provider: "b", indices: [1] },
+    ]);
+  });
+
+  it("appends when the provider has no rules yet", () => {
+    const next = insertRowForProvider([row("a")], "z", row("z"));
+    expect(next.map(r => r.provider)).toEqual(["a", "z"]);
+    expect(insertRowForProvider(null, "z", row("z"))).toHaveLength(1);
+  });
+});
+
+describe("row priority + duplicate detection shown in the UI", () => {
+  const row = (o) => ({ provider: "p", matchMode: "http", status: "", contains: "", action: "skip", ...o });
+
+  it("scores a row exactly like the runtime matcher", () => {
+    expect(rowSpecificity(row({}))).toBe(0);
+    expect(rowSpecificity(row({ status: "429" }))).toBe(1);
+    expect(rowSpecificity(row({ contains: "boom" }))).toBe(2);
+    expect(rowSpecificity(row({ status: "429", contains: "boom" }))).toBe(3);
+    expect(rowSpecificity({ provider: "p", matchMode: "kind", kind: "network" })).toBe(1);
+    // Whitespace-only is not a condition, matching rowToRule trim semantics.
+    expect(rowSpecificity(row({ status: "  ", contains: "  " }))).toBe(0);
+    expect(rowSpecificity(null)).toBe(0);
+  });
+
+  it("describes a row for the collapsed summary", () => {
+    expect(describeRow(row({}))).toBe("any error");
+    expect(describeRow(row({ status: "429" }))).toBe("429");
+    expect(describeRow(row({ contains: "boom" }))).toBe(String.raw`"boom"`);
+    expect(describeRow({ provider: "p", matchMode: "kind", kind: "connect_timeout" })).toBe("connect_timeout");
+  });
+
+  it("flags only rows an identical earlier row already shadows", () => {
+    const rows = [
+      row({ status: "429" }),
+      row({ status: "429" }),            // exact duplicate -> dead
+      row({ status: "429", contains: "x" }), // more specific -> alive
+      { ...row({ status: "429" }), provider: "other" }, // other provider -> alive
+      row({ contains: "BOOM" }),
+      row({ contains: "boom" }),          // case-insensitive duplicate -> dead
+    ];
+    expect(findDeadRowIndices(rows)).toEqual([1, 5]);
+  });
+
+  it("ignores rows without a provider and tolerates empty input", () => {
+    expect(findDeadRowIndices([{ provider: "" }, { provider: "" }])).toEqual([]);
+    expect(findDeadRowIndices([])).toEqual([]);
+    expect(findDeadRowIndices(null)).toEqual([]);
   });
 });

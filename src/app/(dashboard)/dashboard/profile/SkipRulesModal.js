@@ -1,11 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button, Select, Input, SegmentedControl, Toggle } from "@/shared/components";
 import Modal from "@/shared/components/Modal";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS } from "@/shared/constants/config";
-import { ruleToRow, rowToRule, mergeProviderOptions } from "./skipRulesLogic.js";
+import {
+  ruleToRow,
+  rowToRule,
+  mergeProviderOptions,
+  groupRowsByProvider,
+  insertRowForProvider,
+  findDeadRowIndices,
+  rowSpecificity,
+  describeRow,
+} from "./skipRulesLogic.js";
 
 // Suggested error codes for the datalist (from open-sse errorConfig status map).
 const SUGGESTED_STATUSES = [400, 401, 402, 403, 404, 406, 408, 429, 500, 502, 503, 504];
@@ -31,17 +40,22 @@ const ACTION_OPTIONS = [
 // components hardcode `bg-surface-2 border-transparent rounded-[10px] py-2.5`
 // and cn() is a plain string-join (NOT tailwind-merge), so overriding those
 // exact props needs `!` to win. Only the overridden props carry `!`:
-//   bg-surface-2 → !bg-bg   (bg-bg = var(--color-bg), the real contrasting token;
-//                            `bg-background` does NOT exist in this theme)
-//   border-transparent → !border-border   (resting border)
-//   rounded-[10px] → !rounded-lg           (app-standard radius)
-//   py-2.5 → !py-0 + h-10                  (fixed 40px height; h-10 not set by
-//                                           the component so it needs no `!`)
-// hover carries `!` because it must beat the `!border-border` base on hover.
-// Focus ring is already provided by the shared component (focus:ring-2).
+//   bg-surface-2 -> !bg-bg   (bg-bg = var(--color-bg), the real contrasting token)
+//   border-transparent -> !border-border   (resting border)
+//   rounded-[10px] -> !rounded-lg           (app-standard radius)
+//   py-2.5 -> !py-0 + h-10                  (fixed 40px height)
 const FIELD_CLS = "h-10 !py-0 !bg-bg !border-border !rounded-lg hover:!border-brand-500/60";
 
-// Small fixed label above each field (12px), so placeholders aren't the only label.
+// Priority label mirrors accountFallback.ruleSpecificity: the runtime picks the
+// MOST SPECIFIC matching rule, so the user needs to see that ranking, not row order.
+const SPECIFICITY_LABELS = {
+  0: { text: "any error", cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" },
+  1: { text: "normal priority", cls: "bg-surface-2 text-text-muted" },
+  2: { text: "high priority", cls: "bg-brand-500/15 text-brand-500" },
+  3: { text: "highest priority", cls: "bg-brand-500/25 text-brand-500" },
+};
+
+// Small fixed label above each field (12px), so placeholders are not the only label.
 function Field({ label, children, className }) {
   return (
     <div className={cn("flex flex-col gap-1 min-w-0", className)}>
@@ -51,8 +65,8 @@ function Field({ label, children, className }) {
   );
 }
 
-function emptyRule() {
-  return { provider: "", matchMode: "http", status: "", contains: "", kind: "connect_timeout", action: "skip", headerTimeoutMs: "", sweep: false, retryAttempts: "" };
+function emptyRule(provider = "") {
+  return { provider, matchMode: "http", status: "", contains: "", kind: "connect_timeout", action: "skip", headerTimeoutMs: "", sweep: false, retryAttempts: "" };
 }
 
 export default function SkipRulesModal({ open, onClose, onSaved }) {
@@ -62,7 +76,9 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [rowErrors, setRowErrors] = useState({});
-  const [expanded, setExpanded] = useState({}); // UI-only: which rows show advanced options
+  const [expanded, setExpanded] = useState({});   // per-row advanced options
+  const [openGroups, setOpenGroups] = useState({}); // per-provider accordion state
+  const [newProvider, setNewProvider] = useState("");
 
   // Provider dropdown = static registry (AI_PROVIDERS) + dynamic compatible nodes
   // (/api/provider-nodes) so user-created providers like anthropic-compatible-<uuid> appear.
@@ -71,6 +87,10 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError("");
+    setRowErrors({});
+    setExpanded({});
+    setOpenGroups({});
+    setNewProvider("");
     Promise.all([
       fetch("/api/settings", { cache: "no-store" }).then(r => r.ok ? r.json() : {}),
       fetch("/api/provider-nodes", { cache: "no-store" }).then(r => r.ok ? r.json() : { nodes: [] }).catch(() => ({ nodes: [] })),
@@ -81,13 +101,48 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
     }).finally(() => setLoading(false));
   }, [open]);
 
+  // Groups are derived, never stored: one source of truth (rows) keeps save/validate
+  // logic identical to the flat version and avoids index translation on edit/remove.
+  const groups = useMemo(() => groupRowsByProvider(rows), [rows]);
+  const deadRows = useMemo(() => new Set(findDeadRowIndices(rows)), [rows]);
+  const providerLabel = useMemo(() => {
+    const map = new Map(providerOpts.map(o => [o.value, o.label]));
+    return (id) => map.get(id) || id || "(no provider selected)";
+  }, [providerOpts]);
+
   const updateRow = (i, patch) => {
-    setRows(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    setRows(prev => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
     setRowErrors(prev => { const next = { ...prev }; delete next[i]; return next; });
   };
-  const addRow = () => setRows([...rows, emptyRule()]);
-  const removeRow = (i) => setRows(rows.filter((_, idx) => idx !== i));
+  const removeRow = (i) => {
+    setRows(prev => prev.filter((_, idx) => idx !== i));
+    setRowErrors({});
+    setExpanded({});
+  };
   const toggleExpanded = (i) => setExpanded(prev => ({ ...prev, [i]: !prev[i] }));
+  const toggleGroup = (p) => setOpenGroups(prev => ({ ...prev, [p]: !prev[p] }));
+
+  // Adding always targets a provider group, so a new rule lands next to its siblings
+  // instead of at the end of a flat list the user then has to hunt through.
+  const addRuleTo = (provider) => {
+    setRows(prev => insertRowForProvider(prev, provider, emptyRule(provider)));
+    setOpenGroups(prev => ({ ...prev, [provider]: true }));
+  };
+  const addProviderGroup = () => {
+    if (!newProvider) return;
+    if (!groups.some(g => g.provider === newProvider)) {
+      setRows(prev => [...prev, emptyRule(newProvider)]);
+    } else {
+      addRuleTo(newProvider);
+    }
+    setOpenGroups(prev => ({ ...prev, [newProvider]: true }));
+    setNewProvider("");
+  };
+  const removeGroup = (provider) => {
+    setRows(prev => prev.filter(r => (r.provider || "") !== provider));
+    setRowErrors({});
+    setExpanded({});
+  };
 
   const save = async () => {
     setError("");
@@ -102,6 +157,9 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
     });
     if (Object.keys(errs).length > 0) {
       setRowErrors(errs);
+      // Open every group that owns a bad row so the flagged field is reachable.
+      const bad = new Set(Object.keys(errs).map(Number).map(i => rows[i]?.provider || ""));
+      setOpenGroups(prev => { const next = { ...prev }; bad.forEach(p => { next[p] = true; }); return next; });
       setError(`${Object.keys(errs).length} invalid rule(s) — fix the highlighted rows.`);
       return;
     }
@@ -129,7 +187,7 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
 
   // Compact footer: the Modal footer bar is a separate flow row below the
   // scrollable body (single scroll region, never overlaps a rule). -my-2.5
-  // trims the bar's hardcoded p-6 to ~14px vertical without touching Modal.
+  // trims the bar hardcoded p-6 to ~14px vertical without touching Modal.
   const footer = (
     <div className="flex items-center gap-3 w-full -my-2.5">
       {error && <div className="mr-auto text-xs text-red-500">{error}</div>}
@@ -139,6 +197,146 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
       </div>
     </div>
   );
+
+  const renderRow = (i) => {
+    const row = rows[i];
+    if (!row) return null;
+    const showAdvanced = row.action === "skip" || row.action === "retry" || (row.matchMode === "kind" && row.kind === "connect_timeout");
+    const spec = SPECIFICITY_LABELS[rowSpecificity(row)] || SPECIFICITY_LABELS[1];
+    return (
+      <div key={i} className={cn("px-3 py-2.5 border rounded-lg bg-surface-2", rowErrors[i] ? "border-red-500" : "border-border")}>
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className={cn("px-1.5 py-0.5 rounded text-[11px] leading-none", spec.cls)}>{spec.text}</span>
+          <span className="text-[11px] text-text-muted truncate">{describeRow(row)}</span>
+          {deadRows.has(i) && (
+            <span className="px-1.5 py-0.5 rounded text-[11px] leading-none bg-red-500/15 text-red-500" title="Same condition as a rule above, so it never runs">duplicate — never runs</span>
+          )}
+          <Button size="sm" variant="ghost" icon="delete" className="ml-auto" onClick={() => removeRow(i)} title="Delete rule" aria-label="Delete rule" />
+        </div>
+
+        {/* Condition + action. Provider is owned by the group header, so it is not
+            repeated per row: that removes one Select per rule from the DOM. */}
+        <div className="grid gap-2 items-end grid-cols-1 lg:grid-cols-[minmax(280px,1fr)_auto]">
+          <div className="flex flex-wrap gap-2 items-end min-w-0">
+            <Field label="Error type" className="w-[104px] shrink-0">
+              <Select
+                options={MATCH_MODES}
+                value={row.matchMode}
+                onChange={(e) => updateRow(i, { matchMode: e.target.value })}
+                selectClassName={FIELD_CLS}
+                aria-label="Error type"
+              />
+            </Field>
+            {row.matchMode === "http" ? (
+              <>
+                <Field label="HTTP status" className="w-[92px] shrink-0">
+                  <Input
+                    type="number"
+                    list="skip-rule-status-suggestions"
+                    value={row.status}
+                    onChange={(e) => updateRow(i, { status: e.target.value })}
+                    placeholder="any"
+                    inputClassName={FIELD_CLS}
+                    title="HTTP status — leave empty to match any status"
+                    aria-label="HTTP status"
+                  />
+                </Field>
+                <Field label="Body contains" className="flex-1 min-w-[120px]">
+                  <Input
+                    value={row.contains}
+                    onChange={(e) => updateRow(i, { contains: e.target.value })}
+                    placeholder="optional — e.g. overloaded"
+                    inputClassName={FIELD_CLS}
+                    title="Text in the error body — narrows the match (status and text must both match)"
+                    aria-label="Body contains"
+                  />
+                </Field>
+              </>
+            ) : (
+              <Field label="Transport kind" className="flex-1 min-w-[140px]">
+                <Select
+                  options={KIND_OPTIONS}
+                  value={row.kind}
+                  onChange={(e) => updateRow(i, { kind: e.target.value })}
+                  selectClassName={FIELD_CLS}
+                  aria-label="Transport error kind"
+                />
+              </Field>
+            )}
+          </div>
+
+          <SegmentedControl
+            size="md"
+            options={ACTION_OPTIONS}
+            value={row.action}
+            onChange={(v) => updateRow(i, v === "retry"
+              ? { action: v, sweep: false }
+              : { action: v, retryAttempts: "" })}
+            className="!bg-bg border border-border"
+          />
+        </div>
+
+        {rowErrors[i] && (
+          <div className="mt-1.5 text-xs text-red-500">{rowErrors[i]}</div>
+        )}
+
+        {showAdvanced && (
+          <div className="mt-1.5">
+            <button
+              type="button"
+              onClick={() => toggleExpanded(i)}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-text-main transition-colors"
+            >
+              <span className={cn("material-symbols-outlined text-[16px] transition-transform", expanded[i] && "rotate-180")}>expand_more</span>
+              Advanced options
+            </button>
+            {expanded[i] && (
+              <div className="mt-2 flex flex-col gap-2.5 pl-1">
+                {row.action === "skip" && (
+                  <Toggle
+                    checked={!!row.sweep}
+                    onChange={(v) => updateRow(i, { sweep: v })}
+                    label="Re-sweep the account pool when exhausted"
+                    description="For momentary capacity errors — try every account again for a few more rounds."
+                  />
+                )}
+                {row.action === "retry" && (
+                  <div className="w-[200px]">
+                    <Field label="Extra retries">
+                      <Input
+                        type="number"
+                        value={row.retryAttempts}
+                        onChange={(e) => updateRow(i, { retryAttempts: e.target.value })}
+                        placeholder="1"
+                        inputClassName={FIELD_CLS}
+                        title="Call the same account N more times. Empty = 1."
+                        aria-label="Extra retries"
+                      />
+                    </Field>
+                  </div>
+                )}
+                {row.matchMode === "kind" && row.kind === "connect_timeout" && (
+                  <div className="w-[200px]">
+                    <Field label="Header timeout (ms)">
+                      <Input
+                        type="number"
+                        value={row.headerTimeoutMs}
+                        onChange={(e) => updateRow(i, { headerTimeoutMs: e.target.value })}
+                        placeholder="25000"
+                        inputClassName={FIELD_CLS}
+                        title="Default 60000"
+                        aria-label="Header timeout (ms)"
+                      />
+                    </Field>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <Modal
@@ -153,174 +351,76 @@ export default function SkipRulesModal({ open, onClose, onSaved }) {
         <p className="text-xs text-text-muted leading-relaxed">
           When a provider error matches a rule: <b>Skip</b> = leave this account and move to the next one
           immediately (no cooldown) · <b>Retry</b> = call the same account again N times, then move on
-          (no cooldown). Fill in a status and/or body text (both must match when both are set).
+          (no cooldown). Leave both status and text empty to match every error of that provider.
+          When several rules match, <b>the more specific rule wins</b> — so a rule for one status code
+          always overrides an &quot;any error&quot; rule.
         </p>
 
         {loading ? (
           <div className="text-sm text-text-muted">Loading…</div>
         ) : (
           <div className="flex flex-col gap-2">
-            {/* Shared suggestions for every HTTP-status input (list="skip-rule-status-suggestions"). */}
+            {/* Shared suggestions for every HTTP-status input. */}
             <datalist id="skip-rule-status-suggestions">
               {SUGGESTED_STATUSES.map(s => (
                 <option key={s} value={s} />
               ))}
             </datalist>
-            {rows.length === 0 && (
-              <div className="text-sm text-text-muted italic py-2">No rules yet. Click &quot;Add rule&quot; to start.</div>
+
+            {groups.length === 0 && (
+              <div className="text-sm text-text-muted italic py-2">No rules yet. Pick a provider below to start.</div>
             )}
-            {rows.map((row, i) => {
-              const showAdvanced = row.action === "skip" || row.action === "retry" || (row.matchMode === "kind" && row.kind === "connect_timeout");
+
+            {/* One collapsed card per provider. Rule rows of a closed group are NOT
+                rendered, so a config with dozens of providers stays light on weak machines. */}
+            {groups.map(({ provider, indices }) => {
+              const isOpen = !!openGroups[provider];
+              const badCount = indices.filter(i => rowErrors[i]).length;
+              const deadCount = indices.filter(i => deadRows.has(i)).length;
               return (
-              <div key={i} className={cn("px-3 py-2.5 border rounded-lg bg-surface-2", rowErrors[i] ? "border-red-500" : "border-border")}>
-                {/* Responsive main row:
-                    mobile  → 1 col, everything stacked
-                    md      → 2 cols × 2 rows  (Provider | Condition  /  Action | Delete)
-                    lg      → 1 row: Provider | Condition | Action | Delete */}
-                <div className="grid gap-2 items-end grid-cols-1 md:grid-cols-[140px_minmax(0,1fr)] lg:grid-cols-[minmax(120px,150px)_minmax(280px,1fr)_auto_auto]">
-                  {/* 1 · Provider */}
-                  <Field label="Provider">
-                    <Select
-                      options={providerOpts}
-                      value={row.provider}
-                      onChange={(e) => updateRow(i, { provider: e.target.value })}
-                      placeholder="Select provider"
-                      selectClassName={FIELD_CLS}
-                      aria-label="Provider"
-                    />
-                  </Field>
-
-                  {/* 2 · Condition: error type + (Status + Text) | (transport kind) */}
-                  <div className="flex flex-wrap gap-2 items-end min-w-0">
-                    <Field label="Error type" className="w-[104px] shrink-0">
-                      <Select
-                        options={MATCH_MODES}
-                        value={row.matchMode}
-                        onChange={(e) => updateRow(i, { matchMode: e.target.value })}
-                        selectClassName={FIELD_CLS}
-                        aria-label="Error type"
-                      />
-                    </Field>
-                    {row.matchMode === "http" ? (
-                      <>
-                        <Field label="HTTP status" className="w-[92px] shrink-0">
-                          <Input
-                            type="number"
-                            list="skip-rule-status-suggestions"
-                            value={row.status}
-                            onChange={(e) => updateRow(i, { status: e.target.value })}
-                            placeholder="any"
-                            inputClassName={FIELD_CLS}
-                            title="HTTP status — leave empty to match any status"
-                            aria-label="HTTP status"
-                          />
-                        </Field>
-                        <Field label="Body contains" className="flex-1 min-w-[120px]">
-                          <Input
-                            value={row.contains}
-                            onChange={(e) => updateRow(i, { contains: e.target.value })}
-                            placeholder="optional — e.g. overloaded"
-                            inputClassName={FIELD_CLS}
-                            title="Text in the error body — narrows the match (status and text must both match)"
-                            aria-label="Body contains"
-                          />
-                        </Field>
-                      </>
-                    ) : (
-                      <Field label="Transport kind" className="flex-1 min-w-[140px]">
-                        <Select
-                          options={KIND_OPTIONS}
-                          value={row.kind}
-                          onChange={(e) => updateRow(i, { kind: e.target.value })}
-                          selectClassName={FIELD_CLS}
-                          aria-label="Transport error kind"
-                        />
-                      </Field>
+                <div key={provider || "__unset"} className={cn("border rounded-lg bg-surface", badCount ? "border-red-500" : "border-border")}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(provider)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-surface-2 transition-colors rounded-lg"
+                    aria-expanded={isOpen}
+                  >
+                    <span className={cn("material-symbols-outlined text-[18px] text-text-muted transition-transform", isOpen && "rotate-90")}>chevron_right</span>
+                    <span className="text-sm text-text-main truncate">{providerLabel(provider)}</span>
+                    <span className="px-1.5 py-0.5 rounded text-[11px] leading-none bg-surface-2 text-text-muted shrink-0">{indices.length} {indices.length === 1 ? "rule" : "rules"}</span>
+                    {badCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-[11px] leading-none bg-red-500/15 text-red-500 shrink-0">{badCount} invalid</span>
                     )}
-                  </div>
+                    {deadCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-[11px] leading-none bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">{deadCount} duplicate</span>
+                    )}
+                  </button>
 
-                  {/* 3 · Action — one segmented control; contrast root vs card via !bg-bg + border */}
-                  <SegmentedControl
-                    size="md"
-                    options={ACTION_OPTIONS}
-                    value={row.action}
-                    onChange={(v) => updateRow(i, v === "retry"
-                      ? { action: v, sweep: false }
-                      : { action: v, retryAttempts: "" })}
-                    className="!bg-bg border border-border"
-                  />
-
-                  {/* 4 · Delete */}
-                  <div className="flex justify-start md:justify-end lg:justify-start">
-                    <Button size="sm" variant="ghost" icon="delete" onClick={() => removeRow(i)} title="Delete rule" aria-label="Delete rule" />
-                  </div>
-                </div>
-
-                {rowErrors[i] && (
-                  <div className="mt-1.5 text-xs text-red-500">{rowErrors[i]}</div>
-                )}
-
-                {/* Advanced options — collapsed by default; only when relevant */}
-                {showAdvanced && (
-                  <div className="mt-1.5">
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(i)}
-                      className="flex items-center gap-1 text-xs text-text-muted hover:text-text-main transition-colors"
-                    >
-                      <span className={cn("material-symbols-outlined text-[16px] transition-transform", expanded[i] && "rotate-180")}>expand_more</span>
-                      Advanced options
-                    </button>
-                    {expanded[i] && (
-                      <div className="mt-2 flex flex-col gap-2.5 pl-1">
-                        {row.action === "skip" && (
-                          <Toggle
-                            checked={!!row.sweep}
-                            onChange={(v) => updateRow(i, { sweep: v })}
-                            label="Re-sweep the account pool when exhausted"
-                            description="For momentary capacity errors — try every account again for a few more rounds."
-                          />
-                        )}
-                        {row.action === "retry" && (
-                          <div className="w-[200px]">
-                            <Field label="Extra retries">
-                              <Input
-                                type="number"
-                                value={row.retryAttempts}
-                                onChange={(e) => updateRow(i, { retryAttempts: e.target.value })}
-                                placeholder="1"
-                                inputClassName={FIELD_CLS}
-                                title="Call the same account N more times. Empty = 1."
-                                aria-label="Extra retries"
-                              />
-                            </Field>
-                          </div>
-                        )}
-                        {row.matchMode === "kind" && row.kind === "connect_timeout" && (
-                          <div className="w-[200px]">
-                            <Field label="Header timeout (ms)">
-                              <Input
-                                type="number"
-                                value={row.headerTimeoutMs}
-                                onChange={(e) => updateRow(i, { headerTimeoutMs: e.target.value })}
-                                placeholder="25000"
-                                inputClassName={FIELD_CLS}
-                                title="Default 60000"
-                                aria-label="Header timeout (ms)"
-                              />
-                            </Field>
-                          </div>
-                        )}
+                  {isOpen && (
+                    <div className="px-3 pb-3 flex flex-col gap-2">
+                      {indices.map(renderRow)}
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="ghost" icon="add" onClick={() => addRuleTo(provider)}>Add rule</Button>
+                        <Button size="sm" variant="ghost" icon="delete" className="ml-auto" onClick={() => removeGroup(provider)} title="Delete every rule of this provider">Remove provider</Button>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
 
-            <div className="mt-0.5">
-              <Button size="sm" variant="ghost" icon="add" onClick={addRow}>Add rule</Button>
+            <div className="flex items-end gap-2 mt-0.5">
+              <Field label="Add provider" className="w-[240px]">
+                <Select
+                  options={providerOpts}
+                  value={newProvider}
+                  onChange={(e) => setNewProvider(e.target.value)}
+                  placeholder="Select provider"
+                  selectClassName={FIELD_CLS}
+                  aria-label="Add provider"
+                />
+              </Field>
+              <Button size="sm" variant="ghost" icon="add" onClick={addProviderGroup} disabled={!newProvider}>Add</Button>
             </div>
           </div>
         )}

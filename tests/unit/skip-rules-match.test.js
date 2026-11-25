@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchSkipRule, findMatchingSkipRule, resolveProviderHeaderTimeout, resolveRetryAttempts, SKIP_RULE_RETRY_ATTEMPTS_DEFAULT } from "../../open-sse/services/accountFallback.js";
+import { matchSkipRule, findMatchingSkipRule, resolveProviderHeaderTimeout, resolveRetryAttempts, ruleSpecificity, SKIP_RULE_RETRY_ATTEMPTS_DEFAULT } from "../../open-sse/services/accountFallback.js";
 
 describe("matchSkipRule", () => {
   const rules = [
@@ -39,18 +39,63 @@ describe("matchSkipRule", () => {
     expect(matchSkipRule("antigravity", { status: 500, text: "capacity" }, mixed)).toBeNull();
   });
 
-  it("uses array order — first fully-matching rule wins", () => {
-    const ordered = [
+  it("the MORE SPECIFIC rule wins regardless of array order", () => {
+    const generalFirst = [
       { provider: "p", match: { status: 503 }, action: "retry" },
       { provider: "p", match: { status: 503, contains: "capacity" }, action: "skip" },
     ];
-    // first rule (status:503 only) matches first → retry, even though the 2nd also would
-    const r = matchSkipRule("p", { status: 503, text: "capacity" }, ordered);
-    expect(r.action).toBe("retry");
+    // status+contains (3) outranks status-only (1) even though it is listed second.
+    expect(matchSkipRule("p", { status: 503, text: "capacity" }, generalFirst).action).toBe("skip");
+
+    // Reversing the array must not change the outcome.
+    expect(matchSkipRule("p", { status: 503, text: "capacity" }, [...generalFirst].reverse()).action).toBe("skip");
+
+    // A failure the specific rule does not cover still falls back to the general one.
+    expect(matchSkipRule("p", { status: 503, text: "gateway boom" }, generalFirst).action).toBe("retry");
   });
 
-  it("a match block with no usable condition never matches (no skip-all)", () => {
-    expect(matchSkipRule("p", { status: 503 }, [{ provider: "p", match: {}, action: "skip" }])).toBeNull();
+  it("array order still breaks ties between equally specific rules", () => {
+    const tie = [
+      { provider: "p", match: { status: 429 }, action: "retry" },
+      { provider: "p", match: { status: 429 }, action: "skip" },
+    ];
+    expect(matchSkipRule("p", { status: 429 }, tie).action).toBe("retry");
+  });
+
+  it("an empty match is a provider-wide wildcard, overridden by any specific rule", () => {
+    // This is the case the flat first-match model got wrong: a blanket skip listed
+    // first used to swallow 429 and the retry rule became dead config.
+    const rules = [
+      { provider: "p", match: {}, action: "skip" },
+      { provider: "p", match: { status: 429 }, action: "retry", retryAttempts: 5 },
+    ];
+    expect(matchSkipRule("p", { status: 429 }, rules)).toEqual({ action: "retry", retryAttempts: 5 });
+    expect(matchSkipRule("p", { status: 500 }, rules)).toEqual({ action: "skip" });
+    expect(matchSkipRule("p", { errorKind: "network" }, rules)).toEqual({ action: "skip" });
+    // Wildcard is scoped to its provider, never global.
+    expect(matchSkipRule("other", { status: 500 }, rules)).toBeNull();
+  });
+
+  it("ranks specificity: status+contains > contains > status > wildcard", () => {
+    expect(ruleSpecificity({})).toBe(0);
+    expect(ruleSpecificity({ status: 429 })).toBe(1);
+    expect(ruleSpecificity({ kind: "network" })).toBe(1);
+    expect(ruleSpecificity({ contains: "boom" })).toBe(2);
+    expect(ruleSpecificity({ status: 429, contains: "boom" })).toBe(3);
+    // Blank strings do not count as conditions (a cleared UI field is not a filter).
+    expect(ruleSpecificity({ status: "", contains: "" })).toBe(0);
+    expect(ruleSpecificity(null)).toBe(0);
+
+    const rules = [
+      { provider: "p", match: {}, action: "skip" },
+      { provider: "p", match: { status: 500 }, action: "skip", sweep: true },
+      { provider: "p", match: { contains: "overloaded" }, action: "retry", retryAttempts: 2 },
+      { provider: "p", match: { status: 500, contains: "overloaded" }, action: "retry", retryAttempts: 9 },
+    ];
+    expect(matchSkipRule("p", { status: 500, text: "server OVERLOADED" }, rules).retryAttempts).toBe(9);
+    expect(matchSkipRule("p", { status: 502, text: "overloaded" }, rules).retryAttempts).toBe(2);
+    expect(matchSkipRule("p", { status: 500, text: "other" }, rules)).toEqual({ action: "skip", sweep: true });
+    expect(matchSkipRule("p", { status: 418, text: "other" }, rules)).toEqual({ action: "skip" });
   });
 
   it("returns sweep:true only when a matched skip rule opts in", () => {

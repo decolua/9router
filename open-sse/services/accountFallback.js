@@ -99,17 +99,22 @@ export function resolveRetryAttempts(rule) {
 /**
  * Match a user-configured skip-rule against a failure.
  *
- * A rule's `match` may carry any combination of { kind, status, contains }; the
- * rule matches only when EVERY present condition holds (AND). At least one
- * condition must be present. Rules are evaluated in ARRAY ORDER — the first rule
- * (for this provider) whose conditions all match wins. Order is user-controlled
- * via the settings UI. There is no hardcoded provider default: the Antigravity
- * capacity skip ships as an ordinary seeded rule
- * ({ status:503, contains:"capacity", action:"skip" }) the user can edit or delete.
+ * A match block may carry any combination of { kind, status, contains }; the rule
+ * matches only when EVERY present condition holds (AND). A match block with NO
+ * condition is a provider-wide wildcard that matches every failure for that
+ * provider, so one blanket policy can be set and then overridden per error code.
+ *
+ * When several rules match the same failure the MOST SPECIFIC one wins (see
+ * ruleSpecificity) rather than the first in array order. Array order only breaks
+ * ties between rules of equal specificity.
+ *
+ * There is no hardcoded provider default: the Antigravity capacity skip ships as
+ * an ordinary seeded rule ({ status:503, contains:"capacity", action:"skip" })
+ * the user can edit or delete.
  *
  * @param {string} provider   provider id (e.g. "anthropic-compatible-<uuid>", "antigravity")
  * @param {{status?: number|string, errorKind?: string, text?: string}} failure
- * @param {Array<{provider, match:{kind?,status?,contains?}, action, headerTimeoutMs?, sweep?}>} skipRules
+ * @param {Array<{provider, match:{kind?,status?,contains?}, action, headerTimeoutMs?, sweep?, retryAttempts?}>} skipRules
  * @returns {{action:"retry"|"skip", headerTimeoutMs?:number, sweep?:boolean, retryAttempts?:number}|null}
  */
 export function matchSkipRule(provider, failure = {}, skipRules = []) {
@@ -129,18 +134,42 @@ export function matchSkipRule(provider, failure = {}, skipRules = []) {
 }
 
 /**
- * Find the FIRST rule (in array order) that matches this failure for `provider`,
- * and return the rule object itself (not a derived shape) — or null.
+ * Specificity score of a match block. Higher wins when several rules match the
+ * same failure. Each present condition contributes, and contains outranks a bare
+ * status/kind because it additionally constrains the response body text:
  *
- * A rule's `match` may carry any combination of { kind, status, contains }; the
- * rule matches only when EVERY present condition holds (AND). At least one usable
- * condition must be present (an empty match never matches — avoids skip-all).
- * Array order is user-controlled via the settings UI (first match wins).
+ *   status + contains / kind + contains -> 3   (most specific)
+ *   contains only                       -> 2
+ *   status only / kind only             -> 1
+ *   empty match (provider wildcard)     -> 0   (least specific)
+ *
+ * This is what makes "skip everything, but retry on 429" express the real intent:
+ * the 429 rule scores higher than the wildcard and therefore wins.
+ * @param {{kind?, status?, contains?}} m
+ * @returns {number}
+ */
+export function ruleSpecificity(m) {
+  if (!m || typeof m !== "object") return 0;
+  let score = 0;
+  if (m.kind != null && m.kind !== "") score += 1;
+  if (m.status != null && m.status !== "") score += 1;
+  if (m.contains != null && m.contains !== "") score += 2;
+  return score;
+}
+
+/**
+ * Find the MOST SPECIFIC rule matching this failure for provider, and return the
+ * rule object itself (not a derived shape) -- or null.
+ *
+ * Every rule for the provider is evaluated; the highest ruleSpecificity wins and
+ * array order only breaks ties. An empty match block is a provider-wide wildcard
+ * (specificity 0) and is deliberately the weakest, so any rule naming a concrete
+ * status, kind or text overrides it.
  *
  * @param {string} provider
  * @param {{status?: number|string, errorKind?: string, text?: string}} failure
  * @param {Array} skipRules
- * @returns {object|null} the matching rule object, or null
+ * @returns {object|null}
  */
 export function findMatchingSkipRule(provider, failure = {}, skipRules = []) {
   const status = failure.status != null ? Number(failure.status) : null;
@@ -149,28 +178,32 @@ export function findMatchingSkipRule(provider, failure = {}, skipRules = []) {
   const rules = Array.isArray(skipRules) ? skipRules : [];
 
   const conditionsMatch = (m) => {
-    let has = false;
-    if (m.kind != null) {
-      has = true;
+    if (m.kind != null && m.kind !== "") {
       if (errorKind == null || m.kind !== errorKind) return false;
     }
-    if (m.status != null) {
-      has = true;
+    if (m.status != null && m.status !== "") {
       if (status == null || Number(m.status) !== status) return false;
     }
     if (m.contains != null && m.contains !== "") {
-      has = true;
       if (!text.includes(String(m.contains).toLowerCase())) return false;
     }
-    // A match block with no usable condition never matches (avoids skip-all).
-    return has;
+    // No condition left to fail: provider-wide wildcard, matches everything.
+    return true;
   };
 
+  let best = null;
+  let bestScore = -1;
   for (const r of rules) {
     if (!r || r.provider !== provider || !r.match || !r.action) continue;
-    if (conditionsMatch(r.match)) return r;
+    if (!conditionsMatch(r.match)) continue;
+    const score = ruleSpecificity(r.match);
+    // Strictly greater keeps the FIRST rule on a tie (previous array-order rule).
+    if (score > bestScore) {
+      best = r;
+      bestScore = score;
+    }
   }
-  return null;
+  return best;
 }
 
 /**

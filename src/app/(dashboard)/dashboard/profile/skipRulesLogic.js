@@ -10,6 +10,8 @@ import { SKIP_RULE_RETRY_ATTEMPTS_MIN } from "open-sse/services/accountFallback.
 //     kind,                      // used when matchMode === "kind"
 //     action, headerTimeoutMs, sweep, retryAttempts }
 // Stored rule: { provider, match: { status?, contains?, kind? }, action, headerTimeoutMs?, sweep?, retryAttempts? }
+// An empty match ({}) is a valid provider-wide wildcard: it matches every failure of
+// that provider and loses to any more specific rule (see accountFallback.ruleSpecificity).
 // retryAttempts (retry only) = extra calls to the SAME account before moving on.
 // A rule's match may carry any combination of status/contains/kind (AND at runtime).
 // sweep (skip only) asks the account loop to re-try the whole pool after exhaustion.
@@ -27,8 +29,8 @@ export function ruleToRow(rule) {
     action: rule.action === "retry" ? "retry" : "skip",
     headerTimeoutMs: rule.headerTimeoutMs != null ? String(rule.headerTimeoutMs) : "",
     sweep: rule.sweep === true,
-    // Blank when the stored rule omits it; rowToRule() then omits it too and
-    // accountFallback.resolveRetryAttempts() applies the documented default.
+    // Blank for a retry rule saved before the field existed; rowToRule() then omits
+    // it and accountFallback.resolveRetryAttempts() applies the documented default.
     retryAttempts: rule.retryAttempts != null ? String(rule.retryAttempts) : "",
   };
 }
@@ -44,12 +46,11 @@ export function rowToRule(row) {
     if (!row.kind) return { error: "Select an error kind" };
     match.kind = row.kind;
   } else {
-    // HTTP mode: status and/or contains — at least one required.
+    // HTTP mode: status and/or contains, BOTH optional. Leaving both blank is a
+    // deliberate provider-wide wildcard (match:{}) -- the weakest rule, overridden by
+    // any rule naming a concrete status/text. This is what the field hint promises.
     const hasStatus = row.status != null && String(row.status).trim() !== "";
     const hasContains = row.contains != null && String(row.contains).trim() !== "";
-    if (!hasStatus && !hasContains) {
-      return { error: "Enter an HTTP status or body text (at least one)" };
-    }
     if (hasStatus) {
       const n = parseInt(row.status, 10);
       if (!Number.isInteger(n) || n < 100 || n > 599) return { error: "HTTP status must be a number 100–599" };
@@ -80,6 +81,82 @@ export function rowToRule(row) {
     rule.retryAttempts = n;
   }
   return { rule };
+}
+
+// ---------------------------------------------------------------------------
+// Grouping + priority helpers for the provider-accordion UI.
+// Kept here (not in the component) so they stay unit-testable without JSX.
+// ---------------------------------------------------------------------------
+
+// Same scoring as accountFallback.ruleSpecificity, computed from an editable ROW.
+// The UI shows it so the user can see which rule actually wins for a provider,
+// instead of having to reason about array order.
+export function rowSpecificity(row) {
+  if (!row) return 0;
+  let score = 0;
+  if (row.matchMode === "kind") {
+    if (row.kind) score += 1;
+    return score;
+  }
+  if (row.status != null && String(row.status).trim() !== "") score += 1;
+  if (row.contains != null && String(row.contains).trim() !== "") score += 2;
+  return score;
+}
+
+// Short human label for a row condition, used in the collapsed group summary.
+export function describeRow(row) {
+  if (!row) return "";
+  if (row.matchMode === "kind") return row.kind || "transport";
+  const parts = [];
+  const status = row.status != null ? String(row.status).trim() : "";
+  const contains = row.contains != null ? String(row.contains).trim() : "";
+  if (status) parts.push(status);
+  if (contains) parts.push(`"${contains}"`);
+  return parts.length ? parts.join(" + ") : "any error";
+}
+
+// Group flat rows by provider, preserving both provider first-appearance order and
+// row order inside a group. Returns [{ provider, indices }] where indices point back
+// into the ORIGINAL rows array, so edits/removals never need index translation.
+export function groupRowsByProvider(rows) {
+  const order = [];
+  const byProvider = new Map();
+  (rows || []).forEach((row, i) => {
+    const key = row?.provider || "";
+    if (!byProvider.has(key)) {
+      byProvider.set(key, []);
+      order.push(key);
+    }
+    byProvider.get(key).push(i);
+  });
+  return order.map(provider => ({ provider, indices: byProvider.get(provider) }));
+}
+
+// Insert a new row directly after the last row of its provider so a group stays
+// contiguous (the accordion renders groups, not raw array slices).
+export function insertRowForProvider(rows, provider, newRow) {
+  const list = Array.isArray(rows) ? rows : [];
+  let last = -1;
+  list.forEach((row, i) => { if ((row?.provider || "") === provider) last = i; });
+  if (last === -1) return [...list, newRow];
+  return [...list.slice(0, last + 1), newRow, ...list.slice(last + 1)];
+}
+
+// Rows that can never fire because an earlier row of the same provider has the
+// IDENTICAL condition (same specificity, so array order decides and the earlier
+// one always wins). Reported to the user instead of silently keeping dead config.
+export function findDeadRowIndices(rows) {
+  const seen = new Map();
+  const dead = [];
+  (rows || []).forEach((row, i) => {
+    if (!row?.provider) return;
+    const key = [row.provider, row.matchMode, row.matchMode === "kind" ? (row.kind || "") : "",
+      row.matchMode === "kind" ? "" : String(row.status ?? "").trim(),
+      row.matchMode === "kind" ? "" : String(row.contains ?? "").trim().toLowerCase()].join("|");
+    if (seen.has(key)) dead.push(i);
+    else seen.set(key, i);
+  });
+  return dead;
 }
 
 // Merge the static provider registry (AI_PROVIDERS) with dynamic compatible

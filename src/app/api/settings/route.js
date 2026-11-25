@@ -41,10 +41,10 @@ function validateSkipRuleSettings(body) {
     if (!SKIP_RULE_ACTIONS.has(r.action)) return `${at}.action must be "retry" or "skip"`;
     const m = r.match;
     if (!m || typeof m !== "object") return `${at}.match is required`;
-    // Match may carry any combination of kind|status|contains; at least one is
-    // required, and every present condition must be valid (AND semantics at runtime).
-    const present = ["kind", "status", "contains"].filter(k => m[k] != null && m[k] !== "");
-    if (present.length < 1) return `${at}.match must have at least one of kind|status|contains`;
+    // Match may carry any combination of kind|status|contains (AND semantics at
+    // runtime). An EMPTY match is allowed and means "every failure of this provider";
+    // it is the weakest rule (specificity 0), so any rule naming a concrete status,
+    // kind or text overrides it instead of being shadowed by it.
     if (m.kind != null && !SKIP_RULE_KINDS.has(m.kind)) return `${at}.match.kind invalid`;
     if (m.status != null && (!Number.isInteger(m.status) || m.status < 100 || m.status > 599)) {
       return `${at}.match.status must be an integer 100-599`;

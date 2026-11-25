@@ -68,9 +68,20 @@ describe("retryAttempts validation", () => {
   });
 
   it("keeps existing skip-rule validation intact", async () => {
-    const bad = await patch({ providerSkipRules: [{ provider: "kr-ac", match: {}, action: "retry" }] });
-    expect(bad.status).toBe(400);
+    const noProvider = await patch({ providerSkipRules: [{ provider: "", match: { status: 429 }, action: "retry" }] });
+    expect(noProvider.status).toBe(400);
+    const badAction = await patch({ providerSkipRules: [{ provider: "kr-ac", match: { status: 429 }, action: "nope" }] });
+    expect(badAction.status).toBe(400);
+    const badStatus = await patch({ providerSkipRules: [{ provider: "kr-ac", match: { status: 99 }, action: "retry" }] });
+    expect(badStatus.status).toBe(400);
     const sweepOnRetry = await patch({ providerSkipRules: [rule({ sweep: true })] });
     expect(sweepOnRetry.status).toBe(400);
+  });
+
+  it("accepts an empty match as a deliberate provider-wide wildcard", async () => {
+    // The runtime ranks a wildcard lowest (specificity 0), so it can no longer
+    // shadow a specific rule and does not need to be rejected at the API.
+    const res = await patch({ providerSkipRules: [{ provider: "kr-ac", match: {}, action: "skip" }] });
+    expect(res.status).toBe(200);
   });
 });
