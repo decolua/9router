@@ -37,10 +37,19 @@ export const NO_AUTH_PROVIDER_IDS = Object.keys(AI_PROVIDERS)
 // Static registry stays as fallback when live fetch fails or is empty.
 // zed added in #4244: its backend customResolver already returns live models
 // but the frontend omitted it, hiding Zed entirely from the Combo picker.
-// Providers with per-account live catalogs via /api/providers/[id]/models.
-// Single source of truth: ModelSelectModal and the CLI-tool cards import this, so a
-// provider supported by that route cannot be missing from just one picker.
-export const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "claude", "commandcode"];
+// Both the model picker and CLI-tool cards use this list.
+export const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "claude", "commandcode", "qwenwork-enterprise"];
+
+export function getSelectableCatalogModels(providerId, liveModels) {
+  if (!liveModels?.length) return getModelsByProviderId(providerId);
+  if (providerId !== "qwenwork-enterprise") return liveModels;
+
+  // The enterprise endpoint returns canonical IDs; pickers prepend the UI alias.
+  const prefix = `${providerId}/`;
+  return liveModels.map((model) => model.id.startsWith(prefix)
+    ? { ...model, id: model.id.slice(prefix.length) }
+    : model);
+}
 
 /**
  * Capabilities carried by a live catalog row, when the provider reports any.
@@ -295,10 +304,7 @@ export function buildModelGroups({
         hasModels: mergedModels.length > 0,
       };
     } else {
-      const liveModels = asArray(live[providerId]);
-      const hardcodedModels = liveModels.length > 0
-        ? liveModels
-        : getModelsByProviderId(providerId);
+      const hardcodedModels = getSelectableCatalogModels(providerId, asArray(live[providerId]));
       const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
 
       // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider

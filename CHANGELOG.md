@@ -6,6 +6,7 @@
 ## Fixes
 - **QwenWork**: send the built-in COSY scene and business headers for both editions, resolve chat models from the site's `qwork` catalog, and fix enterprise OAuth registration, account naming and quota lookup. Show both editions together on the Providers page with the desktop app icon.
 - **QwenWork Enterprise**: show the connected account's live model catalog on the provider detail page, using the static list when the live catalog is unavailable.
+- **QwenWork Enterprise**: load the connected accounts' live model catalogs in the Combo model picker so models such as `qwwe/glm-5.3` can be added.
 - **CodeBuddy CN**: preserve system prompt content instead of rewriting it; keep normalizing the `developer` role to `system`.
 # v0.5.123 (2026-11-22)
 
