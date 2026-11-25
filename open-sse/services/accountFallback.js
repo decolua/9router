@@ -74,6 +74,153 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
+// Minimum for a retry rule's `retryAttempts` (extra calls to the same account).
+// There is no maximum: the user decides how many retries they need, and the
+// abort guard in chat.js terminates the loop immediately on client disconnect
+// regardless of how many budget calls remain.
+export const SKIP_RULE_RETRY_ATTEMPTS_MIN = 1;
+// A retry rule that omits `retryAttempts` gets 1 extra retry.
+export const SKIP_RULE_RETRY_ATTEMPTS_DEFAULT = 1;
+
+/**
+ * Effective extra same-account calls for a retry rule.
+ * Only positive integers are honoured; anything else (absent, 0, negative,
+ * float, string, NaN) falls back to the documented default rather than
+ * silently disabling the rule the user asked for.
+ * @param {object} rule
+ * @returns {number}
+ */
+export function resolveRetryAttempts(rule) {
+  const n = rule?.retryAttempts;
+  if (!Number.isInteger(n) || n < SKIP_RULE_RETRY_ATTEMPTS_MIN) return SKIP_RULE_RETRY_ATTEMPTS_DEFAULT;
+  return n;
+}
+
+/**
+ * Match a user-configured skip-rule against a failure.
+ *
+ * A match block may carry any combination of { kind, status, contains }; the rule
+ * matches only when EVERY present condition holds (AND). A match block with NO
+ * condition is a provider-wide wildcard that matches every failure for that
+ * provider, so one blanket policy can be set and then overridden per error code.
+ *
+ * When several rules match the same failure the MOST SPECIFIC one wins (see
+ * ruleSpecificity) rather than the first in array order. Array order only breaks
+ * ties between rules of equal specificity.
+ *
+ * There is no hardcoded provider default: the Antigravity capacity skip ships as
+ * an ordinary seeded rule ({ status:503, contains:"capacity", action:"skip" })
+ * the user can edit or delete.
+ *
+ * @param {string} provider   provider id (e.g. "anthropic-compatible-<uuid>", "antigravity")
+ * @param {{status?: number|string, errorKind?: string, text?: string}} failure
+ * @param {Array<{provider, match:{kind?,status?,contains?}, action, headerTimeoutMs?, sweep?, retryAttempts?}>} skipRules
+ * @returns {{action:"retry"|"skip", headerTimeoutMs?:number, sweep?:boolean, retryAttempts?:number}|null}
+ */
+export function matchSkipRule(provider, failure = {}, skipRules = []) {
+  const r = findMatchingSkipRule(provider, failure, skipRules);
+  if (!r) return null;
+  const out = { action: r.action };
+  if (r.headerTimeoutMs != null) out.headerTimeoutMs = r.headerTimeoutMs;
+  // `sweep` is only meaningful for skip rules — it asks the account loop to
+  // re-try the whole pool after exhausting it (momentary saturation recovery).
+  if (r.action === "skip" && r.sweep === true) out.sweep = true;
+  // `retryAttempts` is only meaningful for retry rules: it is the number of EXTRA
+  // calls to the SAME account before giving up on it. Resolved here (rather than at
+  // the call site) so every consumer sees the same effective value, including the
+  // default for rules that omit the field.
+  if (r.action === "retry") out.retryAttempts = resolveRetryAttempts(r);
+  return out;
+}
+
+/**
+ * Specificity score of a match block. Higher wins when several rules match the
+ * same failure. Each present condition contributes, and contains outranks a bare
+ * status/kind because it additionally constrains the response body text:
+ *
+ *   status + contains / kind + contains -> 3   (most specific)
+ *   contains only                       -> 2
+ *   status only / kind only             -> 1
+ *   empty match (provider wildcard)     -> 0   (least specific)
+ *
+ * This is what makes "skip everything, but retry on 429" express the real intent:
+ * the 429 rule scores higher than the wildcard and therefore wins.
+ * @param {{kind?, status?, contains?}} m
+ * @returns {number}
+ */
+export function ruleSpecificity(m) {
+  if (!m || typeof m !== "object") return 0;
+  let score = 0;
+  if (m.kind != null && m.kind !== "") score += 1;
+  if (m.status != null && m.status !== "") score += 1;
+  if (m.contains != null && m.contains !== "") score += 2;
+  return score;
+}
+
+/**
+ * Find the MOST SPECIFIC rule matching this failure for provider, and return the
+ * rule object itself (not a derived shape) -- or null.
+ *
+ * Every rule for the provider is evaluated; the highest ruleSpecificity wins and
+ * array order only breaks ties. An empty match block is a provider-wide wildcard
+ * (specificity 0) and is deliberately the weakest, so any rule naming a concrete
+ * status, kind or text overrides it.
+ *
+ * @param {string} provider
+ * @param {{status?: number|string, errorKind?: string, text?: string}} failure
+ * @param {Array} skipRules
+ * @returns {object|null}
+ */
+export function findMatchingSkipRule(provider, failure = {}, skipRules = []) {
+  const status = failure.status != null ? Number(failure.status) : null;
+  const errorKind = failure.errorKind || null;
+  const text = typeof failure.text === "string" ? failure.text.toLowerCase() : "";
+  const rules = Array.isArray(skipRules) ? skipRules : [];
+
+  const conditionsMatch = (m) => {
+    if (m.kind != null && m.kind !== "") {
+      if (errorKind == null || m.kind !== errorKind) return false;
+    }
+    if (m.status != null && m.status !== "") {
+      if (status == null || Number(m.status) !== status) return false;
+    }
+    if (m.contains != null && m.contains !== "") {
+      if (!text.includes(String(m.contains).toLowerCase())) return false;
+    }
+    // No condition left to fail: provider-wide wildcard, matches everything.
+    return true;
+  };
+
+  let best = null;
+  let bestScore = -1;
+  for (const r of rules) {
+    if (!r || r.provider !== provider || !r.match || !r.action) continue;
+    if (!conditionsMatch(r.match)) continue;
+    const score = ruleSpecificity(r.match);
+    // Strictly greater keeps the FIRST rule on a tie (previous array-order rule).
+    if (score > bestScore) {
+      best = r;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+/**
+ * Resolve the header/connect timeout for a provider from skip-rules.
+ * Scans rules matching this provider with match.kind === "connect_timeout" that
+ * carry a headerTimeoutMs; earlier rule wins. Returns null → caller uses default.
+ */
+export function resolveProviderHeaderTimeout(provider, skipRules = []) {
+  const rules = Array.isArray(skipRules) ? skipRules : [];
+  for (const r of rules) {
+    if (r && r.provider === provider && r.match?.kind === "connect_timeout" && r.headerTimeoutMs != null) {
+      return r.headerTimeoutMs;
+    }
+  }
+  return null;
+}
+
 /**
  * Check if account is currently unavailable (cooldown not expired)
  */

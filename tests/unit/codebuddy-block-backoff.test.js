@@ -6,6 +6,7 @@ import { handleComboChat } from "../../open-sse/services/combo.js";
 const db = vi.hoisted(() => ({
   getProviderConnections: vi.fn(),
   updateProviderConnection: vi.fn(),
+  getSettings: vi.fn(async () => ({})),
 }));
 vi.mock("@/lib/localDb", () => db);
 vi.mock("@/lib/network/connectionProxy", () => ({

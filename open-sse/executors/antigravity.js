@@ -573,6 +573,11 @@ export class AntigravityExecutor extends BaseExecutor {
 
     const errorMessage = this.extractErrorMessage(errorJson, bodyText);
 
+    // Capacity 503 fail-fast is not decided here. The default skip-rule
+    // ({ provider:"antigravity", status:503, contains:"capacity", action:"skip" })
+    // resolves attempts=0, so BaseExecutor.tryRetry short-circuits before ever
+    // calling this hook. If the user deletes that rule, capacity 503 falls through
+    // to the transient-retry path below.
     if (!retryMs) {
       retryMs = this.parseRetryFromErrorMessage(errorMessage);
     }

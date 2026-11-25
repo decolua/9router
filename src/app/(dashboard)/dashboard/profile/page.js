@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
+import SkipRulesModal from "./SkipRulesModal";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
@@ -70,6 +71,7 @@ export default function ProfilePage() {
   const [showSamlGuide, setShowSamlGuide] = useState(false);
   const idpMetadataFileRef = useRef(null);
   const certFileRef = useRef(null);
+  const [skipRulesOpen, setSkipRulesOpen] = useState(false);
 
   const importFileRef = useRef(null);
   const [proxyForm, setProxyForm] = useState({
@@ -272,6 +274,21 @@ export default function ProfilePage() {
       if (res.ok) {
         setSettings(prev => ({ ...prev, fallbackStrategy: strategy }));
       }
+    } catch (err) {
+      console.error("Failed to update settings:", err);
+    }
+  };
+
+  const updateMaxTransportAttempts = async (value) => {
+    const n = parseInt(value, 10);
+    if (!Number.isInteger(n) || n < 1 || n > 5) return;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxTransportAttempts: n }),
+      });
+      if (res.ok) setSettings(prev => ({ ...prev, maxTransportAttempts: n }));
     } catch (err) {
       console.error("Failed to update settings:", err);
     }
@@ -1526,6 +1543,45 @@ export default function ProfilePage() {
           </div>
         </Card>
 
+        {/* Reliability: retries + skip-error rules */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">bolt</span>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-text-main">Reliability & Fail-fast</h2>
+              <p className="text-sm text-text-muted">Transport retry budget and per-provider error handling.</p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm text-text-main font-medium">Max transport attempts</span>
+              <input
+                type="number"
+                min={1}
+                max={5}
+                value={settings.maxTransportAttempts ?? 2}
+                onChange={(e) => setSettings(prev => ({ ...prev, maxTransportAttempts: e.target.value }))}
+                onBlur={(e) => updateMaxTransportAttempts(e.target.value)}
+                className="w-16 px-2 py-1 text-sm border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+              />
+              <span className="text-xs text-text-muted">Max calls per account for transport errors (including the first). Default 2.</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-border">
+              <div>
+                <div className="text-sm text-text-main font-medium">Skip-error rules</div>
+                <div className="text-xs text-text-muted">
+                  Match a provider error to skip to the next account immediately, or retry the same account.
+                </div>
+              </div>
+              <Button size="sm" variant="secondary" icon="tune" onClick={() => setSkipRulesOpen(true)}>
+                Configure
+              </Button>
+            </div>
+          </div>
+        </Card>
+
         {/* Network */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
@@ -1697,6 +1753,12 @@ export default function ProfilePage() {
           autoFocus
         />
       </Modal>
+
+      <SkipRulesModal
+        open={skipRulesOpen}
+        onClose={() => setSkipRulesOpen(false)}
+        onSaved={(rules) => setSettings(prev => ({ ...prev, providerSkipRules: rules }))}
+      />
     </div>
   );
 }
