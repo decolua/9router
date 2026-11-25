@@ -19,6 +19,7 @@ import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
+import { applyClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
 
 /**
  * Fill in what the provider omitted, in the field names the pickers already read.
@@ -628,10 +629,10 @@ export async function GET(request, { params }) {
       const url = `${baseUrl.replace(/\/$/, "")}/models`;
       const response = await fetch(url, {
         method: "GET",
-        headers: {
+        headers: applyClientIdentityHeaders({
           "Content-Type": "application/json",
           "Authorization": `Bearer ${connection.apiKey}`,
-        },
+        }, connection.providerSpecificData),
       });
 
       if (!response.ok) {
@@ -667,12 +668,12 @@ export async function GET(request, { params }) {
       const url = `${baseUrl}/models`;
       const response = await fetch(url, {
         method: "GET",
-        headers: {
+        headers: applyClientIdentityHeaders({
           "Content-Type": "application/json",
           "x-api-key": connection.apiKey,
           "anthropic-version": "2023-06-01",
           "Authorization": `Bearer ${connection.apiKey}`
-        },
+        }, connection.providerSpecificData),
       });
 
       if (!response.ok) {

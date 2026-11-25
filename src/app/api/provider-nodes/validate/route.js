@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
+import { applyClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
 
 // Fetch with timeout wrapper
 const fetchWithTimeout = (url, options, timeout = 10000) => {
@@ -55,7 +56,8 @@ const getChatErrorMessage = (status) => {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { baseUrl, apiKey, type, modelId } = body;
+    const { baseUrl, apiKey, type, modelId, clientIdentityProfile, clientIdentityHeaders } = body;
+    const identity = { clientIdentityProfile, clientIdentityHeaders };
 
     if (!baseUrl || !apiKey) {
       return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });
@@ -115,11 +117,11 @@ export async function POST(request) {
       const modelsUrl = `${normalizedBase}/models`;
       const res = await fetchWithTimeout(modelsUrl, {
         method: "GET",
-        headers: {
+        headers: applyClientIdentityHeaders({
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
           "Authorization": `Bearer ${apiKey}`
-        }
+        }, identity)
       });
 
       if (res.ok) return NextResponse.json({ valid: true });
@@ -133,12 +135,12 @@ export async function POST(request) {
       if (modelId) {
         const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
           method: "POST",
-          headers: {
+          headers: applyClientIdentityHeaders({
             "Authorization": `Bearer ${apiKey}`,
             "Content-Type": "application/json",
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01"
-          },
+          }, identity),
           body: JSON.stringify({
             model: modelId,
             messages: [{ role: "user", content: "ping" }],
@@ -161,7 +163,7 @@ export async function POST(request) {
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
     const res = await fetchWithTimeout(modelsUrl, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+      headers: applyClientIdentityHeaders({ "Authorization": `Bearer ${apiKey}` }, identity),
     });
 
     if (res.ok) return NextResponse.json({ valid: true });
@@ -175,10 +177,10 @@ export async function POST(request) {
     if (modelId) {
       const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
-        headers: {
+        headers: applyClientIdentityHeaders({
           "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json"
-        },
+        }, identity),
         body: JSON.stringify({
           model: modelId,
           messages: [{ role: "user", content: "ping" }],

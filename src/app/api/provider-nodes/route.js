@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { normalizeClientIdentityData } from "open-sse/config/clientIdentity.js";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,13 @@ export async function POST(request) {
     // Determine type
     const nodeType = type || "openai-compatible";
 
+    // Compatible LLM nodes can present a chosen client identity upstream.
+    const isCompatibleNode = nodeType === "openai-compatible" || nodeType === "anthropic-compatible";
+    const { error: identityError, ...identityData } = isCompatibleNode ? normalizeClientIdentityData(body) : {};
+    if (identityError) {
+      return NextResponse.json({ error: identityError }, { status: 400 });
+    }
+
     if (nodeType === "openai-compatible") {
       if (!apiType || !["chat", "responses"].includes(apiType)) {
         return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
@@ -57,6 +65,7 @@ export async function POST(request) {
         apiType,
         baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
         name: name.trim(),
+        ...identityData,
       });
       return NextResponse.json({ node }, { status: 201 });
     }
@@ -92,6 +101,7 @@ export async function POST(request) {
         prefix: prefix.trim(),
         baseUrl: sanitizedBaseUrl,
         name: name.trim(),
+        ...identityData,
       });
       return NextResponse.json({ node }, { status: 201 });
     }
