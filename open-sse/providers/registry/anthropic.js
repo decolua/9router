@@ -18,7 +18,7 @@ export default {
     format: "claude",
     headers: {
       "anthropic-version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+      "Anthropic-Beta": "interleaved-thinking-2025-05-14",
     },
   },
   models: [
