@@ -66,6 +66,26 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
     expect(out.output.some((item) => item.type === "function_call")).toBe(false);
   });
 
+  it("restores a provider-normalized custom tool name", () => {
+    const customBody = structuredClone(CHAT_TOOL_BODY);
+    customBody.choices[0].message.tool_calls[0].function = {
+      name: "_123tool",
+      arguments: "{\"input\":\"return 1;\"}"
+    };
+    const out = translateNonStreamingResponse(
+      customBody,
+      FORMATS.OPENAI,
+      FORMATS.OPENAI_RESPONSES,
+      new Set(["123tool"]),
+      new Map([["_123tool", "123tool"]])
+    );
+    expect(out.output).toContainEqual(expect.objectContaining({
+      type: "custom_tool_call",
+      name: "123tool",
+      input: "return 1;"
+    }));
+  });
+
   it("keeps chat.completion text content as a Responses message item", () => {
     const body = {
       ...CHAT_TOOL_BODY,
@@ -83,18 +103,169 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
     expect(out.object).toBe("chat.completion");
     expect(out.choices[0].message.tool_calls[0].function.name).toBe("shell");
   });
+
+  it("projects a Kiro executor Chat body for a Responses client", () => {
+    const kiroBody = structuredClone(CHAT_TOOL_BODY);
+    kiroBody.choices[0].message.tool_calls[0] = {
+      id: "tooluse_kiro_1",
+      type: "function",
+      function: { name: "exec", arguments: '{"input":"pwd"}' },
+    };
+    const out = translateNonStreamingResponse(
+      kiroBody,
+      FORMATS.KIRO,
+      FORMATS.OPENAI_RESPONSES,
+      ["exec"],
+    );
+
+    expect(out.object).toBe("response");
+    expect(out).not.toHaveProperty("choices");
+    expect(out.output).toContainEqual(expect.objectContaining({
+      type: "custom_tool_call",
+      call_id: "tooluse_kiro_1",
+      name: "exec",
+      input: "pwd",
+    }));
+  });
+});
+
+describe("non-stream Claude upstream for a Responses-API client", () => {
+  const claudeBody = (block) => ({
+    id: "msg_claude_1",
+    type: "message",
+    role: "assistant",
+    model: "claude-opus-5",
+    content: [block],
+    stop_reason: "tool_use",
+    stop_sequence: null,
+    usage: { input_tokens: 10, output_tokens: 5 },
+  });
+
+  it("projects a Claude custom tool_use into Responses custom_tool_call", () => {
+    const out = translateNonStreamingResponse(
+      claudeBody({
+        type: "tool_use",
+        id: "toolu_exec_1",
+        name: "exec",
+        input: { input: "pwd" },
+      }),
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI_RESPONSES,
+      new Set(["exec"]),
+    );
+
+    expect(out.object).toBe("response");
+    expect(out).not.toHaveProperty("choices");
+    expect(out.output).toContainEqual(expect.objectContaining({
+      type: "custom_tool_call",
+      call_id: "toolu_exec_1",
+      name: "exec",
+      input: "pwd",
+    }));
+  });
+
+  it("accepts translator metadata in its real array representation", () => {
+    const out = translateNonStreamingResponse(
+      claudeBody({
+        type: "tool_use",
+        id: "toolu_exec_array",
+        name: "exec",
+        input: { input: "pwd" },
+      }),
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI_RESPONSES,
+      ["exec"],
+    );
+
+    expect(out.output).toContainEqual(expect.objectContaining({
+      type: "custom_tool_call",
+      name: "exec",
+      input: "pwd",
+    }));
+  });
+
+  it("keeps ordinary Claude tool_use as a Responses function_call", () => {
+    const out = translateNonStreamingResponse(
+      claudeBody({
+        type: "tool_use",
+        id: "toolu_shell_1",
+        name: "shell",
+        input: { command: "pwd" },
+      }),
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI_RESPONSES,
+    );
+
+    expect(out.output).toContainEqual(expect.objectContaining({
+      type: "function_call",
+      call_id: "toolu_shell_1",
+      name: "shell",
+      arguments: '{"command":"pwd"}',
+    }));
+  });
+});
+
+describe("non-stream Chat canonical response for a Claude client", () => {
+  it("projects a Kiro executor Chat body into a Claude message", () => {
+    const kiroBody = structuredClone(CHAT_TOOL_BODY);
+    kiroBody.model = "claude-sonnet-4.5";
+    kiroBody.choices[0].message.tool_calls[0] = {
+      id: "tooluse_kiro_claude_1",
+      type: "function",
+      function: { name: "shell", arguments: '{"command":"pwd"}' },
+    };
+
+    const out = translateNonStreamingResponse(
+      kiroBody,
+      FORMATS.KIRO,
+      FORMATS.CLAUDE,
+    );
+
+    expect(out.type).toBe("message");
+    expect(out).not.toHaveProperty("choices");
+    expect(out.stop_reason).toBe("tool_use");
+    expect(out.content).toContainEqual({
+      type: "tool_use",
+      id: "tooluse_kiro_claude_1",
+      name: "shell",
+      input: { command: "pwd" },
+    });
+  });
+
+  it("restores a Kiro-normalized tool name before emitting Claude tool_use", () => {
+    const kiroBody = structuredClone(CHAT_TOOL_BODY);
+    kiroBody.choices[0].message.tool_calls[0] = {
+      id: "tooluse_kiro_claude_2",
+      type: "function",
+      function: { name: "_123tool", arguments: '{"value":1}' },
+    };
+
+    const out = translateNonStreamingResponse(
+      kiroBody,
+      FORMATS.KIRO,
+      FORMATS.CLAUDE,
+      null,
+      new Map([["_123tool", "123tool"]]),
+    );
+
+    expect(out.content).toContainEqual(expect.objectContaining({
+      type: "tool_use",
+      name: "123tool",
+      input: { value: 1 },
+    }));
+  });
 });
 
 describe("forced-SSE JSON path for a Responses-API client behind a chat upstream", () => {
-  const sseCtx = (sourceFormat, targetFormat) => {
+  const CHAT_TOOL_SSE = [
+    'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_9","type":"function","function":{"name":"shell","arguments":""}}]},"finish_reason":null}]}',
+    'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"cmd\\":\\"pwd\\"}"}}]},"finish_reason":null}]}',
+    'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+    "data: [DONE]",
+    ""
+  ].join("\n\n");
+  const sseCtx = (sourceFormat, targetFormat, raw = CHAT_TOOL_SSE) => {
     const encoder = new TextEncoder();
-    const raw = [
-      'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_9","type":"function","function":{"name":"shell","arguments":""}}]},"finish_reason":null}]}',
-      'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"cmd\\":\\"pwd\\"}"}}]},"finish_reason":null}]}',
-      'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
-      "data: [DONE]",
-      ""
-    ].join("\n\n");
     return {
       providerResponse: new Response(new ReadableStream({
         start(controller) { controller.enqueue(encoder.encode(raw)); controller.close(); }
@@ -138,6 +309,24 @@ describe("forced-SSE JSON path for a Responses-API client behind a chat upstream
     });
   });
 
+  it("restores a normalized tool name on the forced-SSE JSON path", async () => {
+    const ctx = sseCtx(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, [
+      'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_9","type":"function","function":{"name":"_123tool","arguments":"{\\"input\\":\\"return 1;\\"}"}}]},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+      "data: [DONE]",
+      ""
+    ].join("\n\n"));
+    ctx.customToolNames = new Set(["123tool"]);
+    ctx.toolNameMap = new Map([["_123tool", "123tool"]]);
+    const result = await handleForcedSSEToJson(ctx);
+    const json = await result.response.json();
+    expect(json.output).toContainEqual(expect.objectContaining({
+      type: "custom_tool_call",
+      name: "123tool",
+      input: "return 1;"
+    }));
+  });
+
   it("still returns chat.completion for a plain chat client", async () => {
     const result = await handleForcedSSEToJson(sseCtx(FORMATS.OPENAI, FORMATS.OPENAI));
     expect(result.success).toBe(true);
@@ -145,4 +334,5 @@ describe("forced-SSE JSON path for a Responses-API client behind a chat upstream
     expect(json.object).toBe("chat.completion");
     expect(json.choices[0].message.tool_calls[0].function.name).toBe("shell");
   });
+
 });

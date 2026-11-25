@@ -55,6 +55,7 @@ function extractCustomToolInput(argumentsValue) {
 function chatCompletionToResponses(responseBody, customToolNames = null) {
   const choice = responseBody?.choices?.[0];
   if (!choice) return responseBody;
+  const customNames = new Set(customToolNames || []);
 
   const message = choice.message || {};
   const output = [];
@@ -78,7 +79,7 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
 
   for (const tc of message.tool_calls || []) {
     const fn = tc.function || {};
-    const custom = customToolNames?.has(fn.name);
+    const custom = customNames.has(fn.name);
     output.push({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
@@ -366,13 +367,16 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // lost on the non-streaming return path. Inlined (not imported from
     // nonStreamingHandler.js) to avoid a circular import: nonStreamingHandler
     // already imports parseSSEToOpenAIResponse from this module.
+    // Restore provider-normalized tool names before projecting, so custom tools
+    // are recognised by their original names. Restored once, on the Chat body.
+    const chatBody = restoreToolNames(parsed, toolNameMap);
     const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
-      ? chatCompletionToResponses(parsed, customToolNames)
+      ? chatCompletionToResponses(chatBody, customToolNames)
       : sourceFormat === FORMATS.CLAUDE
-        ? openAICompletionToClaudeMessage(parsed)
-        : parsed;
+        ? openAICompletionToClaudeMessage(chatBody)
+        : chatBody;
 
-    return { success: true, response: new Response(JSON.stringify(restoreToolNames(finalBody, toolNameMap)), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
