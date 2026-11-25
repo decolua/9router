@@ -1,4 +1,5 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { setRoutingMeta } from "../services/routingMeta.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -94,15 +95,22 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
- * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
+ * @param {object|null} [extraHeaders] - Extra response headers (e.g. forwarded upstream headers)
+ * @param {string|null} [errorKind] - Failure classification (connect_timeout | network | aborted | http_<status>)
+ * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number, errorKind: string|null }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders = null) {
+export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders = null, errorKind = null) {
+  const response = errorResponse(statusCode, message, extraHeaders);
+  // Attach internal routing metadata (in-process WeakMap only — never serialized
+  // into headers/body) so combo fallback can read the error kind off the Response.
+  if (errorKind != null) setRoutingMeta(response, { errorKind, status: statusCode });
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
-    response: errorResponse(statusCode, message, extraHeaders)
+    errorKind,
+    response
   };
 }
 
