@@ -4,6 +4,7 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
+import { orderBySoonestReset, getQuotaSnapshot } from "./quotaResetOrder.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -194,6 +195,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           consecutiveUseCount: 1
         });
       }
+    } else if (strategy === "soonest-reset") {
+      connection = orderBySoonestReset(availableConnections, getQuotaSnapshot(availableConnections))[0];
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
       connection = availableConnections[0];
