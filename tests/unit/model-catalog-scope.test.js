@@ -70,6 +70,27 @@ describe("model catalog", () => {
     expect(getCatalogModalities("zhipu", "glm-5-canary")).toEqual({ vision: true, pdf: true });
   });
 
+  it("lets the :free id win the baseId slot when paid and free share a name", () => {
+    // models.dev carries both nvidia/nemotron-3-ultra-550b-a55b (262144) and
+    // nvidia/nemotron-3-ultra-550b-a55b:free (1000000). The :free seat must
+    // publish 1M, so the free record wins the vendor-stripped key.
+    const catalog = {
+      openrouter: {
+        models: {
+          "nvidia/nemotron-3-ultra-550b-a55b": { limit: { context: 262144, output: 16384 } },
+          "nvidia/nemotron-3-ultra-550b-a55b:free": { limit: { context: 1000000, output: 16384 } },
+        },
+      },
+    };
+    const freeEntry = {
+      provider: "openrouter",
+      model: "nvidia/nemotron-3-ultra-550b-a55b:free",
+      current: { contextWindow: 128000, maxOutput: 64000 },
+    };
+    const { providers } = build(catalog, [freeEntry]);
+    expect(providers.openrouter["nvidia/nemotron-3-ultra-550b-a55b:free"].contextWindow).toBe(1000000);
+  });
+
   it("does not hand a router mode another vendor's modalities", () => {
     // kilo's "efficient" is a real model; another gateway's "efficient" is a mode
     expect(getCatalogModalities("kilo", "kilo-auto/efficient")).toEqual({ vision: true });
