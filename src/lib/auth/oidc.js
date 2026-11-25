@@ -50,7 +50,13 @@ export function isOidcConfigured(settings) {
 
 export async function getOidcRuntimeConfig() {
   const settings = await getSettings();
-  if (!["oidc", "both"].includes(settings.authMode) || !isOidcConfigured(settings)) return null;
+  // The profile page saves the generic SSO mode together with ssoType=oidc,
+  // while older configurations set authMode directly to "oidc". Both must
+  // reach the same runtime config; a generic SSO mode with SAML selected must
+  // not. See #5845.
+  if (!["oidc", "both", "sso"].includes(settings.authMode)) return null;
+  if (settings.authMode === "sso" && (settings.ssoType || "oidc") !== "oidc") return null;
+  if (!isOidcConfigured(settings)) return null;
 
   const issuerUrl = trimTrailingSlashes(settings.oidcIssuerUrl);
   return {
