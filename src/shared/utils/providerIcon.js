@@ -15,7 +15,6 @@ const ICON_ALIASES = {
   "deepseek-web": "deepseek",
   "muse-web": "muse",
   "gemini-web": "gemini",
-  "chatgpt-web": "openai",
 };
 
 // Runtime only — first 404 remembers id for the whole session

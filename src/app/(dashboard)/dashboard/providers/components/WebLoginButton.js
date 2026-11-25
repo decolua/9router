@@ -9,7 +9,6 @@ import { translate } from "@/i18n/runtime";
 // stays authoritative (POST rejects anything not configured there).
 export const WEB_LOGIN_PROVIDERS = new Set([
   "grok-web",
-  "chatgpt-web",
   "gemini-web",
   "muse-web",
   "deepseek-web",

@@ -406,6 +406,25 @@ a merge conflict.
 
 The Claude Code CLI provider is unaffected.
 
+#### The upstream ChatGPT Web provider, which came back with the v0.5.109 sync
+
+A different provider from the bridge above, with the same id: upstream's web-cookie
+`chatgpt-web` (alias `cg`, `serviceKinds: ["image"]`, commit 38a0c449). It reappeared
+in the model picker because the picker only shows providers with an active
+connection, and for the LLM view (no `kindFilter`) it does not look at
+`serviceKinds` at all — so any `chatgpt-web` connection listed the provider's
+`gpt-5-6…` models even though the provider is parked on image.
+
+Removed: its registry entry, executor and `executors/chatgpt-web/` adapter, the image
+adapter, the login-capture and identity-check entries, the icon alias, and its rows
+in the alias / provider baselines. Kept: `chatgptWebTools.js` (gemini-web imports it)
+and `browserExecutableCheck.js` (other web executors use it).
+
+Not touched: any existing `chatgpt-web` connection row in a database. The code is
+gone, so it no longer lists models, but the row stays until it is deleted from the
+dashboard. An upstream sync will bring these files back as modify/delete
+conflicts — take the deletion.
+
 ### Fixes
 
 #### `/api/usage/stats` was returning every raw API key as a JSON property name
