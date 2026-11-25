@@ -98,7 +98,7 @@ describe("oc/mimo-v2.6-flash-free reasoning levels", () => {
         PROVIDER,
       );
       const out = executor.transformRequest(MODEL, translated, true, { connectionId: "oc-mimo-levels-test" });
-      expect(executor.buildUrl(MODEL)).toBe("https://opencode.ai/inference/v1/chat/completions");
+      expect(executor.buildUrl(MODEL)).toBe("https://opencode.ai/inference/openai/v1/chat/completions");
       expect(out.reasoning_effort).toBe(level);
       expect(out.thinking).toBeUndefined();
     }
