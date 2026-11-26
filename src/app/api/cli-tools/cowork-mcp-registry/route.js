@@ -1,6 +1,7 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import { CATALOG_PLUGINS } from "@/shared/constants/coworkPlugins";
 
 const REGISTRY_URL = "https://api.anthropic.com/mcp-registry/v0/servers";
 const VISIBILITY = "commercial,gsuite,gsuite-google";
@@ -53,9 +54,10 @@ async function fetchAll() {
     cursor = j.metadata?.nextCursor;
     if (!cursor) break;
   }
-  // Dedupe by url
+  // Built-in catalog entries go first; dedupe by url keeps them over a registry copy.
+  const catalog = CATALOG_PLUGINS.map((p) => ({ ...p, toolCount: p.toolNames.length, iconUrl: null }));
   const seen = new Set();
-  return out.filter((s) => (seen.has(s.url) ? false : (seen.add(s.url), true)));
+  return [...catalog, ...out].filter((s) => (seen.has(s.url) ? false : (seen.add(s.url), true)));
 }
 
 export async function GET(request) {

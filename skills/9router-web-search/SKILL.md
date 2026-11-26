@@ -108,5 +108,6 @@ All accept `query` + `max_results`. Optional fields vary:
 | `youcom` | country, language, time_range, domain_filter, full_page | — |
 | `searxng` | language, time_range | Self-hosted, **noAuth** |
 | `xquik` | X/Twitter search operators, language, cursor pagination | `queryType: Latest/Top`, `cursor` (options) |
+| `aimlapi` | country, domain_filter, time_range | Uses the AI/ML API key; billed per run (capped at $0.05) |
 
 Provider IS the model — `"provider":"tavily" ≡ "model":"tavily"`.

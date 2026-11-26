@@ -8,6 +8,7 @@ import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-t
 import { buildCommandCodeHeaders } from "open-sse/shared/commandCodeHeaders.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
+import { aimlapiDirectFetch } from "open-sse/executors/aimlapi.js";
 import {
   createNousApiKeyProbe,
   getNousApiKeyValidationError,
@@ -415,6 +416,16 @@ export async function POST(request) {
         case "assemblyai":
         case "nanobanana":
         case "chutes":
+        case "aimlapi": {
+          // /v1/models is public; /v1/key answers 401 for a bad key. directFetch: see executors/aimlapi.js.
+          const res = await fetch(PROVIDERS.aimlapi.validateUrl, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+            signal: AbortSignal.timeout(8000),
+            directFetch: aimlapiDirectFetch,
+          });
+          isValid = res.ok;
+          break;
+        }
         case "runcrate":
         case "synthetic":
         case "xiaomi-mimo":

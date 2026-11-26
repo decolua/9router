@@ -101,7 +101,9 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   log?.info?.("SEARCH", `${provider.id} | "${params.query.slice(0, 80)}" | type=${params.searchType}`);
 
   try {
-    const resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+    // Providers that set maxRedirects: 0 never let their key follow a redirect.
+    const redirectOpts = Number.isInteger(providerConfig.maxRedirects) ? { maxRedirects: providerConfig.maxRedirects } : undefined;
+    const resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal }, redirectOpts);
     clearTimeout(timer);
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");

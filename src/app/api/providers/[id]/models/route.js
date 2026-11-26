@@ -5,6 +5,7 @@ import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+import { aimlapiDirectFetch } from "open-sse/executors/aimlapi.js";
 import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -111,6 +112,11 @@ const createOpenAIModelsConfig = (url) => ({
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
 });
+
+// AI/ML API lists every model type in one catalog; keep chat-completions only.
+const parseAimlapiModels = (data) => parseOpenAIStyleModels(data)
+  .filter((m) => m?.type === "openai/chat-completions")
+  .map((m) => ({ id: m.id, name: m.info?.name || m.id }));
 
 const normalizeRoutedNousModels = (data) => normalizeNousModels(data).map((model) => ({
   ...model,
@@ -386,6 +392,16 @@ const PROVIDER_MODELS_CONFIG = {
   chutes: createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   synthetic: createOpenAIModelsConfig("https://api.synthetic.new/openai/v1/models"),
+  aimlapi: {
+    customResolver: async (connection) => {
+      const res = await fetch("https://api.aimlapi.com/v1/models?include=all", {
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${connection.apiKey}` },
+        directFetch: aimlapiDirectFetch,
+      });
+      if (!res.ok) return { error: `Failed to fetch models: ${res.status}`, status: res.status };
+      return { models: parseAimlapiModels(await res.json()) };
+    },
+  },
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
   // OpenAI-compatible aggregators.

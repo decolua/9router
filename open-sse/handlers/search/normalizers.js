@@ -295,12 +295,31 @@ function normalizeGlmSearch(data, _query, _searchType) {
   return { results, totalResults: results.length };
 }
 
+function normalizeAimlapi(data) {
+  if (data?.is_error || (data?.status && data.status !== "completed")) {
+    throw new Error(`AI/ML API tool run ${data?.status || "failed"}`);
+  }
+  const now = new Date().toISOString();
+  const items = data?.output?.results || [];
+  const results = items.map((r, i) =>
+    makeResult("aimlapi", {
+      title: r.title,
+      url: r.url,
+      snippet: r.description || "",
+      full_text: typeof r.markdown?.markdown === "string" ? r.markdown.markdown : undefined,
+      text_format: "markdown",
+    }, i, now)
+  );
+  return { results, totalResults: null };
+}
+
 const NORMALIZERS = {
   "serper": normalizeSerper,
   "brave-search": normalizeBrave,
   "perplexity": normalizePerplexity,
   "exa": normalizeExa,
   "tavily": normalizeTavily,
+  "aimlapi": normalizeAimlapi,
   "google-pse": normalizeGooglePse,
   "linkup": normalizeLinkup,
   "searchapi": normalizeSearchApi,

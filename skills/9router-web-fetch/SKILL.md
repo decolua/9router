@@ -112,3 +112,4 @@ console.log(data.title, data.content.length);
 | `tavily` | Bearer | Bulk extract; returns `raw_content` |
 | `exa` | `x-api-key` | Pre-indexed pages; fast text extraction |
 | `ollama` | Bearer | Markdown plus page title and discovered links; uses the Ollama Cloud key |
+| `aimlapi` | Bearer | Markdown only; uses the AI/ML API key, billed per run (capped at $0.05) |

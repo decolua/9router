@@ -1,6 +1,7 @@
-// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, tinyfish
+// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, tinyfish, aimlapi
 // Returns normalized shape across all providers
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { aimlapiDirectFetch } from "../../executors/aimlapi.js";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_FORMAT = "markdown";
@@ -120,6 +121,9 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
     }
     if (provider === "jina-reader") {
       return await runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt });
+    }
+    if (provider === "aimlapi") {
+      return await runAimlapi({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, providerConfig });
     }
     if (provider === "tavily") {
       return await runTavily({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt });
@@ -347,5 +351,35 @@ async function runOllama({
       responseMs: Date.now() - startedAt,
       upstreamMs
     })
+  };
+}
+
+// AI/ML API Toolbox page-to-Markdown tool. Fixed host from the registry and
+// redirect: "error", so the Bearer key is never sent anywhere but tools.aimlapi.com.
+async function runAimlapi({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, providerConfig }) {
+  if (fmt !== "markdown") return { success: false, status: 400, error: `Unsupported AI/ML API format: ${fmt}` };
+  const upstreamStart = Date.now();
+  const r = await tryFetch(providerConfig.baseUrl, {
+    method: "POST",
+    redirect: "error",
+    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ tool: providerConfig.tool, input: { url }, max_cost_usd: providerConfig.maxCostUsd }),
+    directFetch: aimlapiDirectFetch,
+  }, timeoutMs);
+  if (!r.ok) return { success: false, status: r.timeout ? 504 : 502, error: r.error };
+  const upstreamMs = Date.now() - upstreamStart;
+  const { json } = await readJsonOrText(r.res);
+  if (!r.res.ok) return { success: false, status: r.res.status, error: json?.error?.message || `AI/ML API error: ${r.res.status}` };
+  if (json?.is_error || json?.status !== "completed") {
+    return { success: false, status: 502, error: `AI/ML API tool run ${json?.status || "failed"}` };
+  }
+  const out = json.output || {};
+  if (typeof out.markdown !== "string") return { success: false, status: 502, error: "AI/ML API returned no extractable content" };
+  return {
+    success: true,
+    data: buildData({
+      provider: "aimlapi", url, title: out.metadata?.title, format: fmt, text: truncate(out.markdown, maxCharacters),
+      costUsd: json.cost?.actual_usd ?? costPerQuery, responseMs: Date.now() - startedAt, upstreamMs,
+    }),
   };
 }

@@ -56,14 +56,14 @@ export const SKILLS = [
   {
     id: "9router-web-search",
     name: "Web Search",
-    description: "Web and X search via Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com / Xquik.",
+    description: "Web and X search via Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com / Xquik / AI/ML API.",
     endpoint: "/v1/search",
     icon: "search",
   },
   {
     id: "9router-web-fetch",
     name: "Web Fetch",
-    description: "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.",
+    description: "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa, AI/ML API.",
     endpoint: "/v1/web/fetch",
     icon: "language",
   },
