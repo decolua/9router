@@ -138,4 +138,38 @@ describe("gate wiring", () => {
     expect((await engine.enforceKeyAccess(ctx, "openai/gpt-4")).status).toBe(429);
     expect((await engine.enforceKeyAccess(ctx, "openai/other")).status).toBe(403);
   });
+
+  it("a nameless key's refusal is counted under the same key_name as its other metrics (unknown-key, not the id)", async () => {
+    vi.resetModules();
+    vi.doMock("@/sse/utils/logger.js", () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }));
+    vi.doMock("@/lib/localDb", () => ({
+      getModelAliases: async () => ({}),
+      getComboByName: async () => null,
+      getProviderNodes: async () => [],
+    }));
+    vi.doMock("@/lib/db/repos/combosRepo.js", () => ({ getCombos: async () => [] }));
+    vi.doMock("@/lib/db/repos/apiKeysRepo.js", () => ({
+      getApiKeyByKey: async (k) => (k === "sk-cap"
+        ? { id: "k1", name: "", isActive: true, access: { restricted: true, allow: ["openai/gpt-4"] }, limit: { usd: 1, window: "day" } }
+        : null),
+      getApiKeys: async () => [],
+    }));
+    vi.doMock("@/lib/db/repos/usageRepo.js", () => ({ getKeySpendSince: async () => 5 }));
+    vi.doMock("@/lib/db/repos/pricingRepo.js", () => ({ getPricingForModel: async () => ({ input: 1 }) }));
+    vi.doUnmock("@/lib/observability/metrics.js");
+    const metrics = await import("@/lib/observability/metrics.js");
+    const spy = vi.spyOn(metrics, "recordKeyLimitRefused");
+    const logger = await import("@/sse/utils/logger.js");
+    const engine = await import("../../src/sse/services/keyAccess.js");
+    const req = new Request("http://localhost/v1/chat/completions", { method: "POST", headers: { Authorization: "Bearer sk-cap" } });
+    const ctx = await engine.getKeyAccessContext(req);
+    expect((await engine.enforceKeyAccess(ctx, "openai/gpt-4")).status).toBe(429);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0].keyName).not.toBe("k1");
+    expect(spy.mock.calls[0][0].keyName || metrics.KEY_NAME_UNKNOWN).toBe(metrics.KEY_NAME_UNKNOWN);
+    // the log line still identifies the key (by id, never by value)
+    const line = logger.warn.mock.calls.map((c) => c.join(" ")).find((l) => l.includes("REFUSED 429"));
+    expect(line).toContain('key "k1"');
+    expect(line).not.toContain("sk-cap");
+  });
 });

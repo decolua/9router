@@ -6,7 +6,10 @@
 //   ninerouter.cost.usd  counter (float)    unit USD, from the same calculateCost() the dashboard uses
 //                                           (Prometheus: ninerouter_cost_usd_total)
 //   ninerouter.key.limit.used_ratio  observable gauge, unit 1: spend in the current window / limit.usd,
-//                                    one point per key with a spend limit, read on every export
+//                                    one point per active key with a spend limit (the highest when
+//                                    several keys share a name), read on every export. >= 1 means
+//                                    refusals only where the limit is enforced (restricted keys whose
+//                                    models are all priced): alert together with .refused
 //                                    (Prometheus: ninerouter_key_limit_used_ratio)
 //   ninerouter.key.limit.refused     counter: requests refused with 429 by the spend limit
 //                                    (Prometheus: ninerouter_key_limit_refused_total)
@@ -15,7 +18,10 @@
 // key.limit metrics carry key_name and window (day|month) only. key_name is the API key's
 // NAME ("no-key" without a key, "unknown-key" when the presented key is not in the DB). The
 // key value is never used as an attribute. The gauge is a point-in-time value: alert on its
-// latest/max value per key_name, never on a sum across instances or time.
+// latest/max value per key_name, never on a sum across instances or time. Its spend comes from
+// keyLimitUsage() (src/sse/services/keySpendLimit.js): the same spend query, window start and
+// limit as enforcement, but not necessarily the same spend cache (Next.js may load that module
+// in several bundles), so the gauge and enforcement are each at most 5 s stale, independently.
 //
 // Two readers, both optional, both env-driven (parseMetricsConfig):
 //   - OTLP push (http/protobuf) when an OTEL_EXPORTER_OTLP_*ENDPOINT is set; the exporter reads
@@ -242,25 +248,38 @@ function defaultGaugeDeps() {
   return {
     getKeys: () => getApiKeys(),
     // Loaded lazily: keySpendLimit.js imports this module (refusal counter).
-    usage: async (keys, now) => (await import("../../sse/services/keySpendLimit.js")).keyLimitUsage(keys, undefined, now),
+    usage: async (keys, now, onError) => (await import("../../sse/services/keySpendLimit.js")).keyLimitUsage(keys, undefined, now, onError),
   };
 }
 
 /**
- * Callback of the ninerouter.key.limit.used_ratio gauge: one point per key with a spend
- * limit. Never throws: on error it observes nothing and logs at most once a minute.
+ * Callback of the ninerouter.key.limit.used_ratio gauge: one point per (key_name, window)
+ * for the active keys with a spend limit. Key names are not unique and an observable result
+ * keeps only the last value per label set, so keys sharing a label set report the HIGHEST
+ * ratio (the one closest to a refusal). Never throws: a failure observes what it can (a failed
+ * spend read drops only that key) and logs at most once a minute.
  */
 export async function observeKeyLimitRatios(result, deps = defaultGaugeDeps(), now = new Date()) {
-  try {
-    const rows = await deps.usage(await deps.getKeys(), now);
-    for (const r of rows) result.observe(r.ratio, { key_name: keyNameLabel(r.name), window: r.window });
-  } catch (e) {
+  const warn = (e) => {
     const h = holder();
     const t = now.getTime();
     if (h.gaugeErrorAt === undefined || t - h.gaugeErrorAt >= GAUGE_ERROR_LOG_INTERVAL_MS) {
       h.gaugeErrorAt = t;
       console.warn("[metrics] key limit gauge skipped:", e?.message || e);
     }
+  };
+  try {
+    const rows = await deps.usage(await deps.getKeys(), now, warn);
+    const points = new Map(); // `${key_name}\n${window}` -> { ratio, attributes }
+    for (const r of rows) {
+      const attributes = { key_name: keyNameLabel(r.name), window: r.window };
+      const id = `${attributes.key_name}\n${attributes.window}`;
+      const prev = points.get(id);
+      if (!prev || r.ratio > prev.ratio) points.set(id, { ratio: r.ratio, attributes });
+    }
+    for (const p of points.values()) result.observe(p.ratio, p.attributes);
+  } catch (e) {
+    warn(e);
   }
 }
 

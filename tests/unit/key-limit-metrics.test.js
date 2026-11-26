@@ -1,6 +1,7 @@
 // Per-key spend-limit usage gauge (ninerouter.key.limit.used_ratio).
-// The ratio maths (keyLimitUsage, same spend source, window and cache as checkSpendLimit)
-// and the gauge callback (observeKeyLimitRatios: labels, error swallowing, throttled log).
+// The ratio maths (keyLimitUsage: the same spend query, window start and limit as checkSpendLimit)
+// and the gauge callback (observeKeyLimitRatios: labels, one point per label set, error
+// swallowing, throttled log).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/sse/utils/logger.js", () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }));
@@ -63,7 +64,7 @@ describe("keyLimitUsage (ratio maths)", () => {
     expect(getSpend).not.toHaveBeenCalled();
   });
 
-  it("shares the enforcement spend cache (one DB read within the TTL)", async () => {
+  it("uses the same spend query and window start as enforcement (in one module instance, one read within the TTL)", async () => {
     const getSpend = vi.fn(async () => 1);
     await svc.keyLimitUsage([key()], { getSpend }, NOW);
     await svc.checkSpendLimit(
@@ -74,8 +75,24 @@ describe("keyLimitUsage (ratio maths)", () => {
     expect(getSpend).toHaveBeenCalledTimes(1);
   });
 
-  it("propagates a spend read error (the gauge callback swallows it)", async () => {
-    await expect(svc.keyLimitUsage([key()], { getSpend: async () => { throw new Error("db locked"); } }, NOW)).rejects.toThrow("db locked");
+  it("skips inactive keys without reading their spend", async () => {
+    const getSpend = vi.fn(async () => 1);
+    const rows = await svc.keyLimitUsage([key({ isActive: false })], { getSpend }, NOW);
+    expect(rows).toEqual([]);
+    expect(getSpend).not.toHaveBeenCalled();
+  });
+
+  it("skips only the key whose spend read fails, reports the others, and hands the error to onError", async () => {
+    const onError = vi.fn();
+    const getSpend = async (k) => { if (k === "sk-a") throw new Error("db locked"); return 5; };
+    const rows = await svc.keyLimitUsage([key(), key({ id: "id-b", key: "sk-b", name: "agent-b" })], { getSpend }, NOW, onError);
+    expect(rows).toEqual([{ name: "agent-b", window: "day", ratio: 0.5 }]);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].message).toBe("db locked");
+  });
+
+  it("a failed spend read never throws, even without onError", async () => {
+    await expect(svc.keyLimitUsage([key()], { getSpend: async () => { throw new Error("db locked"); } }, NOW)).resolves.toEqual([]);
   });
 });
 
@@ -127,14 +144,58 @@ describe("observeKeyLimitRatios (gauge callback)", () => {
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
-  it("swallows a failure in the spend computation too", async () => {
+  it("a failed spend read drops only that key's point and logs the throttled warning", async () => {
+    const r = fakeResult();
+    const deps = {
+      getKeys: async () => [key(), key({ id: "id-b", key: "sk-b", name: "agent-b" })],
+      usage: (ks, now, onError) => svc.keyLimitUsage(ks, { getSpend: async (k) => { if (k === "sk-a") throw new Error("db locked"); return 3; } }, now, onError),
+    };
+    await metrics.observeKeyLimitRatios(r, deps, NOW);
+    expect(r.points).toEqual([{ value: 0.3, attributes: { key_name: "agent-b", window: "day" } }]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0].join(" "))).toContain("db locked");
+    svc.resetSpendCache();
+    await metrics.observeKeyLimitRatios(fakeResult(), deps, new Date(NOW.getTime() + 30_000));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("keys sharing a name and window give ONE point, the highest ratio (OTel keeps one value per label set)", async () => {
+    const r = fakeResult();
+    const keys = [
+      key({ id: "id-1", key: "sk-1", name: "ci" }),
+      key({ id: "id-2", key: "sk-2", name: "ci" }),
+      key({ id: "id-3", key: "sk-3", name: "ci" }),
+      key({ id: "id-4", key: "sk-4", name: "ci", limit: { usd: 10, window: "month" } }),
+    ];
+    const spend = { "sk-1": 2, "sk-2": 9, "sk-3": 4, "sk-4": 1 };
+    await metrics.observeKeyLimitRatios(r, {
+      getKeys: async () => keys,
+      usage: (ks, now) => svc.keyLimitUsage(ks, { getSpend: async (k) => spend[k] }, now),
+    }, NOW);
+    expect(r.points).toEqual([
+      { value: 0.9, attributes: { key_name: "ci", window: "day" } },
+      { value: 0.1, attributes: { key_name: "ci", window: "month" } },
+    ]);
+  });
+
+  it("nameless keys share the unknown-key label and also give one point, the highest", async () => {
+    const r = fakeResult();
+    const keys = [key({ id: "id-1", key: "sk-1", name: "" }), key({ id: "id-2", key: "sk-2", name: null })];
+    const spend = { "sk-1": 7, "sk-2": 3 };
+    await metrics.observeKeyLimitRatios(r, {
+      getKeys: async () => keys,
+      usage: (ks, now) => svc.keyLimitUsage(ks, { getSpend: async (k) => spend[k] }, now),
+    }, NOW);
+    expect(r.points).toEqual([{ value: 0.7, attributes: { key_name: metrics.KEY_NAME_UNKNOWN, window: "day" } }]);
+  });
+
+  it("does not emit inactive keys", async () => {
     const r = fakeResult();
     await metrics.observeKeyLimitRatios(r, {
-      getKeys: async () => [key()],
-      usage: (ks, now) => svc.keyLimitUsage(ks, { getSpend: async () => { throw new Error("db locked"); } }, now),
+      getKeys: async () => [key({ isActive: false }), key({ id: "id-b", key: "sk-b", name: "agent-b" })],
+      usage: (ks, now) => svc.keyLimitUsage(ks, { getSpend: async () => 1 }, now),
     }, NOW);
-    expect(r.points).toEqual([]);
-    expect(warn).toHaveBeenCalledTimes(1);
+    expect(r.points).toEqual([{ value: 0.1, attributes: { key_name: "agent-b", window: "day" } }]);
   });
 });
 

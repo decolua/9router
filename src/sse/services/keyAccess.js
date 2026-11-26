@@ -80,7 +80,9 @@ export async function getKeyAccessContext(request) {
     endpoint: requestPathname(request),
     // Per-key spend limit: checked by the gates after the allowlist passes (keySpendLimit.js).
     limits: record.limit
-      ? [{ keyValue: apiKey, name: record.name || record.id, access: record.access, limit: record.limit }]
+      // name is the record's own name (no id fallback) so the refusal counter labels the key
+      // exactly like the request counters and the gauge do.
+      ? [{ keyValue: apiKey, id: record.id, name: record.name, access: record.access, limit: record.limit }]
       : [],
     _sets: null,
   };
