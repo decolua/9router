@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { DEFAULT_CLAUDE_CACHE_TTL } from "open-sse/config/runtimeConfig.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -67,6 +68,8 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  // Anthropic prompt-cache TTL for conversation breakpoints: "5m" or "1h". Defaults to the CLAUDE_CACHE_TTL env var (5m when unset); a saved dashboard choice overrides it. System/tools anchors are always 1h.
+  claudeCacheTtl: DEFAULT_CLAUDE_CACHE_TTL,
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
 };

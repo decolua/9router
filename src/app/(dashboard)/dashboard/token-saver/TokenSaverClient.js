@@ -8,6 +8,7 @@ import {
   WENYAN_LOCALES,
   CAVEMAN_LEVELS,
   PONYTAIL_LEVELS,
+  CLAUDE_CACHE_TTLS,
 } from "../endpoint/endpointConstants";
 
 export default function TokenSaverClient() {
@@ -50,6 +51,7 @@ export default function TokenSaverClient() {
   const [reaAllowEnabled, setReaAllowEnabled] = useState(false);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
+  const [claudeCacheTtl, setClaudeCacheTtl] = useState("5m");
   const [pxpipeStatus, setPxpipeStatus] = useState({
     installed: false,
     installing: false,
@@ -357,6 +359,11 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  const handleClaudeCacheTtl = (ttl) => {
+    setClaudeCacheTtl(ttl);
+    patchSetting({ claudeCacheTtl: ttl });
+  };
+
   const handleCustomPromptEnabled = (value) => {
     setCustomPromptEnabled(value);
     patchSetting({ customPromptEnabled: value });
@@ -452,6 +459,7 @@ export default function TokenSaverClient() {
           setReaAllowEnabled(!!data.reaAllowEnabled);
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
+          setClaudeCacheTtl(data.claudeCacheTtl === "1h" ? "1h" : "5m");
           refreshHeadroomStatus();
           // PRD: run the PXPIPE health check automatically when the page opens
           refreshPxpipeStatus().then(runPxpipeHealth);
@@ -815,6 +823,36 @@ export default function TokenSaverClient() {
             checked={reaAllowEnabled}
             onChange={() => handleReaAllowEnabled(!reaAllowEnabled)}
           />
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Prompt cache TTL (Claude)</p>
+            <p className="text-sm text-text-muted">
+              How long conversation cache breakpoints live on Anthropic-format
+              providers. System prompt and tools are always cached for 1 hour
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <div className="flex items-center gap-1.5">
+              {CLAUDE_CACHE_TTLS.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => handleClaudeCacheTtl(opt.id)}
+                  className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                    claudeCacheTtl === opt.id
+                      ? "bg-primary text-white border-primary"
+                      : "bg-transparent border-border text-text-muted hover:bg-surface-2"
+                  }`}
+                  title={opt.desc}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-primary">
+              {CLAUDE_CACHE_TTLS.find((opt) => opt.id === claudeCacheTtl)?.desc}
+            </p>
+          </div>
         </div>
         {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
         {false && (

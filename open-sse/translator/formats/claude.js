@@ -8,10 +8,21 @@ import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { isDeepSeekModel } from "../../providers/models/helpers.js";
-import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
+import { DEFAULT_MAX_TOKENS, CLAUDE_CACHE_TTL, DEFAULT_CLAUDE_CACHE_TTL } from "../../config/runtimeConfig.js";
 
+// 5m is Anthropic's default TTL, so it goes out as the bare marker — the body stays byte-identical to what the 5m-only policy sent before.
 const CACHE_CONTROL_5M = { type: "ephemeral" };
-const CACHE_CONTROL_1H = { type: "ephemeral", ttl: "1h" };
+const CACHE_CONTROL_1H = { type: "ephemeral", ttl: CLAUDE_CACHE_TTL.LONG };
+
+// Conversation breakpoint TTL from the `claudeCacheTtl` setting. A missing or unknown value falls back to the CLAUDE_CACHE_TTL env default (5m when unset), so callers that pass no setting (e.g. the GitHub executor) still honor it.
+export function normalizeClaudeCacheTtl(ttl) {
+  if (ttl === CLAUDE_CACHE_TTL.LONG || ttl === CLAUDE_CACHE_TTL.SHORT) return ttl;
+  return DEFAULT_CLAUDE_CACHE_TTL;
+}
+
+function messageCacheControl(ttl) {
+  return normalizeClaudeCacheTtl(ttl) === CLAUDE_CACHE_TTL.LONG ? { ...CACHE_CONTROL_1H } : { ...CACHE_CONTROL_5M };
+}
 
 // Anthropic rejects a tool carrying BOTH defer_loading:true and cache_control
 // ("Tools defer_loading cannot use prompt caching", #3567). MCP clients put
@@ -358,42 +369,34 @@ export function ensureTrailingUserTurn(messages, originalLastRole) {
   return [...messages, { role: ROLE.USER, content: [{ type: CLAUDE_BLOCK.TEXT, text: TRAILING_USER_PLACEHOLDER }] }];
 }
 
-// Put a 5m breakpoint on the last cache-eligible block of a message.
-// thinking/redacted_thinking blocks do not accept cache_control.
-function markLastCacheableBlock(msg) {
+// Put a conversation breakpoint (5m default, or the configured TTL) on the last cache-eligible block of a message. thinking/redacted_thinking blocks do not accept cache_control.
+function markLastCacheableBlock(msg, ttl) {
   if (!Array.isArray(msg?.content)) return false;
   for (let i = msg.content.length - 1; i >= 0; i--) {
     const block = msg.content[i];
     if (typeof block !== "object" || block === null) continue;
     if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) continue;
-    block.cache_control = { ...CACHE_CONTROL_5M };
+    block.cache_control = messageCacheControl(ttl);
     return true;
   }
   return false;
 }
 
-// In an agent's tool loop, a request ends with the results of the last
-// assistant turn's tool calls -- after that turn's breakpoint. They go at the
-// full input price, and the next request (which appends to them) writes them
-// into the cache. When the 4-marker budget has room, a 5m breakpoint on that
-// final user turn caches them now, and the next request reads them.
-function markFinalToolResults(body) {
+// In an agent's tool loop, a request ends with the results of the last assistant turn's tool calls -- after that turn's breakpoint. They go at the full input price, and the next request (which appends to them) writes them into the cache. When the 4-marker budget has room, a breakpoint on that final user turn caches them now, and the next request reads them.
+function markFinalToolResults(body, ttl) {
   const messages = body?.messages;
   const last = Array.isArray(messages) ? messages[messages.length - 1] : null;
   if (last?.role !== ROLE.USER || !Array.isArray(last.content)) return false;
   if (!last.content.some((block) => block?.type === CLAUDE_BLOCK.TOOL_RESULT)) return false;
   if (last.content.some((block) => block?.cache_control)) return false;
   if (countCacheControlBlocks(body) >= 4) return false;
-  return markLastCacheableBlock(last);
+  return markLastCacheableBlock(last, ttl);
 }
 
-// Re-anchor cache breakpoints on a Claude passthrough body (same policy as
-// prepareClaudeRequest): last tool + last system block at 1h, last assistant at 5m.
-// The client's own markers point at pre-normalization offsets, so they are dropped.
-// Must run LAST, after every step that can reshape system/tools/messages
-// (normalize, tool dedupe, token savers) — otherwise the anchor drifts off the tail.
-export function anchorClaudeCache(body) {
+// Re-anchor cache breakpoints on a Claude passthrough body (same policy as prepareClaudeRequest): last tool + last system block at 1h, last assistant at the conversation TTL (5m unless `messageCacheTtl` is "1h"). The client's own markers point at pre-normalization offsets, so they are dropped. Must run LAST, after every step that can reshape system/tools/messages (normalize, tool dedupe, token savers) — otherwise the anchor drifts off the tail.
+export function anchorClaudeCache(body, { messageCacheTtl } = {}) {
   if (!body || typeof body !== "object") return body;
+  const ttl = normalizeClaudeCacheTtl(messageCacheTtl);
   if (Array.isArray(body.messages)) {
     for (const msg of body.messages) normalizeMessageContent(msg);
   }
@@ -433,6 +436,13 @@ export function anchorClaudeCache(body) {
   // breakpoint — re-anchoring the tail could only exceed 4, so trim instead.
   if (countCacheControlBlocks(body) >= 4) {
     capCacheControlBlocks(body);
+    // The client's surviving message markers keep their positions, but a 1h setting still applies to them. Raising to 1h never breaks Anthropic's longer-TTL-first ordering; 5m leaves the client's own TTLs untouched.
+    if (ttl === CLAUDE_CACHE_TTL.LONG && Array.isArray(body.messages)) {
+      for (const m of body.messages) {
+        if (!Array.isArray(m?.content)) continue;
+        for (const b of m.content) if (b?.cache_control) b.cache_control = messageCacheControl(ttl);
+      }
+    }
     return body;
   }
 
@@ -446,19 +456,19 @@ export function anchorClaudeCache(body) {
       // Prefer the last assistant turn: it ends a completed exchange, so the
       // prefix up to it stays byte-stable across the following requests.
       if (anchored || msg.role !== ROLE.ASSISTANT) continue;
-      anchored = markLastCacheableBlock(msg);
+      anchored = markLastCacheableBlock(msg, ttl);
     }
 
     // First turn of a conversation has no assistant yet — anchor the final
     // message instead, so the opening prompt is cached rather than paid twice.
     if (!anchored) {
       for (let i = body.messages.length - 1; i >= 0 && !anchored; i--) {
-        anchored = markLastCacheableBlock(body.messages[i]);
+        anchored = markLastCacheableBlock(body.messages[i], ttl);
       }
     }
 
     // ...and a tool loop's final tool results, so the next step reads them.
-    markFinalToolResults(body);
+    markFinalToolResults(body, ttl);
   }
 
   return body;
@@ -492,7 +502,9 @@ export function hoistToolResultImages(body) {
   return touched ? { ...body, messages } : body;
 }
 
-export function prepareClaudeRequest(body, provider = null, apiKey = null, connectionId = null, rawHeaders = null, sessionId = null) {
+export function prepareClaudeRequest(body, provider = null, apiKey = null, connectionId = null, rawHeaders = null, sessionId = null, { messageCacheTtl } = {}) {
+  const ttl = normalizeClaudeCacheTtl(messageCacheTtl);
+
   // quirk: MiniMax's Claude-compatible endpoint rejects Anthropic's output_config (400 invalid params)
   if (PROVIDERS[provider]?.quirks?.dropOutputConfig) {
     delete body.output_config;
@@ -551,7 +563,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     body.system = body.system.map((block, i) => {
       const { cache_control, ...rest } = block;
       if (i === body.system.length - 1) {
-        return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
+        return { ...rest, cache_control: { ...CACHE_CONTROL_1H } };
       }
       return rest;
     });
@@ -617,7 +629,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           for (let j = msg.content.length - 1; j >= 0; j--) {
             const block = msg.content[j];
             if (block.type !== CLAUDE_BLOCK.THINKING && block.type !== CLAUDE_BLOCK.REDACTED_THINKING) {
-              block.cache_control = { type: "ephemeral" };
+              block.cache_control = messageCacheControl(ttl);
               break;
             }
           }
@@ -715,7 +727,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     body.tools = body.tools.map((tool, i) => {
       const { cache_control, ...rest } = tool;
       if (i === lastCacheable) {
-        return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
+        return { ...rest, cache_control: { ...CACHE_CONTROL_1H } };
       }
       return rest;
     });
@@ -736,7 +748,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   }
 
   // A tool loop's final tool results: cached now, so the next step reads them.
-  markFinalToolResults(body);
+  markFinalToolResults(body, ttl);
 
   // Apply cloaking for OAuth tokens (billing header + fake user ID)
   // session_id in user_id must match X-Claude-Code-Session-Id for fingerprint consistency
