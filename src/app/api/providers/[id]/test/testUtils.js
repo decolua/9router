@@ -874,10 +874,14 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
       case "opencode": {
-        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/v1/models", {
-          headers: { Authorization: "Bearer public", "User-Agent": "opencode/1.18.31" },
-        }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "OpenCode free tier unavailable" };
+        // The free lane is noAuth: there is no credential to validate, so the
+        // only thing a network probe could tell us is whether the *exit IP* is
+        // currently flagged — and probing is what gets it flagged. Upstream
+        // treats the dashboard's deprecated v1 request shape as abuse and locks
+        // the caller's IP out with 429 FreeUsageLimitError / 403 FreeTierError,
+        // breaking subsequent real requests (see #5149). Return valid without a
+        // network call; connection health is surfaced by the first real request.
+        return { valid: true, error: null };
       }
       case "opencode-go": {
         const res = await fetchWithConnectionProxy("https://opencode.ai/inference/go/openai/v1/chat/completions", {
