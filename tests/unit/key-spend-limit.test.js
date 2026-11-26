@@ -166,7 +166,7 @@ describe("gate wiring", () => {
     expect((await engine.enforceKeyAccess(ctx, "openai/gpt-4")).status).toBe(429);
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0][0].keyName).not.toBe("k1");
-    expect(spy.mock.calls[0][0].keyName || metrics.KEY_NAME_UNKNOWN).toBe(metrics.KEY_NAME_UNKNOWN);
+    expect(spy.mock.calls[0][0].keyName).toBe(""); // the counter labels "" as unknown-key
     // the log line still identifies the key (by id, never by value)
     const line = logger.warn.mock.calls.map((c) => c.join(" ")).find((l) => l.includes("REFUSED 429"));
     expect(line).toContain('key "k1"');
