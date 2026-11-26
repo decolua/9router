@@ -91,6 +91,23 @@ describe("keyLimitUsage (ratio maths)", () => {
     expect(onError.mock.calls[0][0].message).toBe("db locked");
   });
 
+  it("the spend cache stays bounded: a new window replaces the key's old entry, expired entries are evicted", async () => {
+    const getSpend = vi.fn(async () => 1);
+    const keys = [key(), key({ id: "id-b", key: "sk-b", name: "agent-b" })];
+    await svc.keyLimitUsage(keys, { getSpend }, NOW);
+    expect(svc.__spendCacheSizeForTests()).toBe(2);
+    // next UTC day: one entry per key, the previous day's entries are gone
+    const nextDay = new Date("2026-11-25T00:00:01.000Z");
+    await svc.keyLimitUsage(keys, { getSpend }, nextDay);
+    expect(svc.__spendCacheSizeForTests()).toBe(2);
+    // agent-a switches to a month window: its day entry is replaced, not kept
+    await svc.keyLimitUsage([key({ limit: { usd: 10, window: "month" } })], { getSpend }, new Date(nextDay.getTime() + 1000));
+    expect(svc.__spendCacheSizeForTests()).toBe(2);
+    // a key no longer read (sk-b) is evicted once its entry is older than the TTL
+    await svc.keyLimitUsage([key({ limit: { usd: 10, window: "month" } })], { getSpend }, new Date(nextDay.getTime() + 60_000));
+    expect(svc.__spendCacheSizeForTests()).toBe(1);
+  });
+
   it("a failed spend read never throws, even without onError", async () => {
     await expect(svc.keyLimitUsage([key()], { getSpend: async () => { throw new Error("db locked"); } }, NOW)).resolves.toEqual([]);
   });

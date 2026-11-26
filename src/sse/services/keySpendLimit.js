@@ -10,11 +10,16 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { recordKeyLimitRefused } from "@/lib/observability/metrics.js";
 
-const spendCache = new Map(); // `${keyValue}|${windowStartIso}` -> { at, usd }
+const spendCache = new Map(); // `${keyValue}|${windowStartIso}` -> { at, usd, keyValue, startIso }
 
 /** Test hook. */
 export function resetSpendCache() {
   spendCache.clear();
+}
+
+/** Test hook. */
+export function __spendCacheSizeForTests() {
+  return spendCache.size;
 }
 
 export function defaultDeps() {
@@ -31,7 +36,12 @@ async function cachedSpend(deps, keyValue, startIso, nowMs) {
   const hit = spendCache.get(cacheKey);
   if (hit && nowMs - hit.at < KEY_SPEND_CACHE_TTL_MS) return hit.usd;
   const usd = await deps.getSpend(keyValue, startIso);
-  spendCache.set(cacheKey, { at: nowMs, usd });
+  // Bounded: drop this key's entries for other windows and anything past the TTL, so the
+  // cache holds about one entry per key per active window.
+  for (const [k, e] of spendCache) {
+    if ((e.keyValue === keyValue && e.startIso !== startIso) || nowMs - e.at >= KEY_SPEND_CACHE_TTL_MS) spendCache.delete(k);
+  }
+  spendCache.set(cacheKey, { at: nowMs, usd, keyValue, startIso });
   return usd;
 }
 
