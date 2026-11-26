@@ -115,7 +115,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
-  if (providerThinking?.mode && providerThinking.mode !== "auto") {
+  let injectedEffort = false;
+  if (providerThinking?.mode && providerThinking.mode !== "auto" &&
+      (sourceFormat !== FORMATS.CLAUDE || !extractThinking(body))) {
     const mode = providerThinking.mode;
     if (mode === "on" && !body.thinking) {
       console.log("Injecting provider-level thinking config override: on");
@@ -124,6 +126,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       body = { ...body, thinking: { type: "disabled" } };
     } else if (!body.reasoning_effort) {
       body = { ...body, reasoning_effort: mode };
+      injectedEffort = true;
     }
   }
 
@@ -213,7 +216,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
     }
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
-    if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
+    if (clientTool === "claude") {
+      if (injectedEffort && sourceFormat === FORMATS.CLAUDE) {
+        const thinking = { reasoning_effort: translatedBody.reasoning_effort };
+        applyThinking(sourceFormat, upstreamModel, thinking, provider);
+        delete translatedBody.reasoning_effort;
+        if (thinking.thinking) translatedBody.thinking = thinking.thinking;
+        if (thinking.output_config) translatedBody.output_config = { ...translatedBody.output_config, ...thinking.output_config };
+      }
+      normalizeClaudePassthrough(translatedBody, translatedBody.model);
+    }
   } else {
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
