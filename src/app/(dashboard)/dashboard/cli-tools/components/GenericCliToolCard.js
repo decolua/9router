@@ -7,7 +7,23 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
-import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { buildModelGroups, collectModelValues, LIVE_CATALOG_PROVIDERS } from "@/shared/utils/selectableModels";
+import {
+  PI_CONTEXT_WINDOWS,
+  PI_MAX_TOKENS,
+  PI_THINKING_LEVELS,
+  PI_DEFAULT_THINKING_LEVELS,
+  PI_DEFAULT_CAPS,
+  PI_CAP_LIMITS,
+  formatTokens,
+  sanitizeCap,
+  capOptions,
+  piModelCaps,
+  capsFromModelInfo,
+  buildPiModelEntry,
+  readPiModels,
+  piInputHasImage,
+} from "@/shared/utils/piModels";
 
 export default function GenericCliToolCard({
   tool,
@@ -34,14 +50,11 @@ export default function GenericCliToolCard({
     const cfg = initialStatus?.config;
     return cfg?.model || cfg?.openai?.model || cfg?.providers?.["9router"]?.models?.[0]?.id || "";
   });
-  const [selectedModels, setSelectedModels] = useState(() => {
-    const cfg = initialStatus?.config;
-    const list = cfg?.providers?.["9router"]?.models;
-    if (Array.isArray(list) && list.length > 0) {
-      return list.map((m) => (typeof m === "string" ? m : m.id));
-    }
-    return [];
-  });
+  const initialPi = readPiModels(initialStatus?.config);
+  const [selectedModels, setSelectedModels] = useState(() => initialPi?.ids || []);
+  const [modelCaps, setModelCaps] = useState(() => initialPi?.caps || {});
+  const [modelInfo, setModelInfo] = useState({});
+  const [addingAll, setAddingAll] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
@@ -58,10 +71,10 @@ export default function GenericCliToolCard({
             setStatus(data);
             const cfg = data?.config;
             if (tool.id === "pi") {
-              const list = cfg?.providers?.["9router"]?.models;
-              if (Array.isArray(list) && list.length > 0) {
-                const ids = list.map((m) => (typeof m === "string" ? m : m.id));
-                setSelectedModels(ids);
+              const pi = readPiModels(cfg);
+              if (pi) {
+                setSelectedModels(pi.ids);
+                setModelCaps(pi.caps);
               }
             } else {
               const mod = cfg?.model || cfg?.openai?.model || cfg?.providers?.["9router"]?.models?.[0]?.id;
@@ -78,6 +91,29 @@ export default function GenericCliToolCard({
     };
   }, [isExpanded, initialStatus, endpointUrl, tool.id]);
 
+  // Model capability metadata from the picker's own endpoint, keyed by the routed
+  // model value this card stores. Adding a model then starts from the catalog's
+  // vision / reasoning / context values instead of hardcoded defaults.
+  useEffect(() => {
+    if (tool.id !== "pi" || !isExpanded) return;
+    let active = true;
+    fetch("/api/models", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active) return;
+        const info = {};
+        for (const model of data?.models || []) {
+          const key = model.routedModel || model.fullModel;
+          if (key) info[key] = { ...(model.caps || {}), thinking_levels: model.thinking_levels };
+        }
+        setModelInfo(info);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [tool.id, isExpanded]);
+
   const checkStatus = async () => {
     setChecking(true);
     try {
@@ -86,10 +122,10 @@ export default function GenericCliToolCard({
       setStatus(data);
       const cfg = data?.config;
       if (tool.id === "pi") {
-        const list = cfg?.providers?.["9router"]?.models;
-        if (Array.isArray(list) && list.length > 0) {
-          const ids = list.map((m) => (typeof m === "string" ? m : m.id));
-          setSelectedModels(ids);
+        const pi = readPiModels(cfg);
+        if (pi) {
+          setSelectedModels(pi.ids);
+          setModelCaps(pi.caps);
         }
       } else {
         const mod = cfg?.model || cfg?.openai?.model || cfg?.providers?.["9router"]?.models?.[0]?.id;
@@ -144,7 +180,9 @@ export default function GenericCliToolCard({
       };
 
       if (tool.id === "pi") {
-        payload.models = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
+        payload.models = (selectedModels.length > 0 ? selectedModels : ["provider/model-id"]).map((id) =>
+          buildPiModelEntry(id, modelCaps[id])
+        );
       } else {
         payload.model = selectedModel;
       }
@@ -192,6 +230,10 @@ export default function GenericCliToolCard({
     if (tool.id === "pi") {
       if (!selectedModels.includes(model.value)) {
         setSelectedModels((prev) => [...prev, model.value]);
+        // /api/models knows nothing about live-catalog-only models (commandcode,
+        // cursor…), so the picker hands over the caps its rows carry.
+        const info = { ...model.caps, ...modelInfo[model.value] };
+        setModelCaps((prev) => ({ ...prev, [model.value]: prev[model.value] || capsFromModelInfo(info) }));
       }
     } else {
       setSelectedModel(model.value);
@@ -199,23 +241,131 @@ export default function GenericCliToolCard({
     setModalOpen(false);
   };
 
-  const handleAddAllActiveModels = () => {
-    const allModels = [];
-    activeProviders.forEach((conn) => {
-      const alias = PROVIDER_ID_TO_ALIAS[conn.provider] || conn.provider;
-      const providerModels = getModelsByProviderId(conn.provider);
-      providerModels.forEach((m) => {
-        const val = `${alias}/${m.id}`;
-        if (!allModels.includes(val)) allModels.push(val);
-      });
+  // Resolve every model a user can currently route to, using the same rules as the
+  // model picker (shared builder). Walking the static registry alone missed
+  // anything the picker knows from other sources: no-auth free providers never own
+  // a connection row (OpenCode Free), models registered through /api/models/custom
+  // live outside PROVIDER_MODELS, user aliases and live per-account catalogs are
+  // runtime data, and disabled models must not be re-added.
+  const loadActiveModelValues = async () => {
+    const readJson = async (url) => {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        return res.ok ? await res.json() : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const [providersData, aliasData, customData, disabledData] = await Promise.all([
+      readJson("/api/providers"),
+      readJson("/api/models/alias"),
+      readJson("/api/models/custom"),
+      readJson("/api/models/disabled"),
+    ]);
+
+    const allConnections = providersData?.connections ?? activeProviders ?? [];
+    const connections = allConnections.filter((conn) => conn && conn.isActive !== false);
+
+    // Live per-account catalogs (cursor/cline/clinepass/zed) are not in the registry.
+    const liveModels = {};
+    await Promise.all(
+      LIVE_CATALOG_PROVIDERS.map(async (providerId) => {
+        const connectionIds = connections.filter((conn) => conn.provider === providerId).map((conn) => conn.id);
+        if (connectionIds.length === 0) return;
+        const lists = await Promise.all(connectionIds.map((id) => readJson(`/api/providers/${id}/models`)));
+        liveModels[providerId] = lists.flatMap((data) => (Array.isArray(data?.models) ? data.models : []));
+      })
+    );
+
+    const groups = buildModelGroups({
+      connections,
+      allConnections,
+      modelAliases: aliasData?.aliases || {},
+      customModels: customData?.models || [],
+      disabledModels: disabledData?.disabled || {},
+      liveModels,
     });
-    if (allModels.length > 0) {
+
+    // Seeds for every model being added: the picker's own row when it carries
+    // capability fields (live catalogs), otherwise the /api/models entry. Doing it
+    // here keeps "Add All" and "Add Model" from disagreeing about the same model.
+    const caps = {};
+    for (const group of Object.values(groups)) {
+      for (const model of group.models) {
+        if (!model?.value) continue;
+        if (!model.caps && !modelInfo[model.value]) continue;
+        caps[model.value] = capsFromModelInfo({ ...model.caps, ...modelInfo[model.value] });
+      }
+    }
+
+    return { values: collectModelValues(groups), caps };
+  };
+
+  const handleAddAllActiveModels = async () => {
+    setAddingAll(true);
+    setMessage(null);
+    try {
+      const { values: allModels, caps } = await loadActiveModelValues();
+      if (allModels.length === 0) {
+        setMessage({ type: "error", text: "No active models found to add." });
+        return;
+      }
       setSelectedModels((prev) => Array.from(new Set([...prev, ...allModels])));
+      setModelCaps((prev) => {
+        const next = { ...prev };
+        allModels.forEach((id) => { next[id] ||= caps[id] || capsFromModelInfo(modelInfo[id]); });
+        return next;
+      });
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setAddingAll(false);
     }
   };
 
   const handleRemoveModel = (modelToRemove) => {
     setSelectedModels((prev) => prev.filter((m) => m !== modelToRemove));
+    setModelCaps((prev) => {
+      const next = { ...prev };
+      delete next[modelToRemove];
+      return next;
+    });
+  };
+
+  const setModelCap = (modelId, key, value) => {
+    setModelCaps((prev) => ({
+      ...prev,
+      [modelId]: {
+        ...PI_DEFAULT_CAPS,
+        ...prev[modelId],
+        [key]: sanitizeCap(value, PI_DEFAULT_CAPS[key], PI_CAP_LIMITS[key]),
+      },
+    }));
+  };
+
+  const setModelInput = (modelId, mode) => {
+    setModelCaps((prev) => ({
+      ...prev,
+      [modelId]: { ...piModelCaps(prev[modelId]), input: mode === "text+image" ? ["text", "image"] : ["text"] },
+    }));
+  };
+
+  const setModelReasoning = (modelId, enabled) => {
+    setModelCaps((prev) => ({ ...prev, [modelId]: { ...piModelCaps(prev[modelId]), reasoning: enabled } }));
+  };
+
+  // Keep at least one supported level: a model with every level nulled leaves Pi no
+  // thinking state it can select.
+  const toggleThinkingLevel = (modelId, level) => {
+    setModelCaps((prev) => {
+      const caps = piModelCaps(prev[modelId]);
+      const supported = caps.thinkingLevels ?? PI_DEFAULT_THINKING_LEVELS;
+      const enabled = supported.includes(level);
+      const next = enabled ? supported.filter((l) => l !== level) : [...supported, level];
+      if (next.length === 0) return prev;
+      return { ...prev, [modelId]: { ...caps, thinkingLevels: PI_THINKING_LEVELS.filter((l) => next.includes(l)) } };
+    });
   };
 
   const getInstallCommand = () => {
@@ -255,12 +405,7 @@ export default function GenericCliToolCard({
                     baseUrl: effectiveUrl,
                     apiKey: key,
                     api: "openai-completions",
-                    models: modelsList.map((id) => ({
-                      id,
-                      name: id,
-                      contextWindow: 128000,
-                      maxTokens: 16384,
-                    })),
+                    models: modelsList.map((id) => buildPiModelEntry(id, modelCaps[id])),
                   },
                 },
               },
@@ -477,21 +622,83 @@ export default function GenericCliToolCard({
                         {selectedModels.length === 0 ? (
                           <span className="text-xs text-text-muted italic">No models selected. Add models to use in Pi.</span>
                         ) : (
-                          selectedModels.map((modelId) => (
-                            <span
-                              key={modelId}
-                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-bg-secondary text-xs text-text-main border border-border"
-                            >
-                              <span>{modelId}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveModel(modelId)}
-                                className="text-text-muted hover:text-red-500 rounded p-0.5"
+                          selectedModels.map((modelId) => {
+                            const caps = piModelCaps(modelCaps[modelId]);
+                            return (
+                              <div
+                                key={modelId}
+                                className="flex w-full flex-wrap items-center gap-1.5 rounded border border-border bg-bg-secondary px-2 py-1 text-xs text-text-main"
                               >
-                                <span className="material-symbols-outlined text-[12px]">close</span>
-                              </button>
-                            </span>
-                          ))
+                                <span className="min-w-0 flex-1 basis-40 truncate">{modelId}</span>
+                                <select
+                                  value={caps.contextWindow}
+                                  onChange={(e) => setModelCap(modelId, "contextWindow", e.target.value)}
+                                  title="Context window"
+                                  className="shrink-0 rounded border border-border bg-surface px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                >
+                                  {capOptions(PI_CONTEXT_WINDOWS, caps.contextWindow).map((n) => (
+                                    <option key={n} value={n}>{formatTokens(n)} ctx</option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={caps.maxTokens}
+                                  onChange={(e) => setModelCap(modelId, "maxTokens", e.target.value)}
+                                  title="Max output tokens"
+                                  className="rounded border border-border bg-surface px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                >
+                                  {capOptions(PI_MAX_TOKENS, caps.maxTokens).map((n) => (
+                                    <option key={n} value={n}>{formatTokens(n)} out</option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={piInputHasImage(caps) ? "text+image" : "text"}
+                                  onChange={(e) => setModelInput(modelId, e.target.value)}
+                                  title="Model input"
+                                  className="rounded border border-border bg-surface px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                >
+                                  <option value="text">Text</option>
+                                  <option value="text+image">Text+Vision</option>
+                                </select>
+                                <select
+                                  value={caps.reasoning ? "on" : "off"}
+                                  onChange={(e) => setModelReasoning(modelId, e.target.value === "on")}
+                                  title="Thinking support"
+                                  className="rounded border border-border bg-surface px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                >
+                                  <option value="off">No thinking</option>
+                                  <option value="on">Thinking</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveModel(modelId)}
+                                  className="text-text-muted hover:text-red-500 rounded p-0.5"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">close</span>
+                                </button>
+                                {caps.reasoning && (
+                                  <span className="flex w-full flex-wrap items-center gap-1 border-t border-border/60 pt-1">
+                                    <span className="text-[10px] text-text-muted">Levels</span>
+                                    {PI_THINKING_LEVELS.map((level) => {
+                                      const enabled = (caps.thinkingLevels ?? PI_DEFAULT_THINKING_LEVELS).includes(level);
+                                      return (
+                                        <button
+                                          key={level}
+                                          type="button"
+                                          onClick={() => toggleThinkingLevel(modelId, level)}
+                                          title={enabled ? `${level}: supported` : `${level}: unsupported`}
+                                          className={`rounded border px-1 py-0.5 text-[10px] ${
+                                            enabled ? "border-primary text-primary" : "border-border text-text-muted hover:text-text-main"
+                                          }`}
+                                        >
+                                          {level}
+                                        </button>
+                                      );
+                                    })}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -505,17 +712,16 @@ export default function GenericCliToolCard({
                           <span className="material-symbols-outlined text-[14px] mr-1">add</span>
                           Add Model
                         </Button>
-                        {activeProviders?.length > 0 && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={handleAddAllActiveModels}
-                            className="text-xs text-primary hover:text-primary-hover"
-                          >
-                            + Add All Active Models
-                          </Button>
-                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={handleAddAllActiveModels}
+                          disabled={addingAll}
+                          className="text-xs text-primary hover:text-primary-hover"
+                        >
+                          {addingAll ? "Adding..." : "+ Add All Active Models"}
+                        </Button>
                         {selectedModels.length > 0 && (
                           <button
                             type="button"
@@ -530,7 +736,7 @@ export default function GenericCliToolCard({
                   </div>
                 )}
 
-                {/* Model (1 model cho các tool khác, trừ omp) */}
+                {/* Model (one model for other tools except omp) */}
                 {tool.id !== "omp" && tool.id !== "pi" && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Model</span>

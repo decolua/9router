@@ -27,6 +27,32 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(getThinkingLevels("codex", `${model}(high)`)).toEqual(entry.thinkingLevels);
   });
 
+  it("lists gpt-6.1-terra as a Lite model with its 500k Codex window", () => {
+    const entry = getModelsByProviderId("codex").find((item) => item.id === "gpt-6.1-terra");
+    expect(entry?.responsesLite).toBe(true);
+    expect(entry?.thinkingLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(getCapabilitiesForModel("codex", "gpt-6.1-terra")).toMatchObject({
+      vision: true,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "openai",
+      contextWindow: 500000,
+      maxOutput: 128000,
+    });
+    expect(getPricingForModel("codex", "gpt-6.1-terra")).toMatchObject({ input: 1, cached: 0.05, cache_creation: 1.25, output: 5 });
+  });
+
+  it("sends gpt-6.1-terra with the Lite header and shape", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-6.1-terra", {
+      model: "gpt-6.1-terra", input: "hello", reasoning: { effort: "ultra" },
+    }, true, credentials);
+    const headers = executor.buildHeaders(credentials, true, null, "gpt-6.1-terra");
+
+    expect(headers["x-openai-internal-codex-responses-lite"]).toBe("true");
+    expect(body.reasoning).toEqual({ effort: "max", context: "all_turns" });
+  });
+
   it("uses official OpenAI Standard pricing for GPT-6", () => {
     expect(getPricingForModel("codex", "gpt-6-astra")).toMatchObject({ input: 10, cached: 1, cache_creation: 12.5, output: 50 });
     expect(getPricingForModel("codex", "gpt-6-sol")).toMatchObject({ input: 2, cached: 0.2, cache_creation: 2.5, output: 10 });
@@ -198,8 +224,8 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     const body = JSON.parse(options.body);
     expect(url).toBe("https://chatgpt.com/backend-api/codex/responses");
     expect(options.headers["x-openai-internal-codex-responses-lite"]).toBe("true");
-    expect(options.headers.version).toBe("0.159.0");
-    expect(options.headers["User-Agent"]).toBe("codex_cli_rs/0.159.0");
+    expect(options.headers.version).toBe("0.167.1");
+    expect(options.headers["User-Agent"]).toBe("codex_cli_rs/0.167.1");
     expect(body.model).toBe("gpt-6-luna");
     expect(body.instructions).toBe("");
     expect(body.input[0].type).toBe("additional_tools");

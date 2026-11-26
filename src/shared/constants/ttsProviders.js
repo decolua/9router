@@ -35,6 +35,7 @@ export const TTS_PROVIDER_CONFIG = {
     voiceSource: "api-language", // grouped by language from backend
     modelKey: "elevenlabs-tts-models",
     apiEndpoint: "/api/media-providers/tts/elevenlabs/voices",
+    modelsEndpoint: "/api/media-providers/tts/elevenlabs/models", // live model list
   },
   "edge-tts": {
     hasLanguageDropdown: false,
@@ -53,6 +54,22 @@ export const TTS_PROVIDER_CONFIG = {
     hasVoiceIdInput: true,
     hasBrowseButton: false,
     voiceSource: "manual", // model and voice depend on the connected server
+  },
+  "ollama-local": {
+    hasLanguageDropdown: false,
+    hasModelSelector: true,
+    hasBrowseButton: false,
+    hasVoiceIdInput: true,
+    voiceSource: "hardcoded",
+    modelKey: "ollama-local-tts-models",
+    voiceKey: "ollama-local-tts-voices",
+    voicesPerModel: true,
+    defaultVoiceId: "default",
+    defaultFormat: "wav",
+    formatOptions: [
+      { value: "wav", label: "WAV (Binary)" },
+      { value: "pcm", label: "PCM (Raw)" },
+    ],
   },
   // ── Config-driven providers (load models from providers.js → ttsConfig.models) ──
   "nvidia": {

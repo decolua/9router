@@ -9,7 +9,7 @@
     "test:watch": "vitest --reporter=verbose"
   },
   "devDependencies": {
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=18"

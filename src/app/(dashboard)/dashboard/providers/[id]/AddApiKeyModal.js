@@ -55,6 +55,30 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [cliDetecting, setCliDetecting] = useState(false);
+  const [cliDetectError, setCliDetectError] = useState(null);
+
+  const handleCommandCodeAutoImport = async () => {
+    setCliDetecting(true);
+    setCliDetectError(null);
+    try {
+      const res = await fetch("/api/oauth/commandcode/auto-import");
+      const data = await res.json();
+      if (data.found && data.apiKey) {
+        setFormData((prev) => ({
+          ...prev,
+          name: prev.name || data.userName || data.keyName || "CommandCode CLI",
+          apiKey: data.apiKey,
+        }));
+      } else {
+        setCliDetectError(data.error || "Could not find Command Code credentials");
+      }
+    } catch {
+      setCliDetectError("Failed to auto-import from Command Code CLI");
+    } finally {
+      setCliDetecting(false);
+    }
+  };
   const bulkPlaceholder = isCloudflareAi
     ? `name1|sk-key1|acc123456\nname2|sk-key2|def789012\nsk-key-only-auto-named`
     : provider === "qoder" || provider === "qoder-cn"
@@ -284,6 +308,23 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 {validating ? "Checking..." : "Check"}
               </Button>
             </div>
+          </div>
+        )}
+        {provider === "commandcode" && (
+          <div className="flex items-center justify-between p-3 rounded bg-accent/10 border border-accent/20">
+            <div>
+              <div className="text-xs font-medium text-text">Command Code CLI detected?</div>
+              <div className="text-xs text-text-muted">Import API key directly from ~/.commandcode/auth.json</div>
+              {cliDetectError && <div className="text-xs text-red-400 mt-1">{cliDetectError}</div>}
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleCommandCodeAutoImport}
+              disabled={cliDetecting || saving}
+            >
+              {cliDetecting ? "Importing..." : "Import from CLI"}
+            </Button>
           </div>
         )}
         {!isOllamaLocal && (

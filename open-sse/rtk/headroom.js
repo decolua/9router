@@ -1,7 +1,5 @@
-import { claudeToOpenAIRequest } from "../translator/request/claude-to-openai.js";
-import { openaiToClaudeRequest } from "../translator/request/openai-to-claude.js";
 import { FORMATS } from "../translator/formats.js";
-import { ROLE, OPENAI_BLOCK, COMMANDCODE_BLOCK, RESPONSES_ITEM } from "../translator/schema/index.js";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, COMMANDCODE_BLOCK, RESPONSES_ITEM } from "../translator/schema/index.js";
 import { HEADROOM_TOOL_OUTPUT_MAX_DEPTH } from "./constants.js";
 import {
   openaiResponsesToOpenAIRequest,
@@ -167,6 +165,53 @@ function applyToolOutputText(projection, messages, diagnostics) {
   }
   for (const { object, key, text } of updates) object[key] = text;
   return true;
+}
+
+// Project text leaves, never the native blocks themselves. A Claude/OpenAI
+// round-trip drops documents, signed thinking and tool-result metadata.
+function collectClaudeHeadroomMessages(body) {
+  if (!Array.isArray(body?.messages)) return null;
+  const messages = [];
+  const targets = [];
+  const addText = (role, object, key, extra = {}) => {
+    if (typeof object?.[key] !== "string") return;
+    messages.push({ role, content: object[key], ...extra });
+    targets.push({ object, key });
+  };
+  const addContent = (role, object, key, extra = {}) => {
+    if (typeof object?.[key] === "string") {
+      addText(role, object, key, extra);
+    } else if (Array.isArray(object?.[key])) {
+      for (const block of object[key]) {
+        if (block?.type === CLAUDE_BLOCK.TEXT) addText(role, block, "text", extra);
+      }
+    }
+  };
+
+  addContent(ROLE.SYSTEM, body, "system");
+  for (const message of body.messages) {
+    const blocks = Array.isArray(message?.content) ? message.content : [];
+    const toolUses = blocks.filter((block) => block?.type === CLAUDE_BLOCK.TOOL_USE);
+    if (message?.role === ROLE.ASSISTANT && toolUses.length) {
+      messages.push({
+        role: ROLE.ASSISTANT,
+        content: "",
+        tool_calls: toolUses.map((block) => ({
+          id: block.id,
+          type: OPENAI_BLOCK.FUNCTION,
+          function: { name: block.name, arguments: JSON.stringify(block.input || {}) },
+        })),
+      });
+      targets.push(null);
+    }
+    addContent(message?.role, message, "content");
+    for (const block of blocks) {
+      if (block?.type === CLAUDE_BLOCK.TOOL_RESULT) {
+        addContent(ROLE.TOOL, block, "content", { tool_call_id: block.tool_use_id });
+      }
+    }
+  }
+  return targets.some(Boolean) ? { messages, targets } : null;
 }
 
 function collectKiroHeadroomMessages(body) {
@@ -386,18 +431,17 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
       return data;
     }
 
-    // Claude shape: translate → OpenAI → compress → translate back.
-    if (format === "claude") {
-      const oai = claudeToOpenAIRequest(model, body, false);
-      if (!Array.isArray(oai?.messages)) {
-        setDiagnostic(diagnostics, "Claude request did not translate to messages[]");
+    // Keep Claude's documents, tool blocks and signatures in their native form.
+    // Only validated text leaves are copied back after compression.
+    if (format === FORMATS.CLAUDE) {
+      const projection = collectClaudeHeadroomMessages(body);
+      if (!projection) {
+        setDiagnostic(diagnostics, "Claude request has no eligible text content");
         return null;
       }
-      const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
+      const data = await callCompress(url, projection.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
       if (!data) return null;
-      const claudeBody = openaiToClaudeRequest(model, { ...oai, messages: data.messages }, false);
-      if (Array.isArray(claudeBody?.messages)) body.messages = claudeBody.messages;
-      if (claudeBody?.system !== undefined) body.system = claudeBody.system;
+      if (!applyProjectedHeadroomMessages(projection, data.messages, diagnostics, "Claude")) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
       return data;
     }

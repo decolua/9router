@@ -267,6 +267,77 @@ describe("buildEmbeddingsUrl", () => {
     expect(url).toBe("https://myhost.ai/v1/embeddings");
   });
 
+  it("ollama-local default host → http://localhost:11434/v1/embeddings", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "nomic-embed-text" },
+      credentials: {},
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:11434/v1/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ model: "nomic-embed-text", input: "Hello world", encoding_format: "float" }),
+      })
+    );
+  });
+
+  it("ollama-local custom host → respects baseUrl from providerSpecificData", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "bge-m3" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+  });
+
+  it("ollama-local custom host with trailing slashes → strips trailing slashes cleanly", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "bge-m3" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434///" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+  });
+
+  it("ollama-local custom host with /v1 or /v1/embeddings suffix → normalizes without duplication", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "qwen3-embedding" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434/v1" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "qwen3-embedding" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434/v1/embeddings" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+  });
+
   it("openai-compatible-* without baseUrl → falls back to api.openai.com", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
 
@@ -382,6 +453,30 @@ describe("buildEmbeddingsHeaders", () => {
     expect(init.headers["Authorization"]).toBe("Bearer local-key");
     expect(init.headers["HTTP-Referer"]).toBeUndefined();
     expect(init.headers["X-Title"]).toBeUndefined();
+  });
+
+  it("ollama-local → Content-Type only by default, Authorization when apiKey is present", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "nomic-embed-text" },
+      credentials: {},
+    }));
+
+    const [, initDefault] = vi.mocked(fetch).mock.calls[0];
+    expect(initDefault.headers["Content-Type"]).toBe("application/json");
+    expect(initDefault.headers["Authorization"]).toBeUndefined();
+
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "nomic-embed-text" },
+      credentials: { apiKey: "ollama-proxy-secret" },
+    }));
+
+    const [, initAuth] = vi.mocked(fetch).mock.calls[1];
+    expect(initAuth.headers["Content-Type"]).toBe("application/json");
+    expect(initAuth.headers["Authorization"]).toBe("Bearer ollama-proxy-secret");
   });
 });
 
@@ -657,5 +752,87 @@ describe("handleEmbeddingsCore — token refresh on 401/403", () => {
     // Should return an error result, not throw
     expect(result).toHaveProperty("success");
     expect(result.success).toBe(false);
+  });
+});
+
+// ─── Test: input_type (models that declare it) ───────────────────────────────
+// NVIDIA's asymmetric embedding models answer HTTP 400 when `input_type` is
+// missing. The core resolves it from the registry declaration and forwards it
+// to the adapter; the adapter only emits it when present.
+
+describe("handleEmbeddingsCore — input_type", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const nvidiaOptions = (overrides = {}) => makeOptions({
+    body: { model: "nvidia/nvidia/nemotron-3.5-embed-8b", input: "Hello world" },
+    modelInfo: { provider: "nvidia", model: "nvidia/nemotron-3.5-embed-8b" },
+    credentials: { apiKey: "nvapi-test" },
+    ...overrides,
+  });
+
+  const sentBody = () => JSON.parse(vi.mocked(fetch).mock.calls[0][1].body);
+
+  it("injects the default input_type when the client omits it", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(nvidiaOptions());
+
+    expect(sentBody().input_type).toBe("query");
+  });
+
+  it("keeps a client-supplied input_type", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(nvidiaOptions({
+      body: { model: "nvidia/nvidia/nemotron-3.5-embed-8b", input: "Hello world", input_type: "passage" },
+    }));
+
+    expect(sentBody().input_type).toBe("passage");
+  });
+
+  it("replaces an invalid input_type with the default", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(nvidiaOptions({
+      body: { model: "nvidia/nvidia/nemotron-3.5-embed-8b", input: "Hello world", input_type: "bogus" },
+    }));
+
+    expect(sentBody().input_type).toBe("query");
+  });
+
+  it("replaces an empty input_type with the default", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(nvidiaOptions({
+      body: { model: "nvidia/nvidia/nemotron-3.5-embed-8b", input: "Hello world", input_type: "" },
+    }));
+
+    expect(sentBody().input_type).toBe("query");
+  });
+
+  it("omits input_type for models that do not declare it (nvclip)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(nvidiaOptions({
+      body: { model: "nvidia/nvidia/nvclip", input: "Hello world" },
+      modelInfo: { provider: "nvidia", model: "nvidia/nvclip" },
+    }));
+
+    expect("input_type" in sentBody()).toBe(false);
+  });
+
+  it("omits input_type for providers whose models declare no params", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      body: { model: "text-embedding-ada-002", input: "Hello world", input_type: "passage" },
+    }));
+
+    expect("input_type" in sentBody()).toBe(false);
   });
 });
