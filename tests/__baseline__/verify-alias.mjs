@@ -30,6 +30,7 @@ const ALIAS_TOKENS = [
   "nous","nous-portal","nous-research","ns",
   "odg","opendesign","opendesign-go","dr","relay","deeprelay",
   "qc","qctp","qwencloud","qwen-cloud",
+  "ttoken",
 ];
 
 // Sort idToAlias by key — runtime accesses by key, order is irrelevant (content-based)
