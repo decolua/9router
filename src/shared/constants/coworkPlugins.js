@@ -20,6 +20,22 @@ const DEFAULT_PLUGINS = [
   },
 ];
 
+// Remote plugins offered in "+ Browse" next to the Anthropic registry, never enabled by default.
+// toolNames only lists free tools (model lookup, tool search, account checks), so those get "allow";
+// paid tools (llm_chat, image/video/audio generation, embeddings, tools_run) stay behind Cowork's prompt.
+const CATALOG_PLUGINS = [
+  {
+    name: "aimlapi",
+    slug: "aimlapi",
+    title: "AI/ML API",
+    description: "10,000+ AI tools and models in one connector: web search and crawling, document parsing, social and SEO data, plus chat, image, video, speech and embedding models. Model lookups and account checks are free; generation, chat, embeddings and tool runs are billed pay-as-you-go to your AI/ML API account.",
+    url: "https://mcp.aimlapi.com/mcp",
+    transport: "http",
+    oauth: true,
+    toolNames: ["ping", "account_balance", "account_usage", "models_list", "models_search", "models_compare", "model_get", "models_find_best", "jev_model_search", "jev_tool_search", "tools_search", "tools_inspect"],
+  },
+];
+
 // Local stdio plugins bridged via inline SSE endpoint on the app's port.
 const LOCAL_STDIO_PLUGINS = [
   {
@@ -69,4 +85,4 @@ function buildManagedMcpServers(plugins) {
   return out;
 }
 
-module.exports = { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, buildManagedMcpServers };
+module.exports = { DEFAULT_PLUGINS, CATALOG_PLUGINS, LOCAL_STDIO_PLUGINS, buildManagedMcpServers };

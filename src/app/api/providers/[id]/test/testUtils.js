@@ -5,6 +5,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { ANTIGRAVITY_IDE_USER_AGENT } from "open-sse/providers/shared.js";
 import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
+import { aimlapiDirectFetch } from "open-sse/executors/aimlapi.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
@@ -808,6 +809,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "synthetic": {
         const cfg = PROVIDERS[connection.provider];
         const res = await fetchWithConnectionProxy(cfg.validateUrl, { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "aimlapi": {
+        const res = await fetchWithConnectionProxy(PROVIDERS.aimlapi.validateUrl, { headers: { Authorization: `Bearer ${connection.apiKey}` }, directFetch: aimlapiDirectFetch }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "ollama": {

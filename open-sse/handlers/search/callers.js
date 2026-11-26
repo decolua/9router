@@ -29,6 +29,8 @@
  * @property {Record<string,unknown>} [providerSpecificData]
  */
 
+import { aimlapiDirectFetch } from "../../executors/aimlapi.js";
+
 import { assertPublicUrl } from "../../../src/shared/utils/ssrfGuard.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -188,6 +190,28 @@ function buildTavilyRequest(config, params) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.token}` },
       body: JSON.stringify(body),
+    },
+  };
+}
+
+// AI/ML API Toolbox: one /v1/tools/run endpoint; the search backend is picked by tool name.
+// The base URL is fixed (no providerOptions.baseUrl override) so the key only goes to tools.aimlapi.com.
+// directFetch: the host-locked AI/ML API transport (see executors/aimlapi.js) used by proxyAwareFetch.
+function buildAimlapiRequest(config, params) {
+  const { includes, excludes } = parseDomainFilter(params.domainFilter);
+  const input = { query: params.query, numResults: params.maxResults };
+  if (includes.length) input.includeDomains = includes;
+  if (excludes.length) input.excludeDomains = excludes;
+  if (params.country) input.country = params.country.toLowerCase();
+  const freshness = { day: "last_24_hours", week: "last_week", month: "last_month", year: "last_year" }[params.timeRange];
+  if (freshness) input.freshness = freshness;
+  return {
+    url: config.baseUrl,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.token}` },
+      body: JSON.stringify({ tool: config.tool, input, max_cost_usd: config.maxCostUsd }),
+      directFetch: aimlapiDirectFetch,
     },
   };
 }
@@ -453,6 +477,7 @@ const BUILDERS = {
   "perplexity": buildPerplexityRequest,
   "exa": buildExaRequest,
   "tavily": buildTavilyRequest,
+  "aimlapi": buildAimlapiRequest,
   "google-pse": buildGooglePseRequest,
   "linkup": buildLinkupRequest,
   "searchapi": buildSearchApiRequest,
