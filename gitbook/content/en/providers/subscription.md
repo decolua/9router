@@ -111,6 +111,8 @@ Model: cx/gpt-5.2-codex
 | `cx/gpt-5.2` | GPT 5.2 | General tasks |
 | `cx/gpt-5.1-codex` | GPT 5.1 Codex | Stable coding |
 
+For agent workflows with several function calls per response, see the [GPT-6 Luna tool-call limits](../integration/codex.md#gpt-6-luna-calls-one-tool-per-turn).
+
 ### Image Generation
 
 The Codex image catalog includes `cx/gpt-5.6-sol-image`,

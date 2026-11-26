@@ -5,6 +5,7 @@ import { getModelsByProviderId } from "../../open-sse/config/providerModels.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getPricingForModel } from "../../open-sse/providers/pricing.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
+import { openaiToOpenAIResponsesRequest } from "../../open-sse/translator/request/openai-responses.js";
 import * as proxyFetchModule from "../../open-sse/utils/proxyFetch.js";
 
 const credentials = { connectionId: "fixture", accessToken: "fixture-token" };
@@ -78,6 +79,31 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(body.parallel_tool_calls).toBe(false);
     expect(body.input).toEqual(input);
     expect(body.reasoning).toEqual({ effort: "high", context: "all_turns" });
+  });
+
+  it.each(["chat completions", "responses"])("keeps Luna tool calls serial for %s requests", async (format) => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
+      ok: true, status: 200, headers: new Map(),
+    });
+    const model = "gpt-6-luna";
+    const functions = ["first", "second"].map((name) => ({ name, parameters: { type: "object", properties: {} } }));
+    const body = format === "chat completions"
+      ? openaiToOpenAIResponsesRequest(model, {
+        model, messages: [{ role: "user", content: "Call both tools" }],
+        parallel_tool_calls: true,
+        tools: functions.map((fn) => ({ type: "function", function: fn })),
+      }, true)
+      : {
+        model, input: "Call both tools", parallel_tool_calls: true,
+        tools: functions.map((fn) => ({ type: "function", ...fn })),
+      };
+
+    await new CodexExecutor().execute({ model, body, stream: true, credentials });
+    const [, options] = fetchMock.mock.calls[0];
+    const outbound = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBe("true");
+    expect(outbound.parallel_tool_calls).toBe(false);
+    expect(outbound.input[0].tools.map((tool) => tool.name)).toEqual(["first", "second"]);
   });
 
   it.each(["gpt-6-sol", "gpt-6-luna"])("keeps hosted web_search available on %s", async (model) => {

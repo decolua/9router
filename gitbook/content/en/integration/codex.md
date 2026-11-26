@@ -108,6 +108,12 @@ If you get "model not available" errors:
 2. Check that the OpenAI provider connection is active in 9Router dashboard
 3. Ensure the model is available in your connected providers
 
+### GPT-6 Luna Calls One Tool per Turn
+
+`cx/gpt-6-luna` and `cx/gpt-6-luna[1m]` normally use the Codex subscription's Responses Lite transport. On that transport, 9Router sends `parallel_tool_calls: false`, including when the client sets it to `true`. This applies to both Chat Completions and Responses requests. There is no client setting to enable multiple function calls in one Lite response.
+
+For a workflow that needs several function calls in one response, try `cx/gpt-5.6-luna`. It uses regular Codex Responses, and multiple function calls in one turn were observed with that route in the [reported Chat Completions test](https://github.com/decolua/9router/issues/5883). The model still decides how many calls to emit. If you keep GPT-6 Luna on Lite, allow enough turns to return each tool result and receive the final answer.
+
 ## Cloud Endpoint
 
 To use 9Router cloud endpoint instead of localhost:
