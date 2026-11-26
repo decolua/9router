@@ -5,10 +5,17 @@
 //   ninerouter.tokens    counter            attribute type = prompt|completion|cached|reasoning|cache_creation
 //   ninerouter.cost.usd  counter (float)    unit USD, from the same calculateCost() the dashboard uses
 //                                           (Prometheus: ninerouter_cost_usd_total)
+//   ninerouter.key.limit.used_ratio  observable gauge, unit 1: spend in the current window / limit.usd,
+//                                    one point per key with a spend limit, read on every export
+//                                    (Prometheus: ninerouter_key_limit_used_ratio)
+//   ninerouter.key.limit.refused     counter: requests refused with 429 by the spend limit
+//                                    (Prometheus: ninerouter_key_limit_refused_total)
 //
-// Common attributes: key_name, model, provider, endpoint, status. key_name is the API key's
+// Attributes of the three request counters: key_name, model, provider, endpoint, status. The two
+// key.limit metrics carry key_name and window (day|month) only. key_name is the API key's
 // NAME ("no-key" without a key, "unknown-key" when the presented key is not in the DB). The
-// key value is never used as an attribute.
+// key value is never used as an attribute. The gauge is a point-in-time value: alert on its
+// latest/max value per key_name, never on a sum across instances or time.
 //
 // Two readers, both optional, both env-driven (parseMetricsConfig):
 //   - OTLP push (http/protobuf) when an OTEL_EXPORTER_OTLP_*ENDPOINT is set; the exporter reads
@@ -25,7 +32,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { PrometheusExporter, PrometheusSerializer } from "@opentelemetry/exporter-prometheus";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { getApiKeyByKey } from "../db/repos/apiKeysRepo.js";
+import { getApiKeyByKey, getApiKeys } from "../db/repos/apiKeysRepo.js";
 import { parseMetricsConfig } from "./metricsConfig.js";
 
 const GLOBAL_KEY = "__ninerouterMetrics";
@@ -79,6 +86,13 @@ function createState(config) {
   });
   const meter = provider.getMeter(METER_NAME);
 
+  meter
+    .createObservableGauge("ninerouter.key.limit.used_ratio", {
+      description: "Share of its spend limit each limited API key has used in the current window (1 = at the limit)",
+      unit: "1",
+    })
+    .addCallback((result) => observeKeyLimitRatios(result));
+
   return {
     config,
     provider,
@@ -87,6 +101,7 @@ function createState(config) {
     requests: meter.createCounter("ninerouter.requests", { description: "Requests seen by 9router, per API key name" }),
     tokens: meter.createCounter("ninerouter.tokens", { description: "Tokens per API key name, by type" }),
     cost: meter.createCounter("ninerouter.cost.usd", { description: "Estimated cost per API key name", unit: "USD" }),
+    limitRefused: meter.createCounter("ninerouter.key.limit.refused", { description: "Requests refused with 429 by the per-key spend limit" }),
   };
 }
 
@@ -110,11 +125,16 @@ export function initMetrics() {
   try { getMetrics(); } catch { /* never throws */ }
 }
 
+// The key_name label for a known key record's name.
+function keyNameLabel(name) {
+  return name || KEY_NAME_UNKNOWN;
+}
+
 async function resolveKeyName(apiKey) {
   if (!apiKey) return KEY_NAME_NONE;
   try {
     const key = await getApiKeyByKey(apiKey);
-    return key?.name || KEY_NAME_UNKNOWN;
+    return keyNameLabel(key?.name);
   } catch {
     return KEY_NAME_UNKNOWN;
   }
@@ -216,6 +236,45 @@ function countRequestOnly(fields) {
   p.finally(() => pending.delete(p));
 }
 
+const GAUGE_ERROR_LOG_INTERVAL_MS = 60_000;
+
+function defaultGaugeDeps() {
+  return {
+    getKeys: () => getApiKeys(),
+    // Loaded lazily: keySpendLimit.js imports this module (refusal counter).
+    usage: async (keys, now) => (await import("../../sse/services/keySpendLimit.js")).keyLimitUsage(keys, undefined, now),
+  };
+}
+
+/**
+ * Callback of the ninerouter.key.limit.used_ratio gauge: one point per key with a spend
+ * limit. Never throws: on error it observes nothing and logs at most once a minute.
+ */
+export async function observeKeyLimitRatios(result, deps = defaultGaugeDeps(), now = new Date()) {
+  try {
+    const rows = await deps.usage(await deps.getKeys(), now);
+    for (const r of rows) result.observe(r.ratio, { key_name: keyNameLabel(r.name), window: r.window });
+  } catch (e) {
+    const h = holder();
+    const t = now.getTime();
+    if (h.gaugeErrorAt === undefined || t - h.gaugeErrorAt >= GAUGE_ERROR_LOG_INTERVAL_MS) {
+      h.gaugeErrorAt = t;
+      console.warn("[metrics] key limit gauge skipped:", e?.message || e);
+    }
+  }
+}
+
+/** Count one request refused with 429 by the spend limit. Never throws. */
+export function recordKeyLimitRefused({ keyName, window } = {}) {
+  try {
+    const m = getMetrics();
+    if (!m) return;
+    m.limitRefused.add(1, { key_name: keyNameLabel(keyName), window: window || "unknown" });
+  } catch {
+    // metrics must never break a request
+  }
+}
+
 /** Collect the current cumulative metrics in Prometheus text format, or null when disabled. */
 export async function collectPrometheusText() {
   const m = getMetrics();
@@ -235,4 +294,5 @@ export async function __resetMetricsForTests() {
     try { await h.state.provider.shutdown(); } catch { /* ignore */ }
   }
   h.state = undefined;
+  h.gaugeErrorAt = undefined;
 }

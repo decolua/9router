@@ -8,6 +8,7 @@ import { KEY_SPEND_CACHE_TTL_MS, keyLimitReachedMessage } from "@/shared/constan
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
+import { recordKeyLimitRefused } from "@/lib/observability/metrics.js";
 
 const spendCache = new Map(); // `${keyValue}|${windowStartIso}` -> { at, usd }
 
@@ -39,6 +40,7 @@ function limitReachedResponse(ctx, entry, resetsAt, spent) {
   const retryAfter = String(Math.max(1, Math.ceil((resetsAt.getTime() - Date.now()) / 1000)));
   // One line per refusal, greppable by "key-spend-limit" or "REFUSED 429". A refused call never
   // reaches the router, so it has no request line or usage row: this line is its only trace.
+  recordKeyLimitRefused({ keyName: entry.name, window: entry.limit.window });
   log.warn("AUTH", `key-spend-limit: REFUSED 429 · key "${entry.name}" · spent $${Number(spent).toFixed(4)} of $${entry.limit.usd} per ${entry.limit.window} · resets ${resetsAt.toISOString()} · ${ctx.endpoint || "unknown endpoint"}`);
   if (ctx.endpoint?.includes("/v1/messages")) {
     return new Response(
@@ -84,4 +86,25 @@ export async function getLimitStatus(key, deps = defaultDeps(), now = new Date()
     resetsAt = windowReset(key.limit.window, now).toISOString();
   }
   return { ...priced, effective, spentUsd, resetsAt };
+}
+
+/**
+ * Share of its limit each limited key has used in its current window, for the
+ * ninerouter.key.limit.used_ratio gauge. Same spend source, window and cache as
+ * checkSpendLimit, so the numbers match what causes a 429. Every key with a
+ * limit counts, whether or not the limit is enforced; keys without a limit (or
+ * a limit of 0) are skipped. Errors propagate (the gauge callback swallows them).
+ * `keys` are apiKeys rows ({ key, name, limit }).
+ * @returns {Promise<{name: string, window: string, ratio: number}[]>}
+ */
+export async function keyLimitUsage(keys, deps = defaultDeps(), now = new Date()) {
+  const rows = [];
+  for (const key of keys || []) {
+    const usd = Number(key?.limit?.usd);
+    if (!Number.isFinite(usd) || usd <= 0) continue;
+    const start = windowStart(key.limit.window, now);
+    const spent = await cachedSpend(deps, key.key, start.toISOString(), now.getTime());
+    rows.push({ name: key.name, window: key.limit.window, ratio: Number(spent) / usd });
+  }
+  return rows;
 }

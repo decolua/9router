@@ -151,6 +151,37 @@ describe("metrics enabled (Prometheus endpoint)", () => {
     expect(text).toMatch(/^ninerouter_cost_usd_total\{/m);
   });
 
+  it("publishes ninerouter.key.limit.used_ratio per limited key from the real spend, nothing for unlimited keys", async () => {
+    await db.updatePricing({ openai: { "gauge-model": { input: 1000, output: 0 } } });
+    const limited = await db.createApiKey("team-limited", "machine-1");
+    await db.updateApiKey(limited.id, { limit: { usd: 4, window: "day" } });
+    const monthly = await db.createApiKey("team-monthly", "machine-1");
+    await db.updateApiKey(monthly.id, { limit: { usd: 10, window: "month" } });
+    const free = await db.createApiKey("team-free", "machine-1");
+    // 1000 prompt tokens at 1000 USD per million = 1 USD
+    for (const k of [limited, free]) {
+      await db.saveRequestUsage({ provider: "openai", model: "gauge-model", apiKey: k.key, endpoint: "/v1/x", tokens: { prompt_tokens: 1000, completion_tokens: 0 } });
+    }
+    const text = await metrics.collectPrometheusText();
+    const line = (name) => text.split("\n").find((l) => /^ninerouter_key_limit_used_ratio\w*\{/.test(l) && l.includes(`key_name="${name}"`));
+    const value = (l) => Number(l.slice(l.lastIndexOf(" ") + 1));
+    expect(line("team-limited")).toContain('window="day"');
+    expect(value(line("team-limited"))).toBeCloseTo(0.25, 9);
+    expect(line("team-monthly")).toContain('window="month"');
+    expect(value(line("team-monthly"))).toBe(0);
+    expect(line("team-free")).toBeUndefined();
+    expect(text).not.toContain(limited.key);
+  });
+
+  it("counts refusals in ninerouter.key.limit.refused per key_name and window", async () => {
+    metrics.recordKeyLimitRefused({ keyName: "team-capped", window: "day" });
+    metrics.recordKeyLimitRefused({ keyName: "team-capped", window: "day" });
+    const text = await metrics.collectPrometheusText();
+    const l = text.split("\n").find((x) => /^ninerouter_key_limit_refused\w*\{/.test(x) && x.includes('key_name="team-capped"'));
+    expect(l).toContain('window="day"');
+    expect(Number(l.slice(l.lastIndexOf(" ") + 1))).toBe(2);
+  });
+
   it("recordFailedRequestMetrics never throws, even with no arguments", () => {
     expect(() => metrics.recordFailedRequestMetrics()).not.toThrow();
   });

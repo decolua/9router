@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/sse/utils/logger.js", () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }));
+vi.mock("@/lib/observability/metrics.js", () => ({ recordKeyLimitRefused: vi.fn() }));
 
 const svc = await import("../../src/sse/services/keySpendLimit.js");
 
@@ -80,6 +81,15 @@ describe("checkSpendLimit", () => {
     const d = { ...priced, getSpend: vi.fn(async (k) => (k === "sk-b" ? 99 : 1)) };
     const res = await svc.checkSpendLimit(ctx(entry(), e2), d, NOW);
     expect(res.status).toBe(429);
+  });
+  it("counts each 429 refusal in ninerouter.key.limit.refused (key_name, window), not allowed requests", async () => {
+    const metrics = await import("@/lib/observability/metrics.js");
+    metrics.recordKeyLimitRefused.mockClear();
+    await svc.checkSpendLimit(ctx(entry()), deps(1), NOW);
+    expect(metrics.recordKeyLimitRefused).not.toHaveBeenCalled();
+    await svc.checkSpendLimit(ctx(entry({ limit: { usd: 5, window: "month" } })), deps(6), NOW);
+    expect(metrics.recordKeyLimitRefused).toHaveBeenCalledTimes(1);
+    expect(metrics.recordKeyLimitRefused).toHaveBeenCalledWith({ keyName: "agent-a", window: "month" });
   });
   it("caches spend per key and window for the TTL, then asks again", async () => {
     const d = deps(1);
