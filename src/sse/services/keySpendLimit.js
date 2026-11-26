@@ -109,8 +109,8 @@ export async function getLimitStatus(key, deps = defaultDeps(), now = new Date()
  * is enforced on (restricted keys whose reachable models are all priced, see
  * checkSpendLimit); for any other limited key it is spend/limit, nothing more.
  * Inactive keys and keys without a limit are skipped. A failed spend read skips
- * only that key and is passed to `onError` (never thrown), so one bad read does
- * not drop the other keys' points.
+ * only that key (the gauge then reports it NaN once) and is passed to `onError`
+ * (never thrown), so one bad read does not drop the other keys' points.
  * `keys` are apiKeys rows ({ key, name, isActive, limit }).
  * @returns {Promise<{name: string, window: string, ratio: number}[]>}
  */

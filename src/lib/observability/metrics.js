@@ -22,6 +22,10 @@
 // keyLimitUsage() (src/sse/services/keySpendLimit.js): the same spend query, window start and
 // limit as enforcement, but not necessarily the same spend cache (Next.js may load that module
 // in several bundles), so the gauge and enforcement are each at most 5 s stale, independently.
+// A (key_name, window) that stops being reported (key deleted, deactivated, renamed, limit
+// removed, or its spend read failed) is observed as NaN once and then no longer reported, so it
+// never keeps its old ratio. With cumulative temporality the series then stays NaN until restart;
+// with delta it disappears. Alerts must not treat NaN as a breach.
 //
 // Two readers, both optional, both env-driven (parseMetricsConfig):
 //   - OTLP push (http/protobuf) when an OTEL_EXPORTER_OTLP_*ENDPOINT is set; the exporter reads
@@ -256,8 +260,9 @@ function defaultGaugeDeps() {
  * Callback of the ninerouter.key.limit.used_ratio gauge: one point per (key_name, window)
  * for the active keys with a spend limit. Key names are not unique and an observable result
  * keeps only the last value per label set, so keys sharing a label set report the HIGHEST
- * ratio (the one closest to a refusal). Never throws: a failure observes what it can (a failed
- * spend read drops only that key) and logs at most once a minute.
+ * ratio (the one closest to a refusal). A label set reported last time but not now is
+ * observed as NaN once, then dropped. Never throws: a failure observes what it can (a failed
+ * spend read turns only that key's point NaN) and logs at most once a minute.
  */
 export async function observeKeyLimitRatios(result, deps = defaultGaugeDeps(), now = new Date()) {
   const warn = (e) => {
@@ -268,9 +273,9 @@ export async function observeKeyLimitRatios(result, deps = defaultGaugeDeps(), n
       console.warn("[metrics] key limit gauge skipped:", e?.message || e);
     }
   };
+  const points = new Map(); // `${key_name}\n${window}` -> { ratio, attributes }
   try {
     const rows = await deps.usage(await deps.getKeys(), now, warn);
-    const points = new Map(); // `${key_name}\n${window}` -> { ratio, attributes }
     for (const r of rows) {
       const attributes = { key_name: keyNameLabel(r.name), window: r.window };
       const id = `${attributes.key_name}\n${attributes.window}`;
@@ -278,6 +283,19 @@ export async function observeKeyLimitRatios(result, deps = defaultGaugeDeps(), n
       if (!prev || r.ratio > prev.ratio) points.set(id, { ratio: r.ratio, attributes });
     }
     for (const p of points.values()) result.observe(p.ratio, p.attributes);
+  } catch (e) {
+    warn(e);
+  }
+  // Readers are cumulative and the SDK merges collections, so a label set that is no longer
+  // observed would be exported with its last value forever. Observe NaN once for every label
+  // set emitted last time but not now (key removed, renamed, deactivated, limit removed, or its
+  // spend read failed), then forget it. Kept in the global holder: one set for all bundles.
+  try {
+    const h = holder();
+    for (const [id, attributes] of h.gaugeEmitted || []) {
+      if (!points.has(id)) result.observe(NaN, attributes);
+    }
+    h.gaugeEmitted = new Map([...points].map(([id, p]) => [id, p.attributes]));
   } catch (e) {
     warn(e);
   }
@@ -314,4 +332,5 @@ export async function __resetMetricsForTests() {
   }
   h.state = undefined;
   h.gaugeErrorAt = undefined;
+  h.gaugeEmitted = undefined;
 }

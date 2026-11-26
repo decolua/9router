@@ -189,6 +189,61 @@ describe("observeKeyLimitRatios (gauge callback)", () => {
     expect(r.points).toEqual([{ value: 0.7, attributes: { key_name: metrics.KEY_NAME_UNKNOWN, window: "day" } }]);
   });
 
+  it("a label set no longer reported is observed as NaN once, then dropped (no stale value)", async () => {
+    let keys = [key(), key({ id: "id-b", key: "sk-b", name: "agent-b" })];
+    const deps = {
+      getKeys: async () => keys,
+      usage: (ks, now) => svc.keyLimitUsage(ks, { getSpend: async (k) => (k === "sk-a" ? 9.5 : 2) }, now),
+    };
+    await metrics.observeKeyLimitRatios(fakeResult(), deps, NOW);
+    keys = [key({ id: "id-b", key: "sk-b", name: "agent-b" })];
+    const second = fakeResult();
+    await metrics.observeKeyLimitRatios(second, deps, NOW);
+    expect(second.points).toEqual([
+      { value: 0.2, attributes: { key_name: "agent-b", window: "day" } },
+      { value: NaN, attributes: { key_name: "agent-a", window: "day" } },
+    ]);
+    const third = fakeResult();
+    await metrics.observeKeyLimitRatios(third, deps, NOW);
+    expect(third.points).toEqual([{ value: 0.2, attributes: { key_name: "agent-b", window: "day" } }]);
+  });
+
+  it("a key whose spend read fails goes NaN instead of keeping its last ratio", async () => {
+    let fail = false;
+    const deps = {
+      getKeys: async () => [key(), key({ id: "id-b", key: "sk-b", name: "agent-b" })],
+      usage: (ks, now, onError) => svc.keyLimitUsage(ks, { getSpend: async (k) => { if (fail && k === "sk-a") throw new Error("db locked"); return 3; } }, now, onError),
+    };
+    await metrics.observeKeyLimitRatios(fakeResult(), deps, NOW);
+    fail = true;
+    svc.resetSpendCache();
+    const r = fakeResult();
+    await metrics.observeKeyLimitRatios(r, deps, NOW);
+    expect(r.points).toEqual([
+      { value: 0.3, attributes: { key_name: "agent-b", window: "day" } },
+      { value: NaN, attributes: { key_name: "agent-a", window: "day" } },
+    ]);
+  });
+
+  it("a failed key listing turns every previously reported label set NaN once", async () => {
+    let broken = false;
+    const deps = {
+      getKeys: async () => { if (broken) throw new Error("SQLITE_BUSY"); return [key(), key({ id: "id-b", key: "sk-b", name: "agent-b", limit: { usd: 10, window: "month" } })]; },
+      usage: (ks, now) => svc.keyLimitUsage(ks, { getSpend: async () => 1 }, now),
+    };
+    await metrics.observeKeyLimitRatios(fakeResult(), deps, NOW);
+    broken = true;
+    const r = fakeResult();
+    await metrics.observeKeyLimitRatios(r, deps, NOW);
+    expect(r.points).toEqual([
+      { value: NaN, attributes: { key_name: "agent-a", window: "day" } },
+      { value: NaN, attributes: { key_name: "agent-b", window: "month" } },
+    ]);
+    const again = fakeResult();
+    await metrics.observeKeyLimitRatios(again, deps, NOW);
+    expect(again.points).toEqual([]);
+  });
+
   it("does not emit inactive keys", async () => {
     const r = fakeResult();
     await metrics.observeKeyLimitRatios(r, {

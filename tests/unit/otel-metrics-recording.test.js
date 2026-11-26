@@ -173,6 +173,49 @@ describe("metrics enabled (Prometheus endpoint)", () => {
     expect(text).not.toContain(limited.key);
   });
 
+  it("a limited key that is removed, or whose spend read fails, goes NaN on the next scrape, never keeps its old ratio", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const svc = await import("@/sse/services/keySpendLimit.js");
+      const usageRepo = await import("@/lib/db/repos/usageRepo.js");
+      await db.updatePricing({ openai: { "stale-model": { input: 1000, output: 0 } } });
+      const gone = await db.createApiKey("team-stale-gone", "machine-1");
+      const flaky = await db.createApiKey("team-stale-flaky", "machine-1");
+      const kept = await db.createApiKey("team-stale-kept", "machine-1");
+      for (const k of [gone, flaky, kept]) {
+        await db.updateApiKey(k.id, { limit: { usd: 4, window: "day" } });
+        await db.saveRequestUsage({ provider: "openai", model: "stale-model", apiKey: k.key, endpoint: "/v1/x", tokens: { prompt_tokens: 3800, completion_tokens: 0 } });
+      }
+      const ratio = (text, name) => sample(text, "ninerouter_key_limit_used_ratio", { key_name: name });
+
+      const first = await metrics.collectPrometheusText();
+      for (const name of ["team-stale-gone", "team-stale-flaky", "team-stale-kept"]) expect(ratio(first, name)).toBeCloseTo(0.95, 9);
+
+      await db.deleteApiKey(gone.id);
+      svc.resetSpendCache();
+      const realSpend = usageRepo.getKeySpendSince;
+      vi.spyOn(usageRepo, "getKeySpendSince").mockImplementation(async (keyValue, since) => {
+        if (keyValue === flaky.key) throw new Error("db locked");
+        return realSpend(keyValue, since);
+      });
+      const second = await metrics.collectPrometheusText();
+      expect(ratio(second, "team-stale-gone")).toBeNaN();
+      expect(ratio(second, "team-stale-flaky")).toBeNaN();
+      expect(ratio(second, "team-stale-kept")).toBeCloseTo(0.95, 9);
+
+      svc.resetSpendCache();
+      const third = await metrics.collectPrometheusText();
+      for (const name of ["team-stale-gone", "team-stale-flaky"]) {
+        const v = ratio(third, name);
+        expect(v === undefined || Number.isNaN(v)).toBe(true);
+      }
+      expect(ratio(third, "team-stale-kept")).toBeCloseTo(0.95, 9);
+    } finally {
+      vi.restoreAllMocks();
+      warn.mockRestore();
+    }
+  });
+
   it("counts refusals in ninerouter.key.limit.refused per key_name and window", async () => {
     metrics.recordKeyLimitRefused({ keyName: "team-capped", window: "day" });
     metrics.recordKeyLimitRefused({ keyName: "team-capped", window: "day" });
