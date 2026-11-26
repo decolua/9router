@@ -286,7 +286,7 @@ describe("getCapabilitiesForModel — codebuddy-cn provider overrides", () => {
     // the generic fallback still governs unlisted commandcode models
     expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4.1-flash")).toMatchObject({
       contextWindow: 1000000,
-      maxOutput: 384000,
+      maxOutput: 200000,
     });
   });
 });
