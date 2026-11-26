@@ -625,17 +625,44 @@ export async function GET(request, { params }) {
       if (!baseUrl) {
         return NextResponse.json({ error: "No base URL configured for OpenAI compatible provider" }, { status: 400 });
       }
-      const url = `${baseUrl.replace(/\/$/, "")}/models`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${connection.apiKey}`,
-        },
-      });
+
+      const cleanBase = baseUrl.replace(/\/+$/, "");
+      const hasExplicitPath = cleanBase.split("/").length > 3; // http(s)://host[:port]/path
+      const url = `${cleanBase}/models`;
+
+      async function tryFetch(fetchUrl) {
+        const response = await fetch(fetchUrl, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${connection.apiKey}`,
+          },
+        });
+        return response;
+      }
+
+      let response = await tryFetch(url);
+      let data;
+      let effectiveBase = cleanBase;
+
+      // Check for explicit "endpoint not supported" in 200 responses (e.g., LM Studio)
+      if (response.ok) {
+        data = await response.json();
+        if (data?.error && /unexpected|not\s+(found|supported|implemented)|invalid\s+endpoint/i.test(data.error)) {
+          response = { ok: false, status: 404, text: async () => data.error };
+        }
+      }
+
+      // Fallback: only for root URLs (no explicit path) when first attempt gave 404/unsupported
+      if (!response.ok && response.status === 404 && !hasExplicitPath) {
+        const fallbackUrl = `${cleanBase}/v1/models`;
+        response = await tryFetch(fallbackUrl);
+        data = undefined; // force re-parse on success
+        effectiveBase = `${cleanBase}/v1`;
+      }
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const errorText = await response.text().catch(() => "");
         console.log(`Error fetching models from ${connection.provider}:`, errorText);
         return NextResponse.json(
           { error: `Failed to fetch models: ${response.status}` },
@@ -643,13 +670,14 @@ export async function GET(request, { params }) {
         );
       }
 
-      const data = await response.json();
+      data = data ?? (await response.json());
       const models = data.data || data.models || [];
 
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models: withModelCapabilities(connection.provider, models)
+        models: withModelCapabilities(connection.provider, models),
+        effectiveBaseUrl: effectiveBase
       });
     }
 
@@ -659,24 +687,47 @@ export async function GET(request, { params }) {
         return NextResponse.json({ error: "No base URL configured for Anthropic compatible provider" }, { status: 400 });
       }
 
-      baseUrl = baseUrl.replace(/\/$/, "");
-      if (baseUrl.endsWith("/messages")) {
-        baseUrl = baseUrl.slice(0, -9);
+      let cleanBase = baseUrl.replace(/\/$/, "");
+      if (cleanBase.endsWith("/messages")) {
+        cleanBase = cleanBase.slice(0, -9);
+      }
+      const hasExplicitPath = cleanBase.split("/").length > 3; // http(s)://host[:port]/path
+      let effectiveBase = cleanBase;
+
+      async function tryFetch(fetchUrl) {
+        const response = await fetch(fetchUrl, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": connection.apiKey,
+            "anthropic-version": "2023-06-01",
+            "Authorization": `Bearer ${connection.apiKey}`
+          },
+        });
+        return response;
       }
 
-      const url = `${baseUrl}/models`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": connection.apiKey,
-          "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${connection.apiKey}`
-        },
-      });
+      // Try /models endpoint at the configured URL first
+      let url = `${cleanBase}/models`;
+      let response = await tryFetch(url);
+
+      // Check for explicit "endpoint not supported" in 200 responses
+      if (response.ok) {
+        const data = await response.json().catch(() => null);
+        if (data?.error && /unexpected|not\s+(found|supported|implemented)|invalid\s+endpoint/i.test(data.error)) {
+          response = { ok: false, status: 404, text: async () => data.error };
+        }
+      }
+
+      // Fallback for root URLs when /models gives 404/unsupported
+      if (!response.ok && response.status === 404 && !hasExplicitPath) {
+        const fallbackUrl = `${cleanBase}/v1/models`;
+        response = await tryFetch(fallbackUrl);
+        effectiveBase = `${cleanBase}/v1`;
+      }
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const errorText = await response.text().catch(() => "");
         console.log(`Error fetching models from ${connection.provider}:`, errorText);
         return NextResponse.json(
           { error: `Failed to fetch models: ${response.status}` },
@@ -690,7 +741,8 @@ export async function GET(request, { params }) {
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models: withModelCapabilities(connection.provider, models)
+        models: withModelCapabilities(connection.provider, models),
+        effectiveBaseUrl: effectiveBase
       });
     }
 

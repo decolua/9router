@@ -41,6 +41,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         name: formData.name,
         prefix: formData.prefix,
         baseUrl: formData.baseUrl,
+        providerSpecificData: formData.providerSpecificData,
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
@@ -66,6 +67,15 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
+      if (data.valid && data.effectiveBaseUrl) {
+        setFormData(prev => ({
+          ...prev,
+          providerSpecificData: {
+            ...prev.providerSpecificData,
+            effectiveBaseUrl: data.effectiveBaseUrl
+          }
+        }));
+      }
     } catch {
       setValidationResult("failed");
     } finally {
@@ -103,7 +113,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         <Input
           label="Base URL"
           value={formData.baseUrl}
-          onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+          onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value, providerSpecificData: { ...formData.providerSpecificData, effectiveBaseUrl: undefined } })}
           placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
           hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />

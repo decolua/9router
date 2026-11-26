@@ -57,6 +57,7 @@ export async function POST(request) {
         apiType,
         baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
         name: name.trim(),
+        providerSpecificData: body.providerSpecificData,
       });
       return NextResponse.json({ node }, { status: 201 });
     }
@@ -74,6 +75,7 @@ export async function POST(request) {
         prefix: prefix.trim(),
         baseUrl: sanitizedBaseUrl,
         name: name.trim(),
+        providerSpecificData: body.providerSpecificData,
       });
       return NextResponse.json({ node }, { status: 201 });
     }
@@ -92,6 +94,7 @@ export async function POST(request) {
         prefix: prefix.trim(),
         baseUrl: sanitizedBaseUrl,
         name: name.trim(),
+        providerSpecificData: body.providerSpecificData,
       });
       return NextResponse.json({ node }, { status: 201 });
     }

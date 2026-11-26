@@ -179,13 +179,29 @@ export class DefaultExecutor extends BaseExecutor {
     }
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
-      const normalized = baseUrl.replace(/\/$/, "");
+      const cleanBase = baseUrl.replace(/\/+$/, "");
+      const hasExplicitPath = cleanBase.split("/").length > 3; // http(s)://host[:port]/path
+      // Use the effective base URL if discovered during model fetching/validation
+      // Validate it's a valid resolution of the configured base URL (cleanBase or cleanBase/v1)
+      // to prevent credential redirection to another host.
+      const effectiveBaseRaw = credentials?.providerSpecificData?.effectiveBaseUrl;
+      const effectiveBase = effectiveBaseRaw ? effectiveBaseRaw.replace(/\/+$/, "") : null;
+      const validResolutions = [cleanBase, `${cleanBase}/v1`];
+      const base = (effectiveBase && validResolutions.includes(effectiveBase)) ? effectiveBase : (hasExplicitPath ? cleanBase : cleanBase);
       const path = resolveOpenAICompatibleApiType(this.provider, credentials) === "responses" ? "/responses" : "/chat/completions";
-      return `${normalized}${path}`;
+      return `${base}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || ANTHROPIC_COMPAT_BASE;
-      const normalized = baseUrl.replace(/\/$/, "");
+      const cleanBase = baseUrl.replace(/\/+$/, "");
+      const hasExplicitPath = cleanBase.split("/").length > 3;
+      // Use the effective base URL if discovered during model fetching/validation
+      // Validate it's a valid resolution of the configured base URL (cleanBase or cleanBase/v1)
+      // to prevent credential redirection to another host.
+      const effectiveBaseRaw = credentials?.providerSpecificData?.effectiveBaseUrl;
+      const effectiveBase = effectiveBaseRaw ? effectiveBaseRaw.replace(/\/+$/, "") : null;
+      const validResolutions = [cleanBase, `${cleanBase}/v1`];
+      const normalized = (effectiveBase && validResolutions.includes(effectiveBase)) ? effectiveBase : (hasExplicitPath ? cleanBase : cleanBase);
       return `${normalized}/messages`;
     }
     // gemini-format: build :streamGenerateContent / :generateContent path
