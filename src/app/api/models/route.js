@@ -5,6 +5,7 @@ import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
+import { resolveOpenCodeFreeModels } from "@/lib/modelCatalog/opencodeFree.js";
 
 // GET /api/models - Get models with aliases
 export async function GET() {
@@ -12,7 +13,13 @@ export async function GET() {
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
 
-    const models = AI_MODELS
+    const openCodeAlias = getProviderAlias("opencode");
+    const liveModels = new Map((await resolveOpenCodeFreeModels()).map((model) => [model.id, model]));
+    const staticOpenCodeIds = new Set(AI_MODELS.filter((m) => m.provider === openCodeAlias).map((m) => m.model));
+    const sourceModels = [...AI_MODELS, ...Array.from(liveModels.values())
+      .filter((m) => !staticOpenCodeIds.has(m.id))
+      .map((m) => ({ provider: openCodeAlias, model: m.id, name: m.name }))];
+    const models = sourceModels
       .filter((m) => {
         const alias = getProviderAlias(m.provider) || m.provider;
         const list = disabled[alias] || disabled[m.provider] || [];
@@ -22,7 +29,9 @@ export async function GET() {
         const fullModel = `${m.provider}/${m.model}`;
         const providerAlias = getProviderAlias(m.provider) || m.provider;
         const routedModel = `${providerAlias}/${m.model}`;
-        const c = getCapabilitiesForModel(m.provider, m.model);
+        const providerId = ALIAS_TO_ID[m.provider] || m.provider;
+        const liveCaps = providerId === "opencode" ? liveModels.get(m.model)?.capabilities : undefined;
+        const c = liveCaps || getCapabilitiesForModel(providerId, m.model);
         const thinkingLevels = getThinkingLevels(m.provider, m.model);
         return {
           ...m,
