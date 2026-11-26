@@ -78,4 +78,26 @@ describe("ANTIGRAVITY_PROMPT_REWRITES — Hermes identity", () => {
       expect(rewrite(text), `rewrote: ${rewrite(text)}`).toBe(text);
     });
   }
+
+  // Gaps that upstream's narrow pattern (/You are Hermes(?: Agent)?(?:,...)?...\./gi)
+  // still misses as of v0.5.123. These are the reason the generic rule is broad:
+  // the backend filters the identity, not one exact sentence, and a miss is a
+  // silent fake 429 (#3358).
+  const upstreamMisses = [
+    // no "You are" prefix
+    "Hermes Agent is an AI assistant built by Nous Research.",
+    // identity at a sentence start, verb follows the clause
+    "Hermes, an AI assistant created by Nous Research, helps you code.",
+    // concatenated clause, no period
+    "You are Hermes Agent an AI assistant built by Nous Research",
+  ];
+  for (const text of upstreamMisses) {
+    it(`rewrites a variant upstream's narrow rule misses: ${text.slice(0, 45)}\u2026`, () => {
+      expect(rewrite(text), `missed: ${rewrite(text)}`).not.toContain("Nous Research");
+    });
+  }
+
+  it("does not leave a doubled period when replacing a bare identity line", () => {
+    expect(rewrite("Hermes Agent.")).toBe("You are an AI assistant.");
+  });
 });
