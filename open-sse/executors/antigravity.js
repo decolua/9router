@@ -201,12 +201,19 @@ export class AntigravityExecutor extends BaseExecutor {
         const json = JSON.parse(bodyText);
         const err = json?.error;
         let resetsAtMs = null;
+        // Full quota metadata, kept for telemetry + classification.
+        let quotaMeta = null;
         const details = Array.isArray(err?.details) ? err.details : [];
         for (const d of details) {
           if (d?.metadata?.quotaResetTimeStamp) {
             const ms = new Date(d.metadata.quotaResetTimeStamp).getTime();
             if (!isNaN(ms) && ms > Date.now()) {
               resetsAtMs = ms;
+              quotaMeta = {
+                reason: d.reason ?? null,
+                quotaResetDelay: d.metadata.quotaResetDelay ?? null,
+                quotaResetTimeStamp: d.metadata.quotaResetTimeStamp ?? null,
+              };
               break;
             }
           }
@@ -216,14 +223,32 @@ export class AntigravityExecutor extends BaseExecutor {
               const ms = Date.now() + Math.round(sec * 1000);
               if (ms > Date.now()) {
                 resetsAtMs = ms;
+                quotaMeta = {
+                  reason: d.reason ?? (d["@type"]?.includes("RetryInfo") ? "RETRY_INFO_ONLY" : null),
+                  quotaResetDelay: d.retryDelay ?? null,
+                  quotaResetTimeStamp: null,
+                };
                 break;
               }
             }
           }
         }
         if (resetsAtMs) {
-          return { status: response.status, message: err?.message || bodyText, resetsAtMs };
+          return { status: response.status, message: err?.message || bodyText, resetsAtMs, quotaMeta };
         }
+        // A 429/409 that carried NO usable reset metadata is a request-shape /
+        // identity-bucketing rejection (Google returns detail-free
+        // RESOURCE_EXHAUSTED even with quota available — see the
+        // `delete body.requestType` note in transformRequest). Burning an
+        // account cooldown on it removes a healthy connection from rotation and
+        // triggers the retry storm that really does exhaust quota.
+        return {
+          status: response.status,
+          message: err?.message || bodyText,
+          noQuotaMetadata: true,
+          hasDetails: details.length > 0,
+          upstreamStatus: err?.status ?? null,
+        };
       } catch { /* fall through to default */ }
     }
     return super.parseError(response, bodyText);
