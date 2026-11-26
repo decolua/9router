@@ -357,6 +357,9 @@ export const PROVIDER_CAPABILITIES = {
     "gpt-5.6-luna-review":       CODEX_GPT_56_DEFAULT_CAPS,
   },
   "kiro": {
+    // "auto" is a router mode, not a model in the synced catalog. Without an
+    // explicit entry it resolves to vision:false and image turns are stripped.
+    "auto": { vision: true },
     "gpt-5.6-sol": KIRO_GPT_5_6_CAPABILITIES,
     "gpt-5.6-terra": KIRO_GPT_5_6_CAPABILITIES,
     "gpt-5.6-luna": KIRO_GPT_5_6_CAPABILITIES,

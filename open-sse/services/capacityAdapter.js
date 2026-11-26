@@ -9,6 +9,7 @@
  * never overrides a combo that already has a member covering the capability.
  */
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { resolveProviderAlias } from "./model.js";
 
 const CAPABILITY_KEYS = ["vision", "pdf", "audioInput", "videoInput"];
 const HARD_CAPS = new Set(CAPABILITY_KEYS);
@@ -78,7 +79,9 @@ export function getActiveAdapterStrategy(requiredCapabilities, settings) {
 
 function modelSatisfies(modelStr, requiredHard) {
   const slash = modelStr.indexOf("/");
-  const provider = slash > 0 ? modelStr.slice(0, slash) : "";
+  // Combo members keep the operator-facing alias (e.g. "kr/auto"); capability
+  // entries are keyed by provider id ("kiro"), so resolve it before lookup.
+  const provider = slash > 0 ? resolveProviderAlias(modelStr.slice(0, slash)) : "";
   const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
   const caps = getCapabilitiesForModel(provider, model);
   return requiredHard.every((c) => caps[c] === true);
