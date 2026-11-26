@@ -66,10 +66,10 @@ describe("/api/models — custom-model shadow dedupe", () => {
     const models = await fetchModels();
     const kept = models.find((m) => m.fullModel === "cmc/some-totally-custom-model");
     expect(kept).toBeDefined();
-    // `cmc` maps to commandcode; the commandcode branch (1M/384k for unlisted
-    // models) must fire — an alias lookup would miss it entirely and fall to
-    // the 200k floor.
+    // `cmc` maps to commandcode; the commandcode branch (1M/200k for unlisted
+    // models, matching the gateway's actual cap) must fire — an alias lookup
+    // would miss it entirely and fall to the 200k context floor.
     expect(kept.caps.contextWindow).toBe(1000000);
-    expect(kept.caps.maxOutput).toBe(384000);
+    expect(kept.caps.maxOutput).toBe(200000);
   });
 });

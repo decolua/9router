@@ -24,7 +24,7 @@ describe("Command Code Kimi K3.1 Pro", () => {
       thinkingFormat: "commandcode",
       thinkingEffortSupported: true,
       contextWindow: 1000000,
-      maxOutput: 384000,
+      maxOutput: 200000,
     });
   });
 

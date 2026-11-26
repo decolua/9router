@@ -29,7 +29,7 @@ describe("Command Code new models: google/gemini-4-carbon and claude-fable-5-2",
       thinkingFormat: "commandcode",
       thinkingEffortSupported: true,
       contextWindow: 1000000,
-      maxOutput: 384000,
+      maxOutput: 200000,
     });
 
     const fableCaps = getCapabilitiesForModel("commandcode", CLAUDE_FABLE_5_2);
@@ -39,7 +39,7 @@ describe("Command Code new models: google/gemini-4-carbon and claude-fable-5-2",
       thinkingFormat: "commandcode",
       thinkingEffortSupported: true,
       contextWindow: 1000000,
-      maxOutput: 384000,
+      maxOutput: 200000,
     });
   });
 

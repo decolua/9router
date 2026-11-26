@@ -17,10 +17,10 @@ describe("useModelCaps resolveCaps — alias → provider id in the fallback", (
     expect(caps.maxOutput).toBe(128000);
   });
 
-  it("cmc/<unlisted> resolves through commandcode (1M/384k fallback)", () => {
+  it("cmc/<unlisted> resolves through commandcode (1M/200k fallback)", () => {
     const caps = resolveCaps({}, {}, "cmc/some-unlisted-model");
     expect(caps.contextWindow).toBe(1000000);
-    expect(caps.maxOutput).toBe(384000);
+    expect(caps.maxOutput).toBe(200000);
   });
 
   it("byFull hit still wins over the fallback", () => {

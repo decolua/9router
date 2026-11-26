@@ -903,7 +903,11 @@ export function getCapabilitiesForModel(provider, model) {
       thinkingEffortSupported: true,
       vision: !isCommandCodeTextOnly(model),
       contextWindow: 1000000,
-      maxOutput: 384000,
+      // The Command Code gateway (including the `cmc` wire alias) rejects
+      // max_tokens above 200000. Publishing the generic 384k pattern here
+      // makes clients that trust /v1/models send a request the upstream
+      // rejects, so advertise the cap the route actually enforces (#5268).
+      maxOutput: 200000,
     };
   }
 
