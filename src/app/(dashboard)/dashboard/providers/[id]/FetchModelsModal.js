@@ -107,6 +107,22 @@ export default function FetchModelsModal({
       setModels(parsed);
       // Auto-select new models for convenience; existing ones stay disabled.
       setSelectedIds(new Set(parsed.filter((m) => !existingModelIds.has(m.id)).map((m) => m.id)));
+
+      // Store effective base URL for consistent use in chat completions
+      if (data.effectiveBaseUrl) {
+        try {
+          await fetch(`/api/providers/${encodeURIComponent(connection.id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              providerSpecificData: { effectiveBaseUrl: data.effectiveBaseUrl }
+            }),
+          });
+        } catch (e) {
+          // Non-fatal: effective base URL will be re-discovered on next fetch
+          console.warn("Failed to store effective base URL:", e);
+        }
+      }
     } catch (err) {
       clearTimeout(timeoutId);
       setError(err.name === "AbortError" ? translate("Request timed out") : (err.message || translate("Failed to fetch models")));

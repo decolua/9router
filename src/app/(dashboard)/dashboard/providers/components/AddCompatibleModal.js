@@ -74,6 +74,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
+          providerSpecificData: formData.providerSpecificData,
         }),
       });
       const data = await res.json();
@@ -105,6 +106,15 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
       });
       const data = await res.json();
       setValidationResult(data);
+      if (data.valid && data.effectiveBaseUrl) {
+        setFormData(prev => ({
+          ...prev,
+          providerSpecificData: {
+            ...prev.providerSpecificData,
+            effectiveBaseUrl: data.effectiveBaseUrl
+          }
+        }));
+      }
     } catch {
       setValidationResult({ valid: false, error: "Network error" });
     } finally {

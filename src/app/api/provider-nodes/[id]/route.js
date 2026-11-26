@@ -48,10 +48,16 @@ export async function PUT(request, { params }) {
       }
     }
 
+    const existingNodeData = node.providerSpecificData || {};
+    const baseUrlChanged = sanitizedBaseUrl !== node.baseUrl;
     const updates = {
       name: name.trim(),
       prefix: prefix.trim(),
       baseUrl: sanitizedBaseUrl,
+      providerSpecificData: {
+        ...existingNodeData,
+        effectiveBaseUrl: baseUrlChanged ? undefined : existingNodeData.effectiveBaseUrl,
+      },
     };
 
     if (node.type === "openai-compatible") {
@@ -61,17 +67,19 @@ export async function PUT(request, { params }) {
     const updated = await updateProviderNode(id, updates);
 
     const connections = await getProviderConnections({ provider: id });
-    await Promise.all(connections.map((connection) => (
-      updateProviderConnection(connection.id, {
+    await Promise.all(connections.map((connection) => {
+      const existingData = connection.providerSpecificData || {};
+      return updateProviderConnection(connection.id, {
         providerSpecificData: {
-          ...(connection.providerSpecificData || {}),
+          ...existingData,
           prefix: prefix.trim(),
           apiType: node.type === "openai-compatible" ? apiType : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
+          effectiveBaseUrl: baseUrlChanged ? undefined : existingData.effectiveBaseUrl,
         }
-      })
-    )));
+      });
+    }));
 
     return NextResponse.json({ node: updated });
   } catch (error) {

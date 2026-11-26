@@ -135,10 +135,12 @@ export async function POST(request) {
       if (!node) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
       }
+      // Use effectiveBaseUrl from node's providerSpecificData if available (discovered during validation)
+      const nodeSpecificData = node.providerSpecificData || {};
       providerSpecificData = {
         prefix: node.prefix,
         apiType: node.apiType,
-        baseUrl: node.baseUrl,
+        baseUrl: nodeSpecificData.effectiveBaseUrl || node.baseUrl,
         nodeName: node.name,
       };
     } else if (isAnthropicCompatibleProvider(provider)) {
@@ -146,9 +148,10 @@ export async function POST(request) {
       if (!node) {
         return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
       }
+      const nodeSpecificData = node.providerSpecificData || {};
       providerSpecificData = {
         prefix: node.prefix,
-        baseUrl: node.baseUrl,
+        baseUrl: nodeSpecificData.effectiveBaseUrl || node.baseUrl,
         nodeName: node.name,
       };
     } else if (isCustomEmbeddingProvider(provider)) {
@@ -156,9 +159,10 @@ export async function POST(request) {
       if (!node) {
         return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
       }
+      const nodeSpecificData = node.providerSpecificData || {};
       providerSpecificData = {
         prefix: node.prefix,
-        baseUrl: node.baseUrl,
+        baseUrl: nodeSpecificData.effectiveBaseUrl || node.baseUrl,
         nodeName: node.name,
       };
     }
