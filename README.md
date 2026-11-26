@@ -1343,6 +1343,7 @@ docker pull decolua/9router:latest   # update to latest
 | `REQUIRE_API_KEY`                                    | `false`                                  | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                    | Optional outbound proxy for upstream provider calls                                 |
 | `SEARXNG_URL`                                        | `http://localhost:8888/search`           | Endpoint for the built-in unauthenticated SearXNG web-search provider               |
+| `CLAUDE_CACHE_TTL`                                   | `5m`                                     | Default Anthropic prompt-cache TTL for conversation breakpoints (`5m` or `1h`); a TTL saved on the Token Saver dashboard overrides it |
 
 Notes:
 

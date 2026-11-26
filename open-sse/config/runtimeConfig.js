@@ -23,6 +23,18 @@ export const CACHE_TTL = {
   modelAlias: 3600  // 1 hour
 };
 
+// Anthropic prompt-cache breakpoint TTLs. The system/tools head anchors always use LONG; conversation breakpoints follow the user's `claudeCacheTtl` setting (default SHORT). Anthropic requires longer-TTL breakpoints to precede shorter ones, so the head can never be shorter than the conversation.
+export const CLAUDE_CACHE_TTL = Object.freeze({ SHORT: "5m", LONG: "1h" });
+
+// "1h" (any case, surrounding whitespace ignored) selects the long TTL; anything else, including unset, is the 5m default.
+export function parseClaudeCacheTtl(raw) {
+  const value = String(raw ?? "").trim().toLowerCase();
+  return value === CLAUDE_CACHE_TTL.LONG ? CLAUDE_CACHE_TTL.LONG : CLAUDE_CACHE_TTL.SHORT;
+}
+
+// Default conversation cache TTL. Env: CLAUDE_CACHE_TTL ("5m" | "1h"). A TTL saved on the dashboard (Token Saver → Prompt cache TTL) overrides it.
+export const DEFAULT_CLAUDE_CACHE_TTL = parseClaudeCacheTtl(process.env.CLAUDE_CACHE_TTL);
+
 // Memory management config
 export const MEMORY_CONFIG = {
   sessionTtlMs: 2 * 60 * 60 * 1000,

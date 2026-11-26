@@ -30,3 +30,9 @@ export const PONYTAIL_LEVELS = [
   { id: "full", label: "Full", desc: "Ladder enforced: stdlib/native first" },
   { id: "ultra", label: "Ultra", desc: "YAGNI extremist, deletion first" },
 ];
+
+// Anthropic prompt-cache TTL for conversation breakpoints (system/tools stay 1h).
+export const CLAUDE_CACHE_TTLS = [
+  { id: "5m", label: "5 min", desc: "Default: cache writes cost 1.25× input" },
+  { id: "1h", label: "1 hour", desc: "Survives long pauses: cache writes cost 2× input" },
+];
