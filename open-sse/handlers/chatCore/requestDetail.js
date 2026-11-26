@@ -1,6 +1,7 @@
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
+import { recordUnsavedRequestMetrics } from "@/lib/observability/metrics.js";
 
 const OPTIONAL_PARAMS = [
   "temperature", "top_p", "top_k",
@@ -116,6 +117,8 @@ export function formatDoneLine({ usage, latency }) {
 }
 
 export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
+  // Counts the no-usage / zero-token requests that return early below; the rest are counted by saveRequestUsage.
+  recordUnsavedRequestMetrics({ provider, model, tokens, apiKey, endpoint });
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;

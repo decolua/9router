@@ -10,5 +10,8 @@ export async function register() {
 
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();
+
+    // Start the OpenTelemetry metric readers at boot (no-op when unconfigured).
+    (await import("@/lib/observability/metrics.js")).initMetrics();
   }
 }
