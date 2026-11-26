@@ -141,7 +141,8 @@
     "qc": "qwencloud",
     "qctp": "qwencloud",
     "qwencloud": "qwencloud",
-    "qwen-cloud": "qwencloud"
+    "qwen-cloud": "qwencloud",
+    "ttoken": "ttoken"
   },
   "idToAlias": {
     "agnes": "agnes",
@@ -277,6 +278,7 @@
     "tokenrouter": "tokenrouter",
     "topaz": "topaz",
     "tortoise": "tortoise",
+    "ttoken": "ttoken",
     "uc-web": "uc",
     "v1m": "v1m",
     "venice": "venice",
@@ -410,6 +412,7 @@
     "together",
     "tokenharbor",
     "tokenrouter",
+    "ttoken",
     "uc",
     "v1m",
     "venice",
