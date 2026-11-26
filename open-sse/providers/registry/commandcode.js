@@ -35,6 +35,11 @@ export default {
   models: [
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    // V4.1 replaced V4 Flash server-side; these mirror the live catalog so the
+    // offline fallback still offers the newest DeepSeek family.
+    { id: "deepseek/deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash" },
+    { id: "deepseek/deepseek-v4.1-flash-fast", name: "DeepSeek V4.1 Flash Fast" },
+    { id: "deepseek/deepseek-v4.1-flash-ultrafast", name: "DeepSeek V4.1 Flash Ultrafast" },
     { id: "moonshotai/Kimi-K3.1-Pro", name: "Kimi K3.1 Pro" },
     { id: "moonshotai/Kimi-K2.7-Code", name: "Kimi K2.7 Code" },
     { id: "moonshotai/Kimi-K2.7-Code-Highspeed", name: "Kimi K2.7 Code HighSpeed" },
