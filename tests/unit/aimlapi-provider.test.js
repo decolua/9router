@@ -93,6 +93,20 @@ describe("AI/ML API chat transport", () => {
 });
 
 describe("AI/ML API key check", () => {
+  it("keeps existing providers on their own validation endpoint", async () => {
+    const { POST } = await import("../../src/app/api/providers/validate/route.js");
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await POST(new Request("http://localhost/api/providers/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "deepseek", apiKey: KEY }),
+    }));
+    expect((await res.json()).valid).toBe(true);
+    expect(fetchMock.mock.calls[0][0]).toBe(PROVIDERS.deepseek.validateUrl);
+    expect(fetchMock.mock.calls[0][1].directFetch).toBeUndefined();
+  });
+
   it("checks the key against /v1/key, since /v1/models is public", async () => {
     const { POST } = await import("../../src/app/api/providers/validate/route.js");
     const seen = [];

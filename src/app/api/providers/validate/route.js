@@ -399,6 +399,17 @@ export async function POST(request) {
           break;
         }
 
+        case "aimlapi": {
+          // /v1/models is public; /v1/key answers 401 for a bad key. directFetch: see executors/aimlapi.js.
+          const res = await fetch(PROVIDERS.aimlapi.validateUrl, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+            signal: AbortSignal.timeout(8000),
+            directFetch: aimlapiDirectFetch,
+          });
+          isValid = res.ok;
+          break;
+        }
+
         case "deepseek":
         case "groq":
         case "xai":
@@ -416,16 +427,6 @@ export async function POST(request) {
         case "assemblyai":
         case "nanobanana":
         case "chutes":
-        case "aimlapi": {
-          // /v1/models is public; /v1/key answers 401 for a bad key. directFetch: see executors/aimlapi.js.
-          const res = await fetch(PROVIDERS.aimlapi.validateUrl, {
-            headers: { Authorization: `Bearer ${apiKey}` },
-            signal: AbortSignal.timeout(8000),
-            directFetch: aimlapiDirectFetch,
-          });
-          isValid = res.ok;
-          break;
-        }
         case "runcrate":
         case "synthetic":
         case "xiaomi-mimo":
