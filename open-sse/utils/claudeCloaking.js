@@ -60,6 +60,21 @@ export function cloakClaudeTools(body) {
   if (!tools || tools.length === 0) return { body, toolNameMap: null };
 
   const suffix = (name) => `${name}${CLAUDE_TOOL_SUFFIX}`;
+  // History can already carry cloaked names (claude-claude proxying reflects
+  // upstream tool_use blocks back into the next request). Collapse any stacked
+  // suffixes before appending one, otherwise a second turn sends "read_ide_ide"
+  // (#5170). Names that are not client tools are left untouched.
+  const baseName = (name) => {
+    let base = String(name || "");
+    while (base.endsWith(CLAUDE_TOOL_SUFFIX)) {
+      base = base.slice(0, -CLAUDE_TOOL_SUFFIX.length);
+    }
+    return base;
+  };
+  const cloakedName = (name) => {
+    const base = baseName(name);
+    return base && clientToolNames.has(base) ? suffix(base) : name;
+  };
   const toolNameMap = new Map();
   const clientToolNames = new Set();
   const clientDeclarations = [];
@@ -83,8 +98,8 @@ export function cloakClaudeTools(body) {
   // Claude rejects the request: "Tool reference '<name>' not found in available tools".
   // Only rewrite names we actually renamed — never a decoy/built-in name.
   const renameToolReferences = (content) => content.map(part =>
-    part?.type === CLAUDE_BLOCK.TOOL_REFERENCE && clientToolNames.has(part.tool_name)
-      ? { ...part, tool_name: suffix(part.tool_name) }
+    part?.type === CLAUDE_BLOCK.TOOL_REFERENCE && clientToolNames.has(baseName(part.tool_name))
+      ? { ...part, tool_name: cloakedName(part.tool_name) }
       : part
   );
 
@@ -92,7 +107,7 @@ export function cloakClaudeTools(body) {
   const renamedMessages = body.messages?.map(msg => {
     if (!Array.isArray(msg.content)) return msg;
     const renamedContent = msg.content.map(block => {
-      if (block.type === CLAUDE_BLOCK.TOOL_USE) return { ...block, name: suffix(block.name) };
+      if (block.type === CLAUDE_BLOCK.TOOL_USE) return { ...block, name: cloakedName(block.name) };
       if (block.type === CLAUDE_BLOCK.TOOL_RESULT && Array.isArray(block.content)) {
         return { ...block, content: renameToolReferences(block.content) };
       }
@@ -109,9 +124,9 @@ export function cloakClaudeTools(body) {
   // renamed — never a decoy/built-in name (those are sent unsuffixed).
   if (
     body.tool_choice?.type === "tool" &&
-    clientToolNames.has(body.tool_choice.name)
+    clientToolNames.has(baseName(body.tool_choice.name))
   ) {
-    cloakedBody.tool_choice = { ...body.tool_choice, name: suffix(body.tool_choice.name) };
+    cloakedBody.tool_choice = { ...body.tool_choice, name: cloakedName(body.tool_choice.name) };
   }
 
   return {
@@ -125,10 +140,16 @@ export function cloakClaudeTools(body) {
 // reconnect). Never strips decoy names — those are meant to reach the client
 // unresolved so it can see "tool unavailable" instead of silently no-oping.
 function stripCloakSuffix(name) {
-  if (typeof name !== "string" || !name.endsWith(CLAUDE_TOOL_SUFFIX)) return null;
-  if (CC_DEFAULT_TOOLS.has(name)) return null;
-  const original = name.slice(0, -CLAUDE_TOOL_SUFFIX.length);
-  return original.length > 0 ? original : null;
+  if (typeof name !== "string") return null;
+  let original = name;
+  // A name can carry more than one suffix if it survived an older session where
+  // cloaking was applied twice. Strip all of them so the client's declared tool
+  // name is recovered (#5170).
+  while (original.endsWith(CLAUDE_TOOL_SUFFIX)) {
+    original = original.slice(0, -CLAUDE_TOOL_SUFFIX.length);
+  }
+  if (original === name || !original || CC_DEFAULT_TOOLS.has(original)) return null;
+  return original;
 }
 
 // Decloak tool_use names in non-streaming Claude response body (INPUT side)
