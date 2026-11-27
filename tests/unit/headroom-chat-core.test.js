@@ -58,6 +58,25 @@ describe("handleChatCore Headroom diagnostics", () => {
     });
   });
 
+  it.each([true, false])("forwards an image when an upstream local model declares vision=%s", async (vision) => {
+    const model = "local-modal-x";
+    const provider = "openai-compatible-chat-local";
+    global.fetch.mockResolvedValueOnce(Response.json({ data: [
+      { id: model, architecture: { input_modalities: vision ? ["text", "image"] : ["text"] } },
+    ] }));
+    await handleChatCore({
+      body: { model, stream: false, messages: [{ role: "user", content: [
+        { type: "text", text: "describe" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+      ] }] },
+      modelInfo: { provider, model },
+      credentials: { providerSpecificData: { baseUrl: "http://127.0.0.1:8080/v1" } },
+      clientRawRequest: { endpoint: "/v1/chat/completions", headers: {} },
+    });
+    const content = executeMock.mock.lastCall[0].body.messages[0].content;
+    expect(JSON.stringify(content).includes("data:image/png;base64,AAAA")).toBe(vision);
+  });
+
   it("logs why Headroom was skipped on chat completions", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
 

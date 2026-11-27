@@ -38,6 +38,30 @@ async function modelsWithCombo(providerId, modelId, combos) {
 }
 
 describe("/v1/models combo limits", () => {
+  it("reports the declared vision capability on enabled compatible models", async () => {
+    db.getProviderConnections.mockResolvedValueOnce([{
+      id: "llama-catalog",
+      provider: "openai-compatible-chat-llama",
+      isActive: true,
+      providerSpecificData: { prefix: "llama", baseUrl: "http://127.0.0.1:8080/v1", enabledModels: ["local-model"] },
+    }]);
+    db.getCombos.mockResolvedValueOnce([]);
+    const fetchModels = vi.fn(async () => Response.json({ data: [
+      { id: "local-model", architecture: { input_modalities: ["text", "image"] } },
+      { id: "not-enabled", architecture: { input_modalities: ["text", "image"] } },
+    ] }));
+    vi.stubGlobal("fetch", fetchModels);
+    try {
+      const models = await buildModelsList(["llm"]);
+      expect(models.find(({ id }) => id === "llama/local-model")?.capabilities.vision).toBe(true);
+      expect(models.some(({ id }) => id === "llama/not-enabled")).toBe(false);
+      expect(fetchModels).toHaveBeenCalledWith("http://127.0.0.1:8080/v1/models",
+        expect.objectContaining({ headers: { "x-9r-internal-models-fetch": "1" } }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     ["ocg", "opencode-go", "mimo-v2.5"],
     ["xmtp", "xiaomi-tokenplan", "mimo-v2.5"],

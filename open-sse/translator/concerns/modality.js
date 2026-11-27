@@ -44,6 +44,15 @@ function capForClaudeBlock(block) {
   return null;
 }
 
+export function hasImageInput(body) {
+  if (Array.isArray(body?.messages) && body.messages.some((message) =>
+    Array.isArray(message?.content) && message.content.some((block) => capForOpenAIBlock(block) === "vision")
+  )) return true;
+  return Array.isArray(body?.input) && body.input.some((item) =>
+    Array.isArray(item?.content) && item.content.some((block) => block?.type === "input_image")
+  );
+}
+
 // Filter an array of content blocks; drop unsupported, inject one placeholder per kind.
 // isLast = block belongs to the current user turn (picks the explanatory placeholder).
 function filterBlocks(blocks, capOf, caps, removed, isLast) {
