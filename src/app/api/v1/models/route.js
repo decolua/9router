@@ -504,6 +504,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         Array.isArray(enabledModels) && enabledModels.length > 0;
       const isCompatibleProvider =
         isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+      const catalogProvider = isCompatibleProvider ? outputAlias : providerId;
 
       // Build kind lookup for static models so we can filter even when only IDs are exposed
       const staticModelKindById = new Map(
@@ -630,7 +631,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         // dynamically-discovered LLM models still surface vision/reasoning/search/tools.
         const liveCaps = liveCapabilitiesById.get(modelId);
         const serviceCaps = capabilitiesFromServiceKind(customKind || liveKind);
-        const caps = liveCaps || serviceCaps || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
+        const caps = liveCaps || serviceCaps || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId, catalogProvider) : null);
         if (caps) model.capabilities = caps;
         // Token limits under the snake_case names the OpenAI/OpenRouter
         // convention uses. `capabilities.contextWindow` is camelCase and nested,
@@ -646,7 +647,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           // (often just { tools: true }), so fill the gaps from the static
           // table rather than emitting null and leaving clients to guess.
           if (!Number.isFinite(contextWindow) || !Number.isFinite(maxOutput)) {
-            const fallback = getCapabilitiesForModel(providerId, modelId);
+            const fallback = getCapabilitiesForModel(providerId, modelId, catalogProvider);
             if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
             if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
           }
