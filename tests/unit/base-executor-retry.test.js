@@ -9,6 +9,46 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 
 const { BaseExecutor } = await import("../../open-sse/executors/base.js");
 
+describe("MiniMax Code response headers timeout", () => {
+  it.each(["minimax-code", "minimax-code-global"])("applies the configured timeout to %s", async (provider) => {
+    vi.stubEnv("FETCH_CONNECT_TIMEOUT_MS", "60000");
+    vi.stubEnv("MINIMAX_CODE_RESPONSE_HEADERS_TIMEOUT_MS", "180000");
+    vi.resetModules();
+    vi.useFakeTimers();
+    try {
+      const { MinimaxCodeExecutor } = await import("../../open-sse/executors/minimax-code.js");
+      const executor = new MinimaxCodeExecutor(provider);
+      executor.config.retry = { 502: { attempts: 0 } };
+      const request = { model: "MiniMax-M3", body: {}, stream: true, credentials: { accessToken: "test-token" } };
+      fetchMock.mockImplementationOnce((_url, { signal }) => {
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(res(200)), 90000);
+          signal.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(signal.reason);
+          }, { once: true });
+        });
+      });
+      const result = executor.execute(request);
+      await vi.advanceTimersByTimeAsync(90000);
+      await expect(result).resolves.toHaveProperty("response.status", 200);
+
+      fetchMock.mockImplementationOnce((_url, { signal }) => {
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+        });
+      });
+      const timedOut = expect(executor.execute(request)).rejects.toThrow("Upstream did not send response headers within 180000 ms");
+      await vi.advanceTimersByTimeAsync(180000);
+      await timedOut;
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+});
+
 function res(status) {
   return { status, headers: { get: () => "" } };
 }

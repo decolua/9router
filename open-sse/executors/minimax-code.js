@@ -1,6 +1,7 @@
 import { DefaultExecutor } from "./default.js";
 import { refreshMiniMaxCodeToken } from "../services/tokenRefresh.js";
 import { getLeaseToken, invalidateLeaseToken, isLeaseConnection } from "../services/minimaxCodeLease.js";
+import { MINIMAX_CODE_RESPONSE_HEADERS_TIMEOUT_MS } from "../config/runtimeConfig.js";
 
 // MiniMax Code reports credit/quota exhaustion as 402/403 (and 429) with a
 // body that names the balance. chatCore treats 401/403 as refresh-and-retry
@@ -42,6 +43,11 @@ export async function normalizeQuotaResponse(response) {
 }
 
 export class MinimaxCodeExecutor extends DefaultExecutor {
+  constructor(provider) {
+    super(provider);
+    this.config = { ...this.config, timeoutMs: MINIMAX_CODE_RESPONSE_HEADERS_TIMEOUT_MS };
+  }
+
   async execute(args) {
     // Lease connections carry no stored token — borrow one from the desktop
     // broker per request (the lease manager caches until near expiry).
