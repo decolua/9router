@@ -7,8 +7,8 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity, normalizeGeminiContents } from "../translator/formats/gemini.js";
-import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
-import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
+import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { getGeminiThoughtSignature, getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
 import { GEMINI_LONG_DECODE_MAX_OUTPUT, supportsGeminiLongDecode, wantsGeminiLongDecode, withGeminiLongDecode } from "../utils/geminiLongDecode.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
@@ -168,6 +168,24 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   async execute(args) {
+    const contents = args.body?.request?.contents;
+    if (Array.isArray(contents) && !isImageModel(args.model)) {
+      const sessionId = args.credentials?._clientSessionId || args.body.request.sessionId;
+      const model = args.body.model || args.model;
+      const lookups = new Map();
+      const restored = await Promise.all(contents.map(async (content) => ({
+        ...content,
+        parts: await Promise.all((content.parts || []).map(async (part) => {
+          const id = part.functionCall?.id;
+          const signature = part.thoughtSignature;
+          if (!id || (signature && signature !== DEFAULT_THINKING_AG_SIGNATURE && signature !== DEFAULT_THINKING_GEMINI_CLI_SIGNATURE)) return part;
+          if (!lookups.has(id)) lookups.set(id, getGeminiThoughtSignature(id, sessionId, model));
+          const saved = await lookups.get(id);
+          return saved ? { ...part, thoughtSignature: saved } : part;
+        })),
+      })));
+      args = { ...args, body: { ...args.body, request: { ...args.body.request, contents: restored } } };
+    }
     let result = await super.execute(args);
     // A prompt rejection means systemInstruction carries text Google fingerprints that
     // ANTIGRAVITY_PROMPT_REWRITES does not cover yet. Retry once with that text moved into the first

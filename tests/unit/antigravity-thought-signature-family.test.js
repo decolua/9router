@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Keep the signature store in RAM only; the SQLite kv layer is not under test here.
+const persisted = vi.hoisted(() => new Map());
 vi.mock("@/lib/db/helpers/kvStore.js", () => ({
   makeKv: () => ({
-    get: async () => null,
-    set: async () => {},
+    get: async (key) => persisted.get(key),
+    set: async (key, value) => { persisted.set(key, value); },
     remove: async () => {},
     getAll: async () => ({}),
   }),
+}));
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: vi.fn(async () => new Response("{}")),
 }));
 
 const {
@@ -18,6 +21,8 @@ const {
 const { openaiToAntigravityRequest } = await import("../../open-sse/translator/request/openai-to-gemini.js");
 const { geminiToOpenAIResponse } = await import("../../open-sse/translator/response/gemini-to-openai.js");
 const { DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } = await import("../../open-sse/config/defaultThinkingSignature.js");
+const { AntigravityExecutor } = await import("../../open-sse/executors/antigravity.js");
+const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
 
 let n = 0;
 const uid = (p) => `${p}_${Date.now()}_${n++}`;
@@ -100,5 +105,24 @@ describe("antigravity thought signatures are scoped to the model family", () => 
     storeGeminiThoughtSignature(call, "GEMINI_SIG", null, "gemini-3.8-flash-tiered");
     const req = openaiToAntigravityRequest("gemini-3.8-flash-tiered", toolHistory(call), true);
     expect(functionCallSignatures(req)).toEqual(["GEMINI_SIG"]);
+  });
+
+  it("restores a persisted signature before dispatch when RAM is cold", async () => {
+    const call = uid("cold");
+    const model = "gemini-4-hydrogen";
+    persisted.set(`client-session:${call}`, {
+      signature: "PERSISTED_SIGNATURE",
+      family: "gemini",
+      expiresAt: Date.now() + 60_000,
+    });
+    const credentials = { _clientSessionId: "client-session", accessToken: "test-token" };
+    const body = openaiToAntigravityRequest(model, toolHistory(call), true, credentials);
+    expect(getGeminiThoughtSignatureSync(call, credentials._clientSessionId, model)).toBeNull();
+    expect(functionCallSignatures(body)).toEqual([DEFAULT_THINKING_GEMINI_CLI_SIGNATURE]);
+
+    await new AntigravityExecutor().execute({ model, body, stream: true, credentials });
+    const request = JSON.parse(proxyAwareFetch.mock.lastCall[1].body);
+    expect(functionCallSignatures(request)).toEqual(["PERSISTED_SIGNATURE"]);
+    expect(functionCallSignatures(body)).toEqual([DEFAULT_THINKING_GEMINI_CLI_SIGNATURE]);
   });
 });
