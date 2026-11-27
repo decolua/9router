@@ -67,7 +67,6 @@ export default {
     // for models that ARE listed here (chatCore.js would pre-translate to Claude
     // shape, then the executor would translate again). Keep these as plain entries.
     { id: "claude-fable-5", name: "Claude Fable 5" },
-    { id: "claude-fable-5.1", name: "Claude Fable 5.1" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "claude-haiku-5.5", name: "Claude Haiku 5.5" },
     { id: "claude-opus-4.8", name: "Claude Opus 4.8" },

@@ -82,7 +82,7 @@ describe("Antigravity → Claude", () => {
 });
 
 describe("Antigravity executor", () => {
-  it("strips optional from nested tool schemas", () => {
+  it.each(["optional", "~optional"])("strips %s from nested tool schemas", (annotation) => {
     const out = new AntigravityExecutor().transformRequest("gemini-2.5-pro", {
       request: {
         contents: [{ role: "user", parts: [{ text: "hi" }] }],
@@ -96,7 +96,7 @@ describe("Antigravity executor", () => {
                 query: {
                   type: "string",
                   description: "Search query",
-                  optional: true,
+                  [annotation]: true,
                 },
               },
             },
@@ -109,31 +109,35 @@ describe("Antigravity executor", () => {
     expect(query).toEqual({ type: "string", description: "Search query" });
   });
 
-  it("does not inject the legacy Antigravity default system prompt for Gemini-backed models", () => {
-    const out = openaiToAntigravityRequest("gemini-3.5-flash-low", {
+  it("leads with the Antigravity identity for Gemini-backed models", () => {
+    const credentials = { projectId: "project-1", connectionId: "conn-1" };
+    const envelope = openaiToAntigravityRequest("gemini-3.5-flash-low", {
       messages: [
         { role: "system", content: "USER_SYSTEM_PROMPT" },
         { role: "user", content: "hello" },
       ],
-    }, true, { projectId: "project-1", connectionId: "conn-1" });
+    }, true, credentials);
+    const out = new AntigravityExecutor().transformRequest("gemini-3.5-flash-low", envelope, true, credentials);
 
     const system = JSON.stringify(out.request.systemInstruction);
     expect(system).toContain("USER_SYSTEM_PROMPT");
-    expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
+    expect(out.request.systemInstruction.parts[0].text).toBe(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
 
-  it("does not inject the legacy Antigravity default system prompt for Claude-backed models", () => {
-    const out = openaiToAntigravityRequest("claude-opus-4-6-thinking", {
+  it("leads with the Antigravity identity for Claude-backed models", () => {
+    const credentials = { projectId: "project-1", connectionId: "conn-1" };
+    const envelope = openaiToAntigravityRequest("claude-opus-4-6-thinking", {
       messages: [
         { role: "system", content: "USER_SYSTEM_PROMPT" },
         { role: "user", content: "hello" },
       ],
-    }, true, { projectId: "project-1", connectionId: "conn-1" });
+    }, true, credentials);
+    const out = new AntigravityExecutor().transformRequest("claude-opus-4-6-thinking", envelope, true, credentials);
 
     const system = JSON.stringify(out.request.systemInstruction);
     expect(system).toContain("USER_SYSTEM_PROMPT");
-    expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
+    expect(out.request.systemInstruction.parts[0].text).toBe(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
 });

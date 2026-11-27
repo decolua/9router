@@ -3,12 +3,7 @@ import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
-import { collapseTextParts } from "../concerns/message.js";
-
-function stripAnthropicBillingHeader(text) {
-  if (typeof text !== "string") return "";
-  return text.replace(/^x-anthropic-billing-header:[^\n]*(?:\r?\n)?/i, "");
-}
+import { collapseTextParts, stripAnthropicBillingHeader } from "../concerns/message.js";
 
 // Convert Claude request to OpenAI format
 export function claudeToOpenAIRequest(model, body, stream, credentials, opts = {}) {

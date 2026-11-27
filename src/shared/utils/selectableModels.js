@@ -1,3 +1,4 @@
+import { applyQoderModelNames } from "@/shared/utils/providerCustomModels";
 // Model-set resolution for dashboard callers that need "the models a user can
 // currently route to". The rules mirror ModelSelectModal's picker memo (kept in
 // sync by hand for now — adopting this module there is the follow-up that would
@@ -27,15 +28,47 @@ export const PROVIDER_ORDER = [
   ...Object.keys(APIKEY_PROVIDERS),
 ];
 
-// Providers that need no auth — always selectable, and they never own a
-// connection row, so any caller that only walks connections misses them.
-export const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter((id) => FREE_PROVIDERS[id].noAuth);
+// Authentication requirements are independent of billing category: no-auth
+// providers such as SearXNG can live outside the "free" group.
+export const NO_AUTH_PROVIDER_IDS = Object.keys(AI_PROVIDERS)
+  .filter((id) => AI_PROVIDERS[id].noAuth && !AI_PROVIDERS[id].hidden);
 
 // Providers with per-account live catalogs via /api/providers/[id]/models.
 // Static registry stays as fallback when live fetch fails or is empty.
 // zed added in #4244: its backend customResolver already returns live models
 // but the frontend omitted it, hiding Zed entirely from the Combo picker.
-export const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed"];
+// Providers with per-account live catalogs via /api/providers/[id]/models.
+// Single source of truth: ModelSelectModal and the CLI-tool cards import this, so a
+// provider supported by that route cannot be missing from just one picker.
+export const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "claude", "commandcode"];
+
+/**
+ * Capabilities carried by a live catalog row, when the provider reports any.
+ *
+ * Live rows use their own field names (isVL / isReasoning / contextLength) and some
+ * providers return only {id,name}; undefined lets callers fall back to /api/models.
+ */
+export const liveModelCaps = (model) => {
+  if (!model) return undefined;
+  const { isVL, isReasoning, contextLength, maxTokens, thinking_levels } = model;
+  const hasLevels = Array.isArray(thinking_levels) && thinking_levels.length > 0;
+  if (
+    isVL === undefined &&
+    isReasoning === undefined &&
+    contextLength === undefined &&
+    maxTokens === undefined &&
+    !hasLevels
+  ) {
+    return undefined;
+  }
+  return {
+    vision: isVL === true,
+    reasoning: isReasoning === true,
+    contextWindow: contextLength,
+    maxOutput: maxTokens,
+    ...(hasLevels ? { thinking_levels } : {}),
+  };
+};
 
 export const ALL_PROVIDERS = { ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS };
 
@@ -77,10 +110,6 @@ export function buildModelGroups({
   // with no connection row at all stay, e.g. keyless local endpoints.
   const deactivatedProviderIds = getDeactivatedProviderIds(effectiveConnections);
   const live = liveModels || {};
-  const cursorModels = asArray(live.cursor);
-  const clineModels = asArray(live.cline);
-  const clinepassModels = asArray(live.clinepass);
-  const zedModels = asArray(live.zed);
 
   const groups = {};
 
@@ -191,12 +220,15 @@ export function buildModelGroups({
           if (supports) combined = [{ id: providerId, name: providerInfo.name, value: alias }];
         }
       } else {
-        // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models
+        // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models.
+        // A passthrough provider can still have a live per-account catalog (commandcode), which
+        // replaces the static list the same way it does for the non-passthrough branch below.
+        const liveProviderModels = asArray(live[providerId]);
         const registeredLlms = customRegisteredModels.filter((m) => !getModelKind(m) || getModelKind(m) === "llm");
         const seen = new Set([...aliasModels, ...registeredLlms].map((m) => m.value));
-        const hardcoded = getModelsByProviderId(providerId)
+        const hardcoded = (liveProviderModels.length > 0 ? liveProviderModels : getModelsByProviderId(providerId))
           .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
-          .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
+          .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m), caps: liveModelCaps(m) }))
           .filter((m) => !seen.has(m.value));
         combined = [...registeredLlms, ...aliasModels.filter((m) => !registeredLlms.some((registered) => registered.value === m.value)), ...hardcoded];
       }
@@ -263,7 +295,7 @@ export function buildModelGroups({
         hasModels: mergedModels.length > 0,
       };
     } else {
-      const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : providerId === "zed" ? zedModels : [];
+      const liveModels = asArray(live[providerId]);
       const hardcodedModels = liveModels.length > 0
         ? liveModels
         : getModelsByProviderId(providerId);
@@ -290,7 +322,7 @@ export function buildModelGroups({
         .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
       const merged = [
-        ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
+        ...applyQoderModelNames(hardcodedModels, customModelsSafe, alias).map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m), caps: liveModelCaps(m) })),
         ...customAliasModels,
         ...customRegisteredModels,
       ];
