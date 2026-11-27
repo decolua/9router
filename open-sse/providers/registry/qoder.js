@@ -15,7 +15,7 @@ export default {
   category: "oauth",
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
-  authHint: "Personal Access Token (pt-...) từ https://qoder.com/account/integrations",
+  authHint: "Personal Access Token (pt-...) from https://qoder.com/account/integrations",
   transport: {
     baseUrl: "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation",
     headers: {},
@@ -42,6 +42,10 @@ export default {
     { id: "dmodel", name: "DeepSeek-V4-Pro" },
     { id: "dfmodel", name: "DeepSeek-V4-Flash" },
     { id: "mmodel", name: "MiniMax-M3" },
+    // Frontier reasoning pair. Absent from many per-account catalogs, so the
+    // executor falls back to a static model_config (see constants.js).
+    { id: "smodel", name: "Sonus" },
+    { id: "cmodel", name: "Cantus" },
   ],
   oauth: {
     openApiBaseUrl: "https://openapi.qoder.sh",

@@ -74,6 +74,28 @@ function md5Hex(input) {
   return crypto.createHash("md5").update(input).digest("hex");
 }
 
+function toBodyBuffer(body) {
+  return Buffer.isBuffer(body)
+    ? body
+    : typeof body === "string"
+      ? Buffer.from(body, "latin1")
+      : Buffer.from(body || []);
+}
+
+/**
+ * Compute the COSY authorization signature for a request.
+ *
+ * Qoder's image upload endpoint is unusual: qodercli signs the ASCII decimal
+ * multipart byte length, while the request body and the body-integrity headers
+ * still describe the actual multipart bytes. Callers normally leave
+ * `signatureBody` equal to `body`; image uploads pass the length explicitly.
+ */
+export function computeCosySignature({ payloadB64, cosyKey, timestamp, body, sigPath }) {
+  const bodyBuf = toBodyBuffer(body);
+  const sigInput = `${payloadB64}\n${cosyKey}\n${timestamp}\n${bodyBuf.toString("latin1")}\n${sigPath}`;
+  return md5Hex(Buffer.from(sigInput, "latin1"));
+}
+
 /**
  * Strip the leading "/algo" prefix from the request path. Matches qodercli
  * convention. Empty input returns "".
@@ -100,6 +122,30 @@ export function generateMachineId() {
 }
 
 /**
+ * Machine id derived deterministically from the Qoder user id.
+ *
+ * qodercli generates one machine id per install and reuses it for every request
+ * (including queue-status polls and model-queue replays); the server tracks
+ * per-client queue state by it. Connections that predate machine-id persistence
+ * (PAT connections) have none stored, so falling back to a random uuid made each
+ * request look like a brand-new device — and a new device starts at the back of
+ * the queue again. Deriving it from the user id keeps it stable without needing
+ * extra storage.
+ */
+export function deriveMachineId(seed) {
+  if (!seed) return generateMachineId();
+  const h = crypto.createHash("sha256").update(`qoder-machine\0${seed}`).digest("hex");
+  // Format as a UUID so it is indistinguishable from a generated machine id.
+  return [
+    h.slice(0, 8),
+    h.slice(8, 12),
+    `5${h.slice(13, 16)}`,
+    `a${h.slice(17, 20)}`,
+    h.slice(20, 32),
+  ].join("-");
+}
+
+/**
  * Build the full Cosy-* header set for a single Qoder request.
  *
  * @param {Buffer|Uint8Array|string} body  The exact bytes that will be sent.
@@ -111,17 +157,18 @@ export function generateMachineId() {
  * @param {string} [creds.name]            Display name (optional).
  * @param {string} [creds.email]           Email (optional, can be empty).
  * @param {string} [creds.machineId]       Persisted machine UUID.
+ * @param {object} [options]
+ * @param {Buffer|Uint8Array|string} [options.signatureBody=body]
+ *   Bytes to include in the authorization signature. This differs from `body`
+ *   only for Qoder's image upload endpoint.
  * @returns {Record<string, string>} Header map ready to merge onto fetch().
  */
-export function buildCosyHeaders(body, requestUrl, creds) {
+export function buildCosyHeaders(body, requestUrl, creds, options = {}) {
   if (!creds?.userId) throw new Error("cosy: user id is empty");
   if (!creds?.authToken) throw new Error("cosy: auth token is empty");
 
-  const bodyBuf = Buffer.isBuffer(body)
-    ? body
-    : typeof body === "string"
-      ? Buffer.from(body, "latin1")
-      : Buffer.from(body || []);
+  const bodyBuf = toBodyBuffer(body);
+  const signatureBuf = toBodyBuffer(options.signatureBody ?? body);
 
   const { cosyKey, info } = encryptUserInfo({
     uid: creds.userId,
@@ -144,8 +191,13 @@ export function buildCosyHeaders(body, requestUrl, creds) {
   const payloadB64 = Buffer.from(payloadJson, "utf8").toString("base64");
 
   const sigPath = computeSigPath(requestUrl);
-  const sigInput = `${payloadB64}\n${cosyKey}\n${timestamp}\n${bodyBuf.toString("latin1")}\n${sigPath}`;
-  const sig = md5Hex(Buffer.from(sigInput, "latin1"));
+  const sig = computeCosySignature({
+    payloadB64,
+    cosyKey,
+    timestamp,
+    body: signatureBuf,
+    sigPath,
+  });
 
   const machineId = creds.machineId || generateMachineId();
   const bodyHash = md5Hex(bodyBuf);

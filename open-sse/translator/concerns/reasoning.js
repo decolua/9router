@@ -1,10 +1,28 @@
 import { ROLE } from "../schema/index.js";
+import { extractTextContent } from "../formats/gemini.js";
+
+// Mistral chat content part type carrying reasoning (OpenAI-side, not a Claude block).
+const MISTRAL_THINKING_PART = "thinking";
 
 // Build OpenAI delta carrying reasoning_content (optional leading assistant role)
 export function reasoningDelta(text, withRole = false) {
   return withRole
     ? { role: ROLE.ASSISTANT, reasoning_content: text }
     : { reasoning_content: text };
+}
+
+// Lazily add the canonical OpenAI reasoning field when an upstream streams the
+// vendor aliases instead: `reasoning` (string) and `reasoning_details[]`
+// (OpenRouter-style lanes). Only ever ADDS the field — the aliases stay intact
+// for clients that read them — and never touches a delta that already carries
+// reasoning_content. Without this, OpenAI-shaped clients see no thinking at all:
+// reasoningDelta()/the SSE→JSON aggregator/usage tracking all read
+// reasoning_content.
+export function liftReasoningAliases(delta) {
+  if (!delta || typeof delta !== "object") return delta;
+  if (typeof delta.reasoning_content === "string" && delta.reasoning_content) return delta;
+  const text = extractReasoningText(delta);
+  return text ? { ...delta, reasoning_content: text } : delta;
 }
 
 // Extract reasoning text from a streamed OpenAI-compatible delta across vendor shapes:
@@ -19,6 +37,11 @@ export function extractReasoningText(delta) {
   const details = delta.reasoning_details;
   if (Array.isArray(details)) {
     return details.map((d) => (typeof d === "string" ? d : d?.text || d?.content || "")).join("");
+  }
+  // Mistral streams thinking chunks inside content, separately from visible text.
+  if (Array.isArray(delta.content)) {
+    return delta.content.filter(part => part?.type === MISTRAL_THINKING_PART)
+      .map(part => extractTextContent(part.thinking)).join("");
   }
   return "";
 }

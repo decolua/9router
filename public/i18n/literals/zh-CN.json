@@ -1173,7 +1173,7 @@
   "Theme": "主题",
   "Thinking": "思考",
   "Thinking Process": "思考过程",
-  "This is the only time you will see this key. Store it securely.": "这是您唯一一次看到此密钥的机会。请妥善保管。",
+  "Store this key securely. You can view or copy it later from the API Keys list.": "请妥善保管此密钥。您稍后可以在 API 密钥列表中查看或复制它。",
   "This provider is ready to use.": "此提供商已准备就绪。",
   "This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.": "此提供商已准备就绪。可选择通过代理池路由请求以绕过 IP 限制。",
   "This value is write-only after saving.": "此值保存后仅可写入。",

@@ -44,7 +44,8 @@ export function geminiToOpenAIRequest(model, body, stream) {
     for (const content of body.contents) {
       const converted = convertGeminiContent(content);
       if (converted) {
-        result.messages.push(converted);
+        if (Array.isArray(converted)) result.messages.push(...converted);
+        else result.messages.push(converted);
       }
     }
   }
@@ -81,6 +82,7 @@ function convertGeminiContent(content) {
 
   const parts = [];
   const toolCalls = [];
+  const toolResults = [];
 
   for (const part of content.parts) {
     if (part.text !== undefined) {
@@ -110,31 +112,34 @@ function convertGeminiContent(content) {
     }
 
     if (part.functionResponse) {
-      return {
+      toolResults.push({
         role: ROLE.TOOL,
         tool_call_id: part.functionResponse.id || `call_${part.functionResponse.name}`,
         content: JSON.stringify(part.functionResponse.response?.result || part.functionResponse.response || {})
-      };
+      });
     }
   }
 
+  let message = null;
   if (toolCalls.length > 0) {
-    const result = { role: ROLE.ASSISTANT };
+    message = { role: ROLE.ASSISTANT };
     if (parts.length > 0) {
-      result.content = parts.length === 1 ? parts[0].text : parts;
+      message.content = parts.length === 1 ? parts[0].text : parts;
     }
-    result.tool_calls = toolCalls;
-    return result;
-  }
-
-  if (parts.length > 0) {
-    return {
+    message.tool_calls = toolCalls;
+  } else if (parts.length > 0) {
+    message = {
       role,
       content: collapseTextParts(parts)
     };
   }
 
-  return null;
+  // Complete the parts scan before returning: parallel results must all precede
+  // any co-located follow-up text or calls in the OpenAI message sequence.
+  if (toolResults.length > 0) {
+    return message ? [...toolResults, message] : toolResults;
+  }
+  return message;
 }
 
 // Extract text from Gemini content

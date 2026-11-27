@@ -1,8 +1,16 @@
+import {
+  buildKiroCreateResponseUrl,
+  buildKiroCreateResponseBody,
+  buildKiroCreateResponseHeaders,
+  transformCreateResponseStreamToSSE
+} from "../utils/kiroCreateResponse.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import {
   KIRO_CODEWHISPERER_TARGET,
   KIRO_ENDPOINT_FALLBACK_STATUSES,
+  KIRO_RUNTIME_REGIONS,
   resolveKiroModel,
 } from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
@@ -12,8 +20,15 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { AWS_EVENTSTREAM } from "../config/awsConstants.js";
 import { crc32, parseEventFrame } from "../utils/awsEventStream.js";
+import { buildKiroIdentityHeaders } from "../shared/kiroIdentity.js";
 
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
+// Regions per service host; a region outside the set is never spliced into the hostname.
+const KIRO_SERVICE_REGIONS = {
+  q: new Set(["us-east-1", "eu-central-1"]),
+  runtime: KIRO_RUNTIME_REGIONS,
+  codewhisperer: new Set(["us-east-1"]),
+};
 const KIRO_REPAIR_HEARTBEAT_MS = 10_000;
 const KIRO_SHORT_FINAL_MAX_CHARS = 800;
 const EVENTSTREAM_MAX_MESSAGE_BYTES = AWS_EVENTSTREAM.maxMessageBytes;
@@ -223,6 +238,7 @@ export class KiroExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true, url = "") {
     const headers = {
       ...this.config.headers,
+      ...buildKiroIdentityHeaders(credentials, "streaming"),
       "Amz-Sdk-Request": "attempt=1; max=3",
       "Amz-Sdk-Invocation-Id": uuidv4()
     };
@@ -300,11 +316,15 @@ export class KiroExecutor extends BaseExecutor {
     // reject foreign tokens with 401/403, which DO fall through, so trying
     // q/codewhisperer first is safe for every auth method (CLIRO parity).
 
-    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
-    const regionalize = (u) =>
-      region && region !== "us-east-1" && u.includes("amazonaws.com")
-        ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)
-        : u;
+    // Only a covered region reaches the hostname that receives the bearer token.
+    const requestedRegion = (credentials?.providerSpecificData?.region || "us-east-1").trim();
+    const regionalize = (u) => {
+      if (!u.includes("amazonaws.com")) return u;
+      const service = u.match(/\/\/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/)?.[1];
+      const covered = KIRO_SERVICE_REGIONS[service];
+      if (!covered || !covered.has(requestedRegion)) return u;
+      return u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${requestedRegion}.amazonaws.com`);
+    };
 
     const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
@@ -350,9 +370,121 @@ export class KiroExecutor extends BaseExecutor {
    * classify the status, and trigger account fallback/cooldown.
    */
   async execute(args) {
-    const result = await super.execute(args);
-    if (result?.response?.ok) this.attachIntegrityGate(result, args);
+    const crMode = (process.env.NINEROUTER_KIRO_CREATE_RESPONSE || process.env.KIRO_CREATE_RESPONSE || "auto").toLowerCase();
+
+    // Direct mode: if configured to always use CreateResponse, skip legacy generateAssistantResponse
+    if (crMode === "always" && args?.body?.conversationState) {
+      args.log?.debug?.("KIRO", "Using /v1/responses CreateResponse (direct mode)");
+      const crResult = await this.executeCreateResponse(args);
+      if (crResult?.response?.ok) {
+        return crResult;
+      }
+      if (crResult?.response) {
+        return crResult;
+      }
+    }
+
+    let result = await super.execute(args);
+
+    // CreateResponse fallback: accounts enrolled in the create_response_api
+    // experiment receive 429 USER_REQUEST_RATE_EXCEEDED on legacy generateAssistantResponse
+    // even with full quota (see #5631). Fall back to POST runtime.<region>.kiro.dev/v1/responses.
+    if (result?.response?.status === 429 && args?.body?.conversationState && crMode !== "off") {
+      let isRateExceeded = false;
+      let errorBody = "";
+      try {
+        if (typeof result.response.clone === "function") {
+          errorBody = await result.response.clone().text();
+        } else {
+          errorBody = await result.response.text();
+          // Restore response body so it remains readable upstream
+          result.response = new Response(errorBody, {
+            status: result.response.status,
+            statusText: result.response.statusText,
+            headers: result.response.headers
+          });
+        }
+        isRateExceeded = errorBody.includes("USER_REQUEST_RATE_EXCEEDED");
+      } catch {}
+
+      if (isRateExceeded) {
+        args.log?.warn?.("KIRO", "generateAssistantResponse hit USER_REQUEST_RATE_EXCEEDED, falling back to /v1/responses CreateResponse");
+        try {
+          const fallbackResult = await this.executeCreateResponse(args);
+          if (fallbackResult?.response?.ok) {
+            return fallbackResult;
+          }
+          if (fallbackResult?.response) {
+            return fallbackResult;
+          }
+        } catch (err) {
+          args.log?.error?.("KIRO", `CreateResponse fallback failed: ${err && err.message || err}`);
+        }
+      }
+    }
+
+    if (result?.response?.ok) {
+      // KIRO_INTEGRITY_GATE=off streams through, forfeiting the tool-call repair retry.
+      if (process.env.KIRO_INTEGRITY_GATE === "off") {
+        result.response = this.transformEventStreamToSSE(result.response, args.model, {
+          toolSpecs: args.body?.conversationState?.currentMessage?.userInputMessage?.userInputMessageContext?.tools || []
+        });
+      } else {
+        this.attachIntegrityGate(result, args);
+      }
+    }
     return result;
+  }
+
+  async executeCreateResponse(args) {
+    const { model, body, credentials, signal, log, proxyOptions = null } = args;
+    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim() || "us-east-1";
+    const url = buildKiroCreateResponseUrl(region);
+    const crBody = buildKiroCreateResponseBody({ body, credentials, model });
+    const headers = buildKiroCreateResponseHeaders({ credentials, body });
+
+    log?.debug?.("KIRO", `CreateResponse -> ${url} | model=${crBody.model}`);
+
+    let response;
+    try {
+      response = await proxyAwareFetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(crBody),
+        signal
+      }, proxyOptions);
+
+      // Kiro upstream enforces a strict 1-concurrent-request window. If rapid sequential
+      // or parallel requests hit /v1/responses, retry once after 1500ms backoff to absorb it.
+      if (response.status === 429 && !signal?.aborted) {
+        log?.warn?.("KIRO", "CreateResponse received 429, waiting 1500ms before retry...");
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (!signal?.aborted) {
+          response = await proxyAwareFetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(crBody),
+            signal
+          }, proxyOptions);
+        }
+      }
+    } catch (err) {
+      log?.error?.("KIRO", `CreateResponse network failure: ${err && err.message || err}`);
+      return null;
+    }
+
+    if (!response.ok) {
+      log?.warn?.("KIRO", `CreateResponse returned status ${response.status}`);
+      return { response, url, headers, transformedBody: crBody };
+    }
+
+    const transformedStream = transformCreateResponseStreamToSSE(response.body, model);
+    const sseResponse = new Response(transformedStream, {
+      status: 200,
+      headers: { ...SSE_HEADERS }
+    });
+
+    return { response: sseResponse, url, headers, transformedBody: crBody };
   }
 
   attachIntegrityGate(result, args) {

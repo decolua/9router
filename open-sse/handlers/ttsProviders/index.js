@@ -2,12 +2,13 @@
 import googleTts from "./googleTts.js";
 import edgeTts, { fetchEdgeTtsVoices } from "./edgeTts.js";
 import localDevice, { fetchLocalDeviceVoices } from "./localDevice.js";
-import elevenlabs, { fetchElevenLabsVoices } from "./elevenlabs.js";
+import elevenlabs, { fetchElevenLabsVoices, fetchElevenLabsModels } from "./elevenlabs.js";
 import openai from "./openai.js";
 import openrouter from "./openrouter.js";
 import gemini, { fetchGeminiVoices } from "./gemini.js";
 import xiaomiMimo from "./xiaomi-mimo.js";
 import selfhostedTts from "./selfhostedTts.js";
+import ollamaLocal from "./ollamaLocal.js";
 import { FORMAT_HANDLERS } from "./genericFormats.js";
 import { parseModelVoice } from "./_base.js";
 
@@ -22,6 +23,7 @@ const SPECIAL_ADAPTERS = {
   gemini,
   "xiaomi-mimo": xiaomiMimo,
   "selfhosted-tts": selfhostedTts,
+  "ollama-local": ollamaLocal,
 };
 
 export function getTtsAdapter(provider) {
@@ -53,4 +55,4 @@ export const VOICE_FETCHERS = {
 };
 
 // Re-export for backward compat
-export { fetchEdgeTtsVoices, fetchLocalDeviceVoices, fetchElevenLabsVoices, fetchGeminiVoices };
+export { fetchEdgeTtsVoices, fetchLocalDeviceVoices, fetchElevenLabsVoices, fetchElevenLabsModels, fetchGeminiVoices };
