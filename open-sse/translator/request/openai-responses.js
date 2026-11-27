@@ -243,6 +243,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   delete result.include;
   delete result.prompt_cache_key;
   delete result.store;
+  const format = result.text?.format;
+  if (result.response_format === undefined && format?.type === "json_schema") {
+    const { name, schema, description, strict } = format;
+    result.response_format = { type: "json_schema", json_schema: { name, schema, description, strict } };
+  } else if (result.response_format === undefined && format?.type === "json_object") {
+    result.response_format = { type: "json_object" };
+  }
+  delete result.text;
   if (typeof result.reasoning?.effort === "string") {
     result.reasoning_effort = result.reasoning.effort;
   }
