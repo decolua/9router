@@ -112,6 +112,11 @@ export function createSSEStream(options = {}) {
     if (finalized) return;
     finalized = true;
 
+    if (sourceFormat === FORMATS.CLAUDE && state?.errorEventSent) {
+      appendRequestLog({ model, provider, connectionId, tokens: null, status: "FAILED" }).catch(() => {});
+      return;
+    }
+
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
     let finalUsage = isPassthrough ? usage : state?.usage;
 
@@ -420,7 +425,9 @@ export function createSSEStream(options = {}) {
         currentOpenAIResponsesEvent = null;
 
         // Translate: targetFormat -> openai -> sourceFormat
-        const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        const chunk = sourceFormat === FORMATS.CLAUDE && openAIResponsesEventName && !parsed.type
+          ? { ...parsed, type: openAIResponsesEventName } : parsed;
+        const translated = translateResponse(targetFormat, sourceFormat, chunk, state);
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {

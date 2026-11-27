@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/usageDb.js", () => ({
   appendRequestLog: vi.fn(async () => {}),
+  trackPendingRequest: vi.fn(),
   saveRequestDetail: vi.fn(async () => {}),
   saveRequestUsage: vi.fn(async () => {})
 }));
@@ -9,6 +10,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
 const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
+const { createSSETransformStreamWithLogger } = await import("../../open-sse/utils/stream.js");
 
 function context(raw, sourceFormat, targetFormat) {
   return {
@@ -37,6 +39,31 @@ function responsesSSE(output) {
 const toolItem = { type: "function_call", call_id: "call_test", name: "lookup", arguments: '{"code":"A"}' };
 
 describe("Claude JSON clients behind forced-stream upstreams", () => {
+  it.each([
+    ["error", { type: "error", code: "context_length_exceeded", message: "Too long" }, 400],
+    ["response.failed", { response: { error: { code: "server_is_overloaded", message: "Try later" } } }, 502],
+  ])("reports %s as an HTTP failure before success handling", async (type, data, status) => {
+    const raw = `event: ${type}\r\ndata: ${JSON.stringify(data)}\r\n\r\n`;
+    const ctx = context(raw, FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES);
+    ctx.onRequestSuccess = vi.fn();
+    const result = await handleForcedSSEToJson(ctx);
+    expect(result).toMatchObject({ success: false, status });
+    expect(result.response.status).toBe(status);
+    expect(ctx.appendLog).toHaveBeenCalledWith({ status: `FAILED ${status}` });
+    expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("emits one streaming Claude overload error with no successful ending", async () => {
+    const upstream = [
+      'event: error\ndata: {"code":"model_at_capacity","message":"Try later"}\n\n',
+      'event: response.failed\ndata: {"type":"response.failed","response":{"error":{"message":"Try later"}}}\n\n',
+      'data: [DONE]\n\n',
+    ].join("");
+    const transform = createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, FORMATS.CLAUDE, "codex");
+    const output = await new Response(new Response(upstream).body.pipeThrough(transform)).text();
+    expect(output).toBe('event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Try later"}}\n\n');
+  });
+
   it.each(["<decision>allow</decision>", "<decision>block</decision>"])("preserves the upstream text verbatim: %s", async (text) => {
     const raw = responsesSSE([{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }]);
     const result = await handleForcedSSEToJson(context(raw, FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES));
