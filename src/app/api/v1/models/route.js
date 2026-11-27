@@ -23,6 +23,7 @@ import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
+import { getCompatibleModelCatalog, INTERNAL_MODELS_FETCH_HEADER } from "open-sse/services/compatibleModelCatalog.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -210,10 +211,6 @@ const parseOpenAIStyleModels = (data) => {
   return data?.data || data?.models || data?.results || [];
 };
 
-// Header sent by fetchCompatibleModelIds to detect cross-instance /models fetches
-// and break recursive loops between 9router instances connected to each other.
-const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
-
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
 
@@ -258,9 +255,7 @@ async function fetchCompatibleModelIds(connection) {
     "Content-Type": "application/json",
   };
 
-  if (isOpenAICompatibleProvider(connection.provider)) {
-    headers.Authorization = `Bearer ${connection.apiKey}`;
-  } else if (isAnthropicCompatibleProvider(connection.provider)) {
+  if (isAnthropicCompatibleProvider(connection.provider)) {
     if (url.endsWith("/messages/models")) {
       url = url.slice(0, -9);
     } else if (url.endsWith("/messages")) {
@@ -522,7 +517,14 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
+      if (isOpenAICompatibleProvider(providerId) && !skipDynamicFetch) {
+        const proxy = await resolveConnectionProxyConfig(conn.providerSpecificData || {});
+        const upstreamModels = await getCompatibleModelCatalog(providerId, conn, proxy);
+        if (!rawModelIds.length) rawModelIds = [...new Set(upstreamModels.map(({ id }) => id))];
+        liveCapabilitiesById = new Map(upstreamModels
+          .filter(({ vision }) => typeof vision === "boolean")
+          .map(({ id, vision }) => [id, { ...getCapabilitiesForModel(providerId, id), vision }]));
+      } else if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
@@ -628,7 +630,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         // { id, name } — no per-model capability data. Fall back to the same
         // pattern-matched capabilities the dashboard uses (useModelCaps.js) so
         // dynamically-discovered LLM models still surface vision/reasoning/search/tools.
-        const liveCaps = liveCapabilitiesById.get(modelId);
+        const liveCaps = liveCapabilitiesById.get(modelId) || (isCompatibleProvider && liveCapabilitiesById.get(`${outputAlias}/${modelId}`));
         const serviceCaps = capabilitiesFromServiceKind(customKind || liveKind);
         const caps = liveCaps || serviceCaps || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
         if (caps) model.capabilities = caps;

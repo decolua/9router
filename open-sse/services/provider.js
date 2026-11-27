@@ -12,7 +12,7 @@ const ANTHROPIC_COMPATIBLE_DEFAULTS = {
   baseUrl: ANTHROPIC_COMPAT_BASE,
 };
 
-function isOpenAICompatible(provider) {
+export function isOpenAICompatible(provider) {
   return typeof provider === "string" && provider.startsWith(OPENAI_COMPATIBLE_PREFIX);
 }
 
