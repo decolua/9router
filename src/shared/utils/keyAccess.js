@@ -78,3 +78,4 @@ export function validateKeyAccessInput(input) {
   }
   return { ok: true, value: { restricted: input.restricted, allow: normalizeAllowList(allow) } };
 }
+

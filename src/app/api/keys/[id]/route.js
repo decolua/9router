@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
+import { validateKeyLimitInput } from "@/shared/utils/keyLimit.js";
+import { getLimitStatus } from "@/sse/services/keySpendLimit.js";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -22,7 +24,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, access } = body;
+    const { isActive, access, limit } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -36,10 +38,18 @@ export async function PUT(request, { params }) {
       if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
       updateData.access = checked.value;
     }
+    if (limit !== undefined) {
+      // A limit can always be saved; whether it is ENFORCED (restricted key, every reachable model
+      // priced) is reported in limitStatus and applied at request time.
+      const checked = validateKeyLimitInput(limit);
+      if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+      updateData.limit = checked.value;
+    }
 
     const updated = await updateApiKey(id, updateData);
+    const limitStatus = await getLimitStatus(updated);
 
-    return NextResponse.json({ key: updated });
+    return NextResponse.json({ key: { ...updated, limitStatus } });
   } catch (error) {
     console.log("Error updating key:", error);
     return NextResponse.json({ error: "Failed to update key" }, { status: 500 });

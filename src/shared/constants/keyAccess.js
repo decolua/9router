@@ -17,6 +17,19 @@ export const KEY_ACCESS_PROVIDER_AS_MODEL_KINDS = Object.freeze(["webSearch", "w
 // /v1/models owner tag for combo entries.
 export const KEY_ACCESS_COMBO_OWNER = "combo";
 
+// Per-key spend limit (USD per calendar day or month, UTC).
+export const KEY_LIMIT_WINDOW = Object.freeze({ DAY: "day", MONTH: "month" });
+export const KEY_LIMIT_WINDOWS = Object.freeze(Object.values(KEY_LIMIT_WINDOW));
+export const KEY_LIMIT_MAX_USD = 1_000_000;
+// How long a key's summed spend is reused before the DB is asked again.
+export const KEY_SPEND_CACHE_TTL_MS = 5000;
+
+// Client-facing 429 message. Names only the cap and the reset time.
+export function keyLimitReachedMessage(limit, resetsAtIso) {
+  const label = limit.window === KEY_LIMIT_WINDOW.MONTH ? "monthly" : "daily";
+  return `This API key has reached its ${label} cost limit of $${limit.usd}. It resets at ${resetsAtIso}.`;
+}
+
 // Client-facing 403 message. Names only what the client itself sent: never the
 // key name or the key's allow list.
 export function keyAccessDeniedMessage(requested) {

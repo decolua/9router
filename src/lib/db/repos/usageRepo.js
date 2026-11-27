@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { recordRequestMetrics } from "../../observability/metrics.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -307,6 +308,7 @@ export async function saveRequestUsage(entry) {
     });
 
     if (inserted) {
+      await recordRequestMetrics(entry); // after the insert, so a de-duplicated row is not counted twice; never throws
       pushToRing(entry);
       scheduleStatsEvent("update", 250);
     }
@@ -812,4 +814,17 @@ export async function getRecentLogs(limit = 200) {
     console.error("[usageRepo] getRecentLogs failed:", e.message);
     return [];
   }
+}
+
+// Per-key spend limit. Summed recorded cost for one key value from
+// `sinceIso` (inclusive). Timestamps are ISO UTC, so the string comparison is
+// chronological. Served by idx_uh_apikey_ts.
+export async function getKeySpendSince(apiKey, sinceIso) {
+  if (!apiKey) return 0;
+  const db = await getAdapter();
+  const row = db.get(
+    "SELECT COALESCE(SUM(cost), 0) AS usd FROM usageHistory WHERE apiKey = ? AND timestamp >= ?",
+    [apiKey, sinceIso]
+  );
+  return Number(row?.usd) || 0;
 }

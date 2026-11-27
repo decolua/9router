@@ -1,6 +1,7 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { makeKv } from "../helpers/kvStore.js";
+import { PRICING_SOURCE } from "open-sse/config/pricingSources.js";
 
 const pricingKv = makeKv("pricing");
 const CACHE_TTL_MS = 5000;
@@ -105,4 +106,17 @@ export async function resetAllPricing() {
   await pricingKv.clear();
   invalidate();
   return {};
+}
+
+// Effective price for one model plus where it comes from. A user override
+// (provider + exact model id) wins; otherwise the built-in chain decides.
+// source: one of PRICING_SOURCE (override, provider, free, model, pattern, none)
+export async function resolvePricingForModel(provider, model) {
+  if (!model) return { pricing: null, source: PRICING_SOURCE.NONE };
+  const userPricing = await getUserPricing();
+  if (provider && userPricing[provider]?.[model]) {
+    return { pricing: userPricing[provider][model], source: PRICING_SOURCE.OVERRIDE };
+  }
+  const { resolvePricing } = await import("open-sse/providers/pricing.js");
+  return resolvePricing(provider, model);
 }

@@ -38,6 +38,8 @@ export { default as SegmentedControl } from "./SegmentedControl";
 export { default as Tooltip } from "./Tooltip";
 export { default as ProviderInfoCard } from "./ProviderInfoCard";
 export { default as CapacityBadges } from "./CapacityBadges";
+export { default as PriceChip } from "./PriceChip";
+export { default as PriceCard } from "./PriceCard";
 export { default as SmartPolicyModal } from "./SmartPolicyModal";
 
 // Layouts
