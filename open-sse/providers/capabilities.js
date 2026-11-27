@@ -884,7 +884,7 @@ function isCommandCodeTextOnly(model) {
   }
   return false;
 }
-export function getCapabilitiesForModel(provider, model) {
+export function getCapabilitiesForModel(provider, model, catalogProvider = provider) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
@@ -916,18 +916,19 @@ export function getCapabilitiesForModel(provider, model) {
 
   // 2. Canonical exact, then catalog overlay so provider-scoped models.dev
   //    deltas still apply. Step 1 above still short-circuits.
-  if (MODEL_CAPABILITIES[baseModel]) return refine(MODEL_CAPABILITIES[baseModel], provider, model);
-  if (MODEL_CAPABILITIES[model]) return refine(MODEL_CAPABILITIES[model], provider, model);
+  const normalizedModel = baseModel.replace(/^glm-(\d+)-(\d+)(?=-|$)/i, "glm-$1.$2");
+  const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[model] || MODEL_CAPABILITIES[normalizedModel];
+  if (exact) return refine(exact, catalogProvider, model);
 
   // 3. Pattern match (first match wins), refined by catalog + name heuristic
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
-    if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return refine(caps, provider, model);
+    if (matchPattern(pattern, normalizedModel) || matchPattern(pattern, model)) {
+      return refine(caps, catalogProvider, model);
     }
   }
 
   // 4. Floor
-  return refine(null, provider, model);
+  return refine(null, catalogProvider, model);
 }
 
 // Gemini 4 (Hydrogen/Carbon/Argon) drops sampling params and requires functionResponse-last merged user turns.

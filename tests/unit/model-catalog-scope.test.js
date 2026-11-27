@@ -17,6 +17,7 @@ const upstream = {
   zhipuai: { models: { "glm-5-canary": { modalities: { input: ["text", "image", "pdf"] } } } },
   moonshotai: { models: { "kimi-k3": { modalities: { input: ["text"] } } } },
   kilo: { models: { "kilo-auto/efficient": { modalities: { input: ["text", "image"] } } } },
+  kenari: { models: { "glm-5-3-flash": { limit: { context: 1000000, output: 131072 } } } },
 };
 // The registry snapshot the sync feeds build(): local ids, with the capabilities
 // the tables resolve on their own.
@@ -27,7 +28,7 @@ const entries = [
   { provider: "kimi", model: "kimi-k3", current: { contextWindow: 128000, maxOutput: 32000 } },
 ];
 
-let build, getCatalogModalities, invalidateCatalog, syncModelCatalog, startModelCatalogSync, capabilities;
+let build, getCatalogModalities, getCatalogLimits, invalidateCatalog, syncModelCatalog, startModelCatalogSync, capabilities;
 
 beforeAll(async () => {
   ({ build, syncModelCatalog, startModelCatalogSync } = await import("../../src/lib/modelCatalog/sync.js"));
@@ -36,7 +37,7 @@ beforeAll(async () => {
   expect(typeof build).toBe("function");
   const { models, providers } = build(upstream, entries);
   fs.writeFileSync(catalogFile, JSON.stringify({ v: 2, models, providers }));
-  ({ getCatalogModalities, invalidateCatalog } = await import("../../open-sse/providers/catalogOverride.js"));
+  ({ getCatalogModalities, getCatalogLimits, invalidateCatalog } = await import("../../open-sse/providers/catalogOverride.js"));
   capabilities = await import("../../open-sse/providers/capabilities.js");
 });
 
@@ -45,6 +46,16 @@ afterAll(() => {
 });
 
 describe("model catalog", () => {
+  it("keeps catalog limits for a custom gateway's exact model ID", () => {
+    expect(getCatalogLimits("kenari", "glm-5-3-flash")).toEqual({ contextWindow: 1000000, maxOutput: 131072 });
+    expect(getCatalogLimits("unrelated", "glm-5-3-flash")).toBeNull();
+  });
+
+  it("recognizes hyphenated GLM versions even before the next sync", () => {
+    expect(capabilities.getCapabilitiesForModel("kenari", "glm-5-3-flash")).toMatchObject({
+      contextWindow: 1000000, maxOutput: 131072,
+    });
+  });
   it("keys modalities by gateway and writes no model-only key", () => {
     const { models } = build(upstream, entries);
     // upstream "zai" is filed under the local id requests arrive with...
@@ -169,7 +180,7 @@ describe("catalog schema", () => {
     }
     expect(sent[0]["if-none-match"]).toBeUndefined();
     const written = JSON.parse(fs.readFileSync(catalogFile, "utf8"));
-    expect(written.v).toBe(2);
+    expect(written.v).toBe(3);
     expect(written.models["glm:glm-4.6v"]).toEqual({ vision: true });
   });
 

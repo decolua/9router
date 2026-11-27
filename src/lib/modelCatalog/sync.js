@@ -95,6 +95,8 @@ export function build(catalog, entries) {
   // Index once: the raw upstream record per provider+model for limits, and the
   // modalities each gateway declares for it.
   const byProvider = {};
+  const providers = {};
+  const registryIds = new Set(entries.map(({ provider }) => provider));
   // Modalities are recorded per gateway upstream and gateways disagree about the
   // same weights — some do not proxy images at all — so the key is provider +
   // model. Keying by model id alone let short ids collide across vendors: "auto",
@@ -108,6 +110,16 @@ export function build(catalog, entries) {
     for (const [modelId, model] of Object.entries(provider?.models || {})) {
       const id = baseId(modelId);
       modelsById[id] = model;
+      // A custom gateway can use this catalog ID as its public prefix even
+      // though it has no built-in registry entry to compute a delta against.
+      if (!registryIds.has(providerId)) {
+        const { context, output } = model?.limit || {};
+        const limits = {
+          ...(Number.isFinite(context) && context > 0 ? { contextWindow: context } : {}),
+          ...(Number.isFinite(output) && output > 0 ? { maxOutput: output } : {}),
+        };
+        if (Object.keys(limits).length) (providers[providerId] ||= {})[modelId] = limits;
+      }
       // One entry per provider+model: several upstream ids can normalize to the
       // same model (claude-opus-4-thinking:1024, :8192, :32768 …) and must not
       // stack their modalities.
@@ -132,7 +144,6 @@ export function build(catalog, entries) {
 
   // Limits belong to the gateway — each truncates differently — so only the
   // matching provider's own numbers are used, keyed by provider + model.
-  const providers = {};
   for (const { provider, model, contextLength, current } of entries) {
     const alias = PROVIDER_ALIASES[provider];
     const upstream = catalog[provider] ? provider : (alias && catalog[alias] ? alias : null);

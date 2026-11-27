@@ -13,10 +13,8 @@ export const CATALOG_FILE = path.join(DATA_DIR, "model-catalog.json");
 // Trimmed upstream catalog, read by the add-models skill (not by the router).
 export const CATALOG_RAW_FILE = path.join(DATA_DIR, "model-catalog-raw.json");
 
-// Schema of the file this module reads. The writer stamps it; a file carrying an
-// older value predates provider-scoped modality keys, and its flat keys are not
-// looked up here, so the sync rebuilds it instead of asking upstream for a 304.
-export const CATALOG_VERSION = 2;
+// Older versions are rebuilt even when the upstream ETag is unchanged.
+export const CATALOG_VERSION = 3;
 
 const EMPTY = { models: {}, providers: {} };
 let cache = EMPTY;

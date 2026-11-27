@@ -38,6 +38,29 @@ async function modelsWithCombo(providerId, modelId, combos) {
 }
 
 describe("/v1/models combo limits", () => {
+  it("uses the catalog gateway prefix for custom connection models", async () => {
+    const modelId = "glm-5-3-flash";
+    db.getProviderConnections.mockResolvedValue([{
+      id: 1,
+      provider: "openai-compatible-custom-node",
+      isActive: true,
+      providerSpecificData: { prefix: "kenari", enabledModels: [modelId] },
+    }]);
+    db.getCombos.mockResolvedValue([]);
+    setCatalogSource({
+      getModalities: () => null,
+      getLimits: (provider, model) => provider === "kenari" && model === modelId ? syncedLimits : null,
+    });
+    try {
+      const models = await buildModelsList(["llm"]);
+      expect(models.find((model) => model.id === `kenari/${modelId}`)).toMatchObject({
+        context_length: 180000, max_completion_tokens: 16000,
+      });
+    } finally {
+      setCatalogSource(null);
+    }
+  });
+
   it.each([
     ["ocg", "opencode-go", "mimo-v2.5"],
     ["xmtp", "xiaomi-tokenplan", "mimo-v2.5"],
