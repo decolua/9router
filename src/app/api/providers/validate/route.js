@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ACCEPT_ENCODING } from "open-sse/utils/zstdCompat.js";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
@@ -270,6 +271,21 @@ export async function POST(request) {
       }
 
       switch (provider) {
+        case "fal-ai": {
+          // Match saved-connection tests: check auth without queueing a paid image.
+          const res = await fetch("https://api.fal.ai/v1/models?limit=1", {
+            headers: { Authorization: `Key ${apiKey}` },
+            signal: AbortSignal.timeout(8000),
+          });
+          isValid = res.ok;
+          if (!isValid) {
+            error = res.status === 401 || res.status === 403
+              ? "Invalid API key"
+              : `Unable to verify API key (Fal returned ${res.status})`;
+          }
+          break;
+        }
+
         case "openai":
           const openaiRes = await fetch("https://api.openai.com/v1/models", {
             headers: { "Authorization": `Bearer ${apiKey}` },
@@ -400,6 +416,7 @@ export async function POST(request) {
         case "nanobanana":
         case "chutes":
         case "runcrate":
+        case "synthetic":
         case "xiaomi-mimo":
         case "xiaomi-tokenplan":
         case "nvidia": {
@@ -427,9 +444,11 @@ export async function POST(request) {
         }
 
         case "opencode-go": {
-          const res = await fetch("https://opencode.ai/zen/go/v1/chat/completions", {
+          // ponytail: session id derived from key hash so validate looks like a normal session; upgrade path = per-request session from executor
+          const sessionId = "validate-" + (await import("node:crypto")).createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
+          const res = await fetch("https://opencode.ai/inference/go/openai/v1/chat/completions", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}`, "x-opencode-session": sessionId },
             body: JSON.stringify({
               model: getDefaultModel("opencode-go"),
               messages: [{ role: "user", content: "ping" }],
@@ -531,7 +550,7 @@ export async function POST(request) {
             method: "POST",
             headers: {
               Accept: "*/*",
-              "Accept-Encoding": "gzip, deflate, br, zstd",
+              "Accept-Encoding": ACCEPT_ENCODING,
               "Accept-Language": "en-US,en;q=0.9",
               "Cache-Control": "no-cache",
               "Content-Type": "application/json",

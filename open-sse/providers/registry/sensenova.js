@@ -8,6 +8,7 @@ export default {
     textIcon: "SN",
     website: "https://token.sensenova.cn",
     notice: {
+      text: "For China accounts (token.sensenova.cn). International accounts (platform.sensenova.ai) use SenseNova (Intl).",
       apiKeyUrl: "https://token.sensenova.cn",
     },
   },
@@ -19,8 +20,14 @@ export default {
   transport: {
     baseUrl: "https://token.sensenova.cn/v1/chat/completions",
     validateUrl: "https://token.sensenova.cn/v1/models",
+    quirks: {
+      // SenseNova streams thinking as `reasoning`, not reasoning_content. The lift is
+      // additive and a no-op when the upstream already sends reasoning_content.
+      reasoningAliasFields: true,
+    },
   },
   models: [
+    { id: "sensenova-6.8-flash", name: "SenseNova 6.8 Flash" },
     { id: "sensenova-6.8-flash-lite", name: "SenseNova 6.8 Flash Lite" },
     {
       id: "sensenova-u1.5-lite",
@@ -36,8 +43,9 @@ export default {
       capabilities: ["text2img"],
       params: ["n", "size", "output_format", "response_format", "watermark", "prompt_extend"],
     },
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "deepseek-flash", name: "DeepSeek V4.1 Flash" },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "glm-5.3", name: "GLM-5.3" },
     { id: "glm-5.2", name: "GLM-5.2" },
     { id: "kimi-k3", name: "Kimi K3" },
   ],
