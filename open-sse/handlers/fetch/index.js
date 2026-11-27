@@ -1,6 +1,7 @@
 // Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, tinyfish
 // Returns normalized shape across all providers
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import firecrawl from "../../providers/registry/firecrawl.js";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_FORMAT = "markdown";
@@ -100,7 +101,7 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
   }
 
   const fmt = format || DEFAULT_FORMAT;
-  const formats = providerConfig?.formats;
+  const formats = provider === "firecrawl" ? firecrawl.fetchConfig.formats : providerConfig?.formats;
   if (Array.isArray(formats) && formats.length && !formats.includes(fmt)) {
     // Account fallback also classifies error text; do not echo untrusted input.
     return {
@@ -178,7 +179,7 @@ async function runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPer
 
 async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt }) {
   const upstreamStart = Date.now();
-  const r = await tryFetch("https://api.firecrawl.dev/v1/scrape", {
+  const r = await tryFetch(firecrawl.fetchConfig.baseUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -196,7 +197,7 @@ async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPe
     return { success: false, status: r.res.status, error: json?.error || `Firecrawl error: ${r.res.status}` };
   }
   const d = json?.data || {};
-  const text = truncate(d.markdown || d.html || d.text || "", maxCharacters);
+  const text = truncate(d[fmt], maxCharacters);
   const title = d.metadata?.title || null;
   return {
     success: true,
