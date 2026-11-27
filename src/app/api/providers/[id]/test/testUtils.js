@@ -593,6 +593,15 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
 
   try {
     switch (connection.provider) {
+      case "keenable": {
+        const res = await fetchWithConnectionProxy(AI_PROVIDERS.keenable.searchConfig.validateUrl, {
+          method: "GET",
+          redirect: "error",
+          signal: AbortSignal.timeout(8000),
+          headers: { "X-API-Key": connection.apiKey },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : `Keenable authentication failed (HTTP ${res.status})` };
+      }
       case "commandcode": {
         const res = await fetchWithConnectionProxy(
           "https://api.commandcode.ai/alpha/whoami?limits=1",

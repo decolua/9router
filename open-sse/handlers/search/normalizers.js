@@ -30,6 +30,17 @@ function makeResult(providerId, item, idx, now) {
   };
 }
 
+function normalizeKeenable(data) {
+  const now = new Date().toISOString();
+  const items = Array.isArray(data?.results) ? data.results : [];
+  return {
+    results: items.map((item, idx) => makeResult("keenable", {
+      title: item.title, url: item.url, snippet: item.snippet || item.description, published_at: item.published_at,
+    }, idx, now)),
+    totalResults: null,
+  };
+}
+
 function normalizeSerper(data, _query, searchType) {
   const now = new Date().toISOString();
   const items = searchType === "news" ? data.news : data.organic;
@@ -308,6 +319,7 @@ const NORMALIZERS = {
   "searxng": normalizeSearxng,
   "xquik": normalizeXquik,
   "tinyfish": normalizeTinyfish,
+  "keenable": normalizeKeenable,
   "ollama-search": normalizeOllamaSearch,
   "glm": normalizeGlmSearch,
 };
