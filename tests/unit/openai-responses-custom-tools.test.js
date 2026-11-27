@@ -17,6 +17,23 @@ const EXEC_TOOL = {
   },
 };
 
+describe("Responses structured text output on Chat Completions", () => {
+  it("converts a JSON schema without leaking the Responses text object", () => {
+    const jsonSchema = { name: "answer", description: "Result", schema: { type: "object" }, strict: false };
+    const body = { input: "hello", text: { verbosity: "low", format: { ...jsonSchema, type: "json_schema" } } };
+    const result = openaiResponsesToOpenAIRequest("test", body, false);
+    expect(result).not.toHaveProperty("text");
+    expect(result.response_format).toEqual({ type: "json_schema", json_schema: jsonSchema });
+    expect(body.text.verbosity).toBe("low");
+  });
+
+  it("preserves JSON object mode but omits explicit default text mode", () => {
+    const convert = (type) => openaiResponsesToOpenAIRequest("test", { input: "hello", text: { format: { type } } }, false);
+    expect(convert("json_object").response_format).toEqual({ type: "json_object" });
+    expect(convert("text")).not.toHaveProperty("response_format");
+  });
+});
+
 describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
   it("promotes additional_tools custom declarations into Chat tools", () => {
     const out = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {

@@ -14,6 +14,7 @@
 //     routed to /messages, which the upstream does not serve for them.
 //   - minimax + (max) + claude — suffix must NOT block a genuinely declared format.
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import "../../open-sse/translator/request/openai-responses.js";
 
 const { executeMock } = vi.hoisted(() => ({
   executeMock: vi.fn(),
@@ -125,6 +126,28 @@ async function route(model, sourceFormat, bodyOverrides = {}) {
   const { credentials: creds, body: sentBody } = executeMock.mock.calls.at(-1)[0];
   return { result, runtimeTransport: creds.runtimeTransport ?? null, sentBody };
 }
+
+describe("OpenCode Go Responses text controls", () => {
+  it("removes verbosity from a Responses request translated onto the strict Chat lane", async () => {
+    const { sentBody, runtimeTransport } = await route("glm-5.3-flash", "openai-responses", {
+      messages: undefined,
+      input: "hello",
+      text: { verbosity: "low" },
+    });
+    expect(runtimeTransport).toBeNull();
+    expect(sentBody).not.toHaveProperty("text");
+    expect(sentBody.messages).toEqual([{ role: "user", content: [{ type: "text", text: "hello" }] }]);
+  });
+
+  it("preserves text controls when the model uses the native Responses lane", async () => {
+    const text = { verbosity: "low", format: { type: "text" } };
+    const { sentBody, runtimeTransport } = await route("deepseek-v4.1-flash", "openai-responses", {
+      messages: undefined, input: "hello", text,
+    });
+    expect(runtimeTransport?.baseUrl).toBe(ENDPOINTS["openai-responses"]);
+    expect(sentBody.text).toEqual(text);
+  });
+});
 
 describe("opencode-go DeepSeek endpoint matrix (via real handleChatCore)", () => {
   beforeEach(() => {
