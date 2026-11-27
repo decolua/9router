@@ -2,17 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { LOCALES, LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
+import { LOCALES } from "@/i18n/config";
+import { getPreferredLocale, savePreferredLocale } from "@/i18n/preference";
 import { reloadTranslations } from "@/i18n/runtime";
-
-function getLocaleFromCookie() {
-  if (typeof document === "undefined") return "en";
-  const cookie = document.cookie
-    .split(";")
-    .find((c) => c.trim().startsWith(`${LOCALE_COOKIE}=`));
-  const value = cookie ? decodeURIComponent(cookie.split("=")[1]) : "en";
-  return normalizeLocale(value);
-}
 
 // Locale display names and flags - will be translated by runtime i18n
 const getLocaleInfo = (locale) => {
@@ -73,7 +65,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
   };
 
   useEffect(() => {
-    setLocale(getLocaleFromCookie());
+    setLocale(getPreferredLocale());
   }, []);
 
   // Close modal when clicking outside
@@ -94,11 +86,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
 
     setIsPending(true);
     try {
-      await fetch("/api/locale", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locale: nextLocale }),
-      });
+      await savePreferredLocale(nextLocale);
       
       // Reload translations without full page reload
       await reloadTranslations();
