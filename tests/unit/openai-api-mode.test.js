@@ -50,6 +50,7 @@ const transportFor = (format) => PROVIDERS.openai.transports.find((t) => t.forma
 const CHAT_URL = transportFor("openai").baseUrl;
 const RESPONSES_URL = transportFor("openai-responses").baseUrl;
 
+const LEGACY = Symbol("legacy-connection");
 const LEGACY_MODEL = "gpt-4o";
 const RESPONSES_MODEL = "gpt-5.6-sol";
 
@@ -69,7 +70,8 @@ async function route(model, sourceFormat, apiMode) {
   executeMock.mockImplementationOnce(async () => {
     throw new Error("stop after routing");
   });
-  const credentials = { apiKey: "sk-test", providerSpecificData: apiMode === undefined ? {} : { apiMode } };
+  // LEGACY = a connection saved before apiMode existed (no field at all).
+  const credentials = { apiKey: "sk-test", providerSpecificData: apiMode === LEGACY ? {} : { apiMode } };
   await handleChatCore({
     body: bodyFor(model, sourceFormat),
     modelInfo: { provider: "openai", model },
@@ -115,27 +117,37 @@ describe("openai registry: multi-endpoint + api modes", () => {
 describe("openai routing via real handleChatCore", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  describe("Auto (default)", () => {
+  describe("pre-existing connection without apiMode (legacy → Chat, unchanged behaviour)", () => {
+    for (const [model, src] of [[LEGACY_MODEL, "openai"], [LEGACY_MODEL, "openai-responses"], [RESPONSES_MODEL, "openai"], ["gpt-6-astra", "claude"]]) {
+      it(`${model} + ${src} client → /v1/chat/completions`, async () => {
+        const { url, body } = await route(model, src, LEGACY);
+        expect(url).toBe(CHAT_URL);
+        expect(body.messages).toBeDefined();
+      });
+    }
+  });
+
+  describe("Auto (default for new connections)", () => {
     it("legacy model + chat client → /v1/chat/completions", async () => {
-      const { url } = await route(LEGACY_MODEL, "openai");
+      const { url } = await route(LEGACY_MODEL, "openai", API_MODE.AUTO);
       expect(url).toBe(CHAT_URL);
     });
 
     it("legacy model + responses client → native /v1/responses", async () => {
-      const { rt, url, body } = await route(LEGACY_MODEL, "openai-responses");
+      const { rt, url, body } = await route(LEGACY_MODEL, "openai-responses", API_MODE.AUTO);
       expect(rt?.format).toBe("openai-responses");
       expect(url).toBe(RESPONSES_URL);
       expect(body.input).toBeDefined();
     });
 
     it("legacy model + claude client → /v1/chat/completions", async () => {
-      const { url, body } = await route(LEGACY_MODEL, "claude");
+      const { url, body } = await route(LEGACY_MODEL, "claude", API_MODE.AUTO);
       expect(url).toBe(CHAT_URL);
       expect(body.messages).toBeDefined();
     });
 
     it("GPT-5.6 Sol + chat client with tools + reasoning → /v1/responses with nested reasoning", async () => {
-      const { rt, url, body } = await route(RESPONSES_MODEL, "openai");
+      const { rt, url, body } = await route(RESPONSES_MODEL, "openai", API_MODE.AUTO);
       expect(rt?.format).toBe("openai-responses");
       expect(url).toBe(RESPONSES_URL);
       expect(body.input).toBeDefined();
@@ -146,7 +158,7 @@ describe("openai routing via real handleChatCore", () => {
     });
 
     it("GPT-6 + claude client → /v1/responses", async () => {
-      const { url } = await route("gpt-6-astra", "claude");
+      const { url } = await route("gpt-6-astra", "claude", API_MODE.AUTO);
       expect(url).toBe(RESPONSES_URL);
     });
 
@@ -186,9 +198,13 @@ describe("openai routing via real handleChatCore", () => {
 describe("resolveApiModeTransport", () => {
   it("is null for auto and for providers without apiModes", () => {
     expect(resolveApiModeTransport("openai", { providerSpecificData: { apiMode: "auto" } })).toBeNull();
-    expect(resolveApiModeTransport("openai", null)).toBeNull();
     expect(resolveApiModeTransport("muse", { providerSpecificData: { apiMode: "chat" } })).toBeNull();
     expect(resolveApiModeTransport("kimi", { providerSpecificData: { apiMode: "responses" } })).toBeNull();
+  });
+
+  it("pins chat for a legacy connection without apiMode", () => {
+    expect(resolveApiModeTransport("openai", { providerSpecificData: {} })?.baseUrl).toBe(CHAT_URL);
+    expect(resolveApiModeTransport("openai", null)?.baseUrl).toBe(CHAT_URL);
   });
 
   it("pins the declared transport for chat/responses", () => {
@@ -202,6 +218,8 @@ describe("apiMode persistence sanitizing", () => {
     expect(resolveApiMode(["auto", "chat", "responses"], "chat")).toBe("chat");
     expect(resolveApiMode(["auto", "chat", "responses"], "bogus")).toBe("auto");
     expect(resolveApiMode(undefined, "chat")).toBeNull();
+    expect(resolveApiMode(["auto", "chat", "responses"], undefined)).toBe("chat");
+    expect(resolveApiMode(["auto", "chat", "responses"], null)).toBe("chat");
   });
 
   it("keeps a valid apiMode for openai, coerces a bad one, strips it for other providers", () => {
@@ -213,6 +231,9 @@ describe("apiMode persistence sanitizing", () => {
 
   it("normalizeProviderSpecificData (create path) sanitizes apiMode", () => {
     expect(normalizeProviderSpecificData("openai", {}, { apiMode: "chat" })).toEqual({ apiMode: "chat" });
+    // New connections (incl. bulk add / API) get an explicit auto, never the legacy chat.
+    expect(normalizeProviderSpecificData("openai", {}, null)).toEqual({ apiMode: "auto" });
+    expect(normalizeProviderSpecificData("openai", {}, { region: "x" })).toEqual({ region: "x", apiMode: "auto" });
     expect(normalizeProviderSpecificData("groq", {}, { apiMode: "chat" })).toBeNull();
   });
 });

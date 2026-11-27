@@ -9,7 +9,7 @@ import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
 import ApiModeSelector from "@/shared/components/ApiModeSelector";
-import { API_MODE_DEFAULT } from "open-sse/config/apiModeConstants.js";
+import { API_MODE_DEFAULT, resolveApiMode } from "open-sse/config/apiModeConstants.js";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -70,7 +70,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         setRegion(savedRegion);
       }
       if (providerCfg?.apiModes) {
-        setApiMode(connection.providerSpecificData?.apiMode || API_MODE_DEFAULT);
+        // Show the effective mode: a pre-existing connection without apiMode runs as Chat.
+        setApiMode(resolveApiMode(providerCfg.apiModes, connection.providerSpecificData?.apiMode));
       }
       setTestResult(null);
       setValidationResult(null);

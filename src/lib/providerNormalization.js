@@ -1,5 +1,5 @@
 import { AI_PROVIDERS } from "../shared/constants/providers.js";
-import { resolveApiMode } from "../../open-sse/config/apiModeConstants.js";
+import { API_MODE_DEFAULT, resolveApiMode } from "../../open-sse/config/apiModeConstants.js";
 
 /**
  * Detect xAI Grok models by id pattern (grok-*, Grok_*, etc).
@@ -42,6 +42,9 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
     if (baseUrl) next.baseUrl = baseUrl;
   }
 
+  // New connections of an apiModes provider always store an explicit mode (default
+  // auto) — a missing value is reserved for pre-existing connections (legacy chat).
+  if (AI_PROVIDERS[provider]?.apiModes && next.apiMode === undefined) next.apiMode = API_MODE_DEFAULT;
   sanitizeApiMode(provider, next);
 
   return Object.keys(next).length > 0 ? next : null;
