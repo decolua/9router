@@ -1,20 +1,11 @@
 "use client";
 
-import { DEFAULT_LOCALE, LOCALE_COOKIE, normalizeLocale } from "./config";
+import { DEFAULT_LOCALE } from "./config";
+import { getPreferredLocale } from "./preference";
 
 let translationMap = {};
 let currentLocale = DEFAULT_LOCALE;
 let reloadCallbacks = [];
-
-// Read locale from cookie
-function getLocaleFromCookie() {
-  if (typeof document === "undefined") return DEFAULT_LOCALE;
-  const cookie = document.cookie
-    .split(";")
-    .find((c) => c.trim().startsWith(`${LOCALE_COOKIE}=`));
-  const value = cookie ? decodeURIComponent(cookie.split("=")[1]) : DEFAULT_LOCALE;
-  return normalizeLocale(value);
-}
 
 // Load translation map
 async function loadTranslations(locale) {
@@ -131,7 +122,7 @@ function processElement(element) {
 export async function initRuntimeI18n() {
   if (typeof window === "undefined") return;
   
-  currentLocale = getLocaleFromCookie();
+  currentLocale = getPreferredLocale();
   await loadTranslations(currentLocale);
   
   // Process existing DOM
@@ -166,7 +157,7 @@ export async function initRuntimeI18n() {
 
 // Reload translations when locale changes
 export async function reloadTranslations() {
-  currentLocale = getLocaleFromCookie();
+  currentLocale = getPreferredLocale();
   await loadTranslations(currentLocale);
   
   // Notify all registered callbacks
