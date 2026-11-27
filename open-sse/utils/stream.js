@@ -25,7 +25,7 @@ const STREAM_MODE = {
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
 
-// Upper bound on the deferred response.completed wait: a chat->responses stream
+// Upper bound on the deferred completion wait: a translated chat stream
 // that saw finish_reason without usage must not hold the client's terminal event
 // forever when the upstream stalls with no usage trailer and no [DONE].
 const PENDING_COMPLETION_FLUSH_MS = 3000;
@@ -98,6 +98,8 @@ export function createSSEStream(options = {}) {
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
   let finalized = false;
   let completionFlushTimer = null;
+  const directChatToClaude = targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE;
+  const waitsForUsage = directChatToClaude || (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES);
 
   // Lane quirk: upstream streams thinking under the OpenRouter aliases
   // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
@@ -134,12 +136,26 @@ export function createSSEStream(options = {}) {
     }
   };
 
-  // Emit the deferred response.completed now — at [DONE], or when the watchdog
+  const applyFinishUsage = (item) => {
+    const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
+    if (!state.finishReason || !isFinishChunk) return;
+    if (directChatToClaude && state.claudeUsage) return;
+    if (!hasValidUsage(item.usage) && totalContentLength > 0) {
+      const estimated = estimateUsage(body, totalContentLength, sourceFormat);
+      item.usage = filterUsageForFormat(estimated, sourceFormat);
+      state.usage = estimated;
+    } else if (!directChatToClaude && state.usage) {
+      item.usage = filterUsageForFormat(addBufferToUsage(state.usage), sourceFormat);
+    }
+  };
+
+  // Emit the deferred terminal events now — at [DONE], or when the watchdog
   // below gives up on a usage trailer that never arrives.
   const flushPendingCompletion = (controller) => {
     const completed = translateResponse(targetFormat, sourceFormat, null, state);
     for (const item of completed || []) {
       if (item === null || item === undefined) continue;
+      if (directChatToClaude) applyFinishUsage(item);
       const output = formatSSE(item, sourceFormat);
       reqLogger?.appendConvertedChunk?.(output);
       controller.enqueue(sharedEncoder.encode(output));
@@ -337,11 +353,8 @@ export function createSSEStream(options = {}) {
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
         // For other formats: done=true is the [DONE] sentinel, skip
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
-          // A direct Chat-to-Responses translation can defer response.completed
-          // while waiting for a usage trailer. [DONE] ends that opportunity even
-          // if the upstream keeps the HTTP connection open, so finish now.
-          if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES &&
-              state.completionPending && !state.completedSent) {
+          // [DONE] ends the wait for a usage trailer even if HTTP remains open.
+          if (waitsForUsage && state.completionPending && !state.completedSent) {
             flushPendingCompletion(controller);
           }
 
@@ -438,17 +451,7 @@ export function createSSEStream(options = {}) {
               continue; // Skip this empty chunk
             }
 
-            // Inject estimated usage if finish chunk has no valid usage
-            const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
-              const estimated = estimateUsage(body, totalContentLength, sourceFormat);
-              item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
-              state.usage = estimated;
-            } else if (state.finishReason && isFinishChunk && state.usage) {
-              // Add buffer and filter usage for client (but keep original in state.usage for logging)
-              const buffered = addBufferToUsage(state.usage);
-              item.usage = filterUsageForFormat(buffered, sourceFormat);
-            }
+            applyFinishUsage(item);
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
@@ -457,11 +460,12 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        if (directChatToClaude && state.completedSent) finalizeStream();
+
         // The completion deferral can outlive the upstream: a broken chat upstream
         // may stall after finish_reason with no usage trailer and no [DONE], holding
         // the connection open. Bound the wait so the client still gets a terminal event.
-        if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES &&
-            state?.completionPending && !state?.completedSent && !completionFlushTimer) {
+        if (waitsForUsage && state.completionPending && !state.completedSent && !completionFlushTimer) {
           completionFlushTimer = setTimeout(() => {
             completionFlushTimer = null;
             if (state?.completedSent) return;
@@ -538,6 +542,7 @@ export function createSSEStream(options = {}) {
             if (translated?.length > 0) {
               for (const item of translated) {
                 if (item === null || item === undefined) continue;
+                if (directChatToClaude) applyFinishUsage(item);
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
@@ -558,6 +563,7 @@ export function createSSEStream(options = {}) {
         if (flushed?.length > 0) {
           for (const item of flushed) {
             if (item === null || item === undefined) continue;
+            if (directChatToClaude) applyFinishUsage(item);
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
