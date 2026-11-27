@@ -68,47 +68,76 @@ function stopTextBlock(state, results) {
   state.textBlockStarted = false;
 }
 
+// OpenAI usage counts cached input inside prompt_tokens; Claude reports the
+// uncached input plus separate cache counters. Convert instead of filtering so
+// clients that trust the final message_delta see the real cache hit rate (#5596).
+function toClaudeUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const prompt = Number(usage.prompt_tokens ?? usage.input_tokens);
+  const completion = Number(usage.completion_tokens ?? usage.output_tokens);
+  if (!Number.isFinite(prompt) && !Number.isFinite(completion)) return null;
+
+  const cached = Number(
+    usage.cached_tokens ??
+    usage.prompt_tokens_details?.cached_tokens ??
+    usage.cache_read_input_tokens
+  ) || 0;
+  const created = Number(
+    usage.cache_creation_tokens ??
+    usage.prompt_tokens_details?.cache_creation_tokens ??
+    usage.cache_creation_input_tokens
+  ) || 0;
+
+  const result = {
+    // Clamp at zero: a provider that reports cache tokens outside the prompt
+    // count must not produce a negative input_tokens.
+    input_tokens: Math.max(0, (Number.isFinite(prompt) ? prompt : 0) - cached - created),
+    output_tokens: Number.isFinite(completion) ? completion : 0,
+  };
+  if (cached > 0) result.cache_read_input_tokens = cached;
+  if (created > 0) result.cache_creation_input_tokens = created;
+  return result;
+}
+
+// Terminal events for a chat->Claude stream. Emitted from the usage trailer (or
+// from the flush path if the trailer never arrives) so the final message_delta
+// carries the counters the upstream actually reported.
+function claudeTerminalEvents(state) {
+  state.claudeCompletionPending = false;
+  const usage = state.claudeUsage || { input_tokens: 0, output_tokens: 0 };
+  return [
+    {
+      type: "message_delta",
+      delta: { stop_reason: state.claudeStopReason || "end_turn" },
+      usage,
+    },
+    { type: "message_stop" },
+  ];
+}
+
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  if (!chunk) {
+    return state?.claudeCompletionPending ? claudeTerminalEvents(state) : null;
+  }
+
+  // A usage-only trailer has no choices. Capture it before the guard: on the
+  // direct OpenAI->Claude route it is the last chunk and must finish the stream.
+  const claudeUsage = toClaudeUsage(chunk.usage);
+  if (claudeUsage) {
+    state.claudeUsage = claudeUsage;
+    state.usage = claudeUsage;
+  }
+
+  if (!chunk.choices?.length) {
+    return state.claudeCompletionPending && claudeUsage
+      ? claudeTerminalEvents(state)
+      : null;
+  }
 
   const results = [];
   const choice = chunk.choices[0];
   const delta = choice.delta;
-
-  // Track usage from OpenAI chunk if available
-  if (chunk.usage && typeof chunk.usage === "object") {
-    const promptTokens = typeof chunk.usage.prompt_tokens === "number" ? chunk.usage.prompt_tokens : 0;
-    const outputTokens = typeof chunk.usage.completion_tokens === "number" ? chunk.usage.completion_tokens : 0;
-
-    // Extract cache tokens from prompt_tokens_details
-    const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens;
-    const cacheCreationTokens = chunk.usage.prompt_tokens_details?.cache_creation_tokens;
-    const cacheReadTokens = typeof cachedTokens === "number" ? cachedTokens : 0;
-    const cacheCreateTokens = typeof cacheCreationTokens === "number" ? cacheCreationTokens : 0;
-
-    // input_tokens = prompt_tokens - cached_tokens - cache_creation_tokens
-    // Because OpenAI's prompt_tokens includes all prompt-side tokens
-    const inputTokens = promptTokens - cacheReadTokens - cacheCreateTokens;
-
-    state.usage = {
-      input_tokens: inputTokens,
-      output_tokens: outputTokens
-    };
-
-    // Add cache_read_input_tokens if present
-    if (cacheReadTokens > 0) {
-      state.usage.cache_read_input_tokens = cacheReadTokens;
-    }
-
-    // Add cache_creation_input_tokens if present
-    if (cacheCreateTokens > 0) {
-      state.usage.cache_creation_input_tokens = cacheCreateTokens;
-    }
-
-    // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
-    // No need to add separately as Claude expects total output_tokens
-  }
 
   // First chunk - ALWAYS send message_start first
   if (!state.messageStartSent) {
@@ -247,15 +276,19 @@ export function openaiToClaudeResponse(chunk, state) {
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
+    state.claudeStopReason = convertFinishReason(choice.finish_reason);
 
-    // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage
-    });
-    results.push({ type: "message_stop" });
+    // OpenAI sends the real usage in a trailer with empty choices AFTER the
+    // finish chunk. On the direct upstream->Claude route, hold the terminal
+    // until that trailer (or stream flush) so it carries the cache counters.
+    // Pivot routes cannot rely on the flush reaching this translator, so keep
+    // emitting immediately there (same guard as openai->responses).
+    const flushReachesUs = state.targetFormat === FORMATS.OPENAI;
+    if (!flushReachesUs || state.claudeUsage) {
+      results.push(...claudeTerminalEvents(state));
+    } else {
+      state.claudeCompletionPending = true;
+    }
   }
 
   return results.length > 0 ? results : null;
