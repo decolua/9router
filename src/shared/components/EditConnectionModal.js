@@ -8,6 +8,8 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import AzureDeploymentPoolFields from "@/shared/components/AzureDeploymentPoolFields";
+import { getAzureDeploymentPool, parseAzureDeploymentNames } from "open-sse/providers/azureDeployment.js";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -19,8 +21,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     azureEndpoint: "",
     apiVersion: "2024-10-01-preview",
     deployment: "",
+    deploymentMode: "fixed",
+    deploymentNames: "",
     organization: "",
   });
+  const azurePool = parseAzureDeploymentNames(azureData.deploymentNames);
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
@@ -44,6 +49,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           azureEndpoint: connection.providerSpecificData.azureEndpoint || "",
           apiVersion: connection.providerSpecificData.apiVersion || "2024-10-01-preview",
           deployment: connection.providerSpecificData.deployment || "",
+          deploymentMode: connection.providerSpecificData.deploymentMode === "pool" ? "pool" : "fixed",
+          deploymentNames: getAzureDeploymentPool(connection.providerSpecificData).join(", "),
           organization: connection.providerSpecificData.organization || "",
         });
       }
@@ -182,9 +189,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       // Add Azure-specific data if this is an Azure connection
       if (isAzure) {
         updates.providerSpecificData = {
+          ...connection.providerSpecificData,
           azureEndpoint: azureData.azureEndpoint,
           apiVersion: azureData.apiVersion,
           deployment: azureData.deployment,
+          deploymentMode: azureData.deploymentMode,
+          ...(azureData.deploymentMode === "pool" ? { enabledModels: azurePool } : {}),
+          ...(azureData.deploymentMode === "fixed" && connection.providerSpecificData?.deploymentMode === "pool" ? { enabledModels: [] } : {}),
           organization: azureData.organization,
         };
       }
@@ -280,6 +291,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 placeholder="2024-10-01-preview"
                 hint="Azure OpenAI API version to use"
               />
+              <AzureDeploymentPoolFields data={azureData} onChange={setAzureData} />
               <Input
                 label="Organization"
                 value={azureData.organization}
@@ -361,7 +373,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         )}
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || (isAzure && azureData.deploymentMode === "pool" && !azurePool.length)}>{saving ? "Saving..." : "Save"}</Button>
           <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
         </div>
       </div>

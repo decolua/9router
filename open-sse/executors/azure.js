@@ -14,13 +14,14 @@ export class AzureExecutor extends DefaultExecutor {
       || process.env.AZURE_API_VERSION
       || "2024-10-01-preview";
 
-    const deployment = credentials?.providerSpecificData?.deployment
+    const data = credentials?.providerSpecificData;
+    const deployment = (data?.deploymentMode === "pool" && model) || data?.deployment
       || model
       || process.env.AZURE_DEPLOYMENT
       || "gpt-4";
 
     const endpoint = azureEndpoint.replace(/\/$/, "");
-    return `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+    return `${endpoint}/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${apiVersion}`;
   }
 
   buildHeaders(credentials, stream = true) {

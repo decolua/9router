@@ -2,6 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { getAzureDeploymentPool } from "open-sse/providers/azureDeployment.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
@@ -82,11 +83,19 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Antigravity quota cache is lazy: only populated after that account returns 409/429.
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
+    const isAzureDeployment = providerId === "azure" && model;
+    const azurePoolOwnsModel = isAzureDeployment && connections.some((conn) =>
+      getAzureDeploymentPool(conn.providerSpecificData).includes(model));
 
     // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (isAzureDeployment) {
+        const data = c.providerSpecificData;
+        if (data?.deploymentMode === "pool" && !getAzureDeploymentPool(data).includes(model)) return false;
+        if (data?.deploymentMode !== "pool" && azurePoolOwnsModel && data?.deployment !== model) return false;
+      }
       const enabled = c.providerSpecificData?.enabledModels;
       if (providerId === "codex" && Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) return false;
       // Antigravity: skip if live quota exhausted for this model
