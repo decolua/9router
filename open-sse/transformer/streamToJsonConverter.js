@@ -1,3 +1,5 @@
+import { getResponsesEventError } from "../utils/error.js";
+
 /**
  * Stream-to-JSON Converter
  * Converts Responses API SSE stream to single JSON response
@@ -12,15 +14,22 @@ function processSSEMessage(msg, state) {
 
   const eventMatch = msg.match(/^event:\s*(.+)$/m);
   const dataMatch = msg.match(/^data:\s*(.+)$/m);
-  if (!eventMatch || !dataMatch) return;
+  if (!dataMatch) return;
 
-  const eventType = eventMatch[1].trim();
   const dataStr = dataMatch[1].trim();
   if (dataStr === "[DONE]") return;
 
   let parsed;
   try { parsed = JSON.parse(dataStr); }
   catch { return; }
+  if (!parsed || typeof parsed !== "object") return;
+  const eventType = eventMatch?.[1].trim() || parsed.type;
+  const error = getResponsesEventError(eventType, parsed);
+  if (error) {
+    state.status = "failed";
+    state.error ??= error;
+    return;
+  }
 
   if (eventType === "response.created") {
     state.responseId = parsed.response?.id || state.responseId;
@@ -28,14 +37,12 @@ function processSSEMessage(msg, state) {
   } else if (eventType === "response.output_item.done") {
     state.items.set(parsed.output_index ?? 0, parsed.item);
   } else if (eventType === "response.completed" || eventType === "response.done") {
-    state.status = "completed";
+    if (!state.error) state.status = "completed";
     if (parsed.response?.usage) {
       state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
       state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
       state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
     }
-  } else if (eventType === "response.failed") {
-    state.status = "failed";
   }
 }
 
@@ -69,7 +76,7 @@ export async function convertResponsesStreamToJson(stream) {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const messages = buffer.split("\n\n");
+      const messages = buffer.split(/\r?\n\r?\n/);
       buffer = messages.pop() || "";
 
       for (const msg of messages) {
@@ -97,6 +104,7 @@ export async function convertResponsesStreamToJson(stream) {
     object: "response",
     created_at: state.created,
     status: state.status || "completed",
+    ...(state.error ? { error: state.error } : {}),
     output,
     usage: state.usage
   };

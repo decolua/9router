@@ -4,6 +4,7 @@ import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 import { extractTextContent } from "../formats/gemini.js";
+import { claudeResponsesError } from "../../utils/error.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -70,6 +71,11 @@ function stopTextBlock(state, results) {
 
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
+  if (state.error) {
+    if (state.errorEventSent) return null;
+    state.errorEventSent = true;
+    return [{ type: "error", error: claudeResponsesError(state.error).error }];
+  }
   if (!chunk || !chunk.choices?.[0]) return null;
 
   const results = [];

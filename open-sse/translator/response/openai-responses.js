@@ -4,6 +4,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { getResponsesEventError } from "../../utils/error.js";
 import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
@@ -674,7 +675,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     // Avoid emitting duplicate errors (error + response.failed arrive back-to-back)
     if (state.finishReasonSent) return null;
 
-    const error = data.error || data.response?.error;
+    const error = getResponsesEventError(eventType, data);
     if (error) {
       state.error = error;
       state.finishReasonSent = true;

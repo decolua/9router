@@ -1,4 +1,29 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
+
+const RESPONSES_INVALID_REQUEST_CODES = new Set([
+  "context_length_exceeded", "insufficient_quota", "credit_balance_exhausted",
+  "organization_spend_limit_exceeded", "project_spend_limit_exceeded",
+  "usage_not_included", "cyber_policy", "bio_policy", "misalignment_policy_violation", "invalid_prompt",
+]);
+
+export function getResponsesEventError(event, data) {
+  if (event !== "error" && event !== "response.failed") return null;
+  return data.error || data.response?.error || {
+    code: data.code,
+    message: data.message || "Upstream Responses request failed",
+  };
+}
+
+export function claudeResponsesError(error) {
+  const message = (typeof error === "string" ? error : error?.message) || "Upstream Responses request failed";
+  const code = error?.code || error?.type;
+  if (RESPONSES_INVALID_REQUEST_CODES.has(code) || code === "invalid_request_error") {
+    return { status: HTTP_STATUS.BAD_REQUEST, error: { type: "invalid_request_error", message } };
+  }
+  const type = /overload|at.capacity|service_unavailable/i.test(`${code || ""} ${message}`) ? "overloaded_error" : "api_error";
+  return { status: HTTP_STATUS.BAD_GATEWAY, error: { type, message } };
+}
 
 /**
  * Build OpenAI-compatible error response body

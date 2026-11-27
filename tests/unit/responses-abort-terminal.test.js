@@ -105,7 +105,7 @@ describe("buildStreamErrorBytes", () => {
 
     expect(out).toContain("event: error\n");
     expect(out).not.toContain("[DONE]");
-    expect(jsonOf(out)).toMatchObject({ type: "error", error: { message: "stream stall timeout" } });
+    expect(jsonOf(out)).toEqual({ type: "error", error: { type: "api_error", message: "stream stall timeout" } });
   });
 });
 

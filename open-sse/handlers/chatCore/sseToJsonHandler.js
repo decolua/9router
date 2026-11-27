@@ -1,6 +1,6 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
-import { createErrorResult } from "../../utils/error.js";
+import { claudeResponsesError, createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
@@ -207,6 +207,11 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      if (sourceFormat === FORMATS.CLAUDE && jsonResponse.status === "failed") {
+        const { error, status } = claudeResponsesError(jsonResponse.error);
+        appendLog({ status: `FAILED ${status}` });
+        return createErrorResult(status, error.message);
+      }
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
