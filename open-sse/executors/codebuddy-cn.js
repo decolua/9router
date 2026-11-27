@@ -1,4 +1,5 @@
 import { DefaultExecutor } from "./default.js";
+import { normalizeCodeBuddyStream } from "../utils/codebuddyStream.js";
 
 /**
  * CodeBuddyExecutor — talks to https://copilot.tencent.com/v2/chat/completions
@@ -12,6 +13,21 @@ import { DefaultExecutor } from "./default.js";
 export class CodeBuddyExecutor extends DefaultExecutor {
   constructor() {
     super("codebuddy-cn");
+  }
+
+  async execute(args) {
+    const result = await super.execute(args);
+    const response = result?.response;
+    if (!response?.ok || !response.body || !response.headers.get("content-type")?.includes("text/event-stream")) return result;
+    const headers = new Headers(response.headers);
+    headers.delete("content-length");
+    headers.delete("content-encoding");
+    return {
+      ...result,
+      response: new Response(normalizeCodeBuddyStream(response.body), {
+        status: response.status, statusText: response.statusText, headers,
+      }),
+    };
   }
 
   transformRequest(model, body, stream, credentials) {
