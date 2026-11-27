@@ -47,6 +47,21 @@ function groupByProviderStable(connections) {
   return Array.from(seen.values()).flat();
 }
 
+export function getEarliestQuotaResetTime(quotas = []) {
+  return quotas.reduce((earliest, { resetAt }) => {
+    const time = resetAt ? new Date(resetAt).getTime() : NaN;
+    return Number.isFinite(time) ? Math.min(earliest, time) : earliest;
+  }, Number.POSITIVE_INFINITY);
+}
+
+export function getQuotaAvailability(quotas = []) {
+  const measured = quotas.filter((quota) => !quota.unlimited && quota.total > 0 && Number.isFinite(quota.used));
+  if (measured.length === 0) return "unknown";
+  return measured.some(({ used, total }) => calculatePercentage(used, total) <= DEPLETED_QUOTA_THRESHOLD)
+    ? "depleted"
+    : "available";
+}
+
 export function sortVisibleConnections(
   connections,
   quotaData,
@@ -71,22 +86,11 @@ export function sortVisibleConnections(
 
   if (!expiringFirst) return groupByProviderStable(connections);
 
-  const getEarliestResetTime = (connection) => {
-    const resetTimes = (quotaData[connection.id]?.quotas || [])
-      .map((quota) =>
-        quota.resetAt
-          ? new Date(quota.resetAt).getTime()
-          : Number.POSITIVE_INFINITY,
-      )
-      .filter((time) => Number.isFinite(time));
-    return resetTimes.length > 0
-      ? Math.min(...resetTimes)
-      : Number.POSITIVE_INFINITY;
-  };
-
   return [...connections].sort((a, b) => {
-    const expiryDiff = getEarliestResetTime(a) - getEarliestResetTime(b);
-    if (expiryDiff !== 0) return expiryDiff;
+    const aReset = getEarliestQuotaResetTime(quotaData[a.id]?.quotas);
+    const bReset = getEarliestQuotaResetTime(quotaData[b.id]?.quotas);
+    if (aReset !== bReset) return aReset - bReset;
+    if (!Number.isFinite(aReset)) return 0;
     return (
       (a.provider || "").localeCompare(b.provider || "") ||
       (getConnectionLabel(a) || "").localeCompare(getConnectionLabel(b) || "")

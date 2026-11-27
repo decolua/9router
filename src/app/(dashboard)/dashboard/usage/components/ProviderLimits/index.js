@@ -8,12 +8,13 @@ import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
 import {
   parseQuotaData,
-  calculatePercentage,
   filterQuotasByVisibility,
   getHiddenQuotaRows,
   getQuotaVisibilityKey,
   getConnectionLabel,
   getConnectionQuotaRemaining,
+  getEarliestQuotaResetTime,
+  getQuotaAvailability,
   sortVisibleConnections,
   buildLoadingState,
   filterQuotaStateByConnections,
@@ -31,7 +32,6 @@ import {
   QUOTA_CACHE_KEY,
   REFRESH_INTERVAL_MS,
   CLAUDE_REFRESH_INTERVAL_MS,
-  DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
   CONNECTIONS_PAGE_SIZE,
   ACCOUNT_PAGE_SIZE_OPTIONS,
@@ -791,16 +791,6 @@ export default function ProviderLimits() {
     [connections, quotaData, expiringFirst, providerFilter, quotaSortMode],
   );
 
-  // Connection is depleted when any quota entry hit the threshold
-  const isConnectionDepleted = (conn) => {
-    const quotas = quotaData[conn.id]?.quotas;
-    if (!quotas?.length) return false;
-    return quotas.some((q) => {
-      if (!q.total || q.total <= 0) return false;
-      return calculatePercentage(q.used, q.total) <= DEPLETED_QUOTA_THRESHOLD;
-    });
-  };
-
   const bulkSetActive = useCallback(
     async (targetIds, isActive) => {
       if (!targetIds.length || bulkToggling) return;
@@ -825,19 +815,13 @@ export default function ProviderLimits() {
     [bulkToggling, fetchConnections, page],
   );
 
-  const handleDisableDepleted = () => {
-    const ids = sortedConnections
-      .filter((c) => (c.isActive ?? true) && isConnectionDepleted(c))
-      .map((c) => c.id);
-    bulkSetActive(ids, false);
-  };
-
-  const handleEnableAvailable = () => {
-    const ids = sortedConnections
-      .filter((c) => !(c.isActive ?? true) && !isConnectionDepleted(c))
-      .map((c) => c.id);
-    bulkSetActive(ids, true);
-  };
+  const depletedIds = sortedConnections
+    .filter((conn) => conn.isActive !== false && getQuotaAvailability(quotaData[conn.id]?.quotas) === "depleted")
+    .map((conn) => conn.id);
+  const availableIds = sortedConnections
+    .filter((conn) => conn.isActive === false && getQuotaAvailability(quotaData[conn.id]?.quotas) === "available")
+    .map((conn) => conn.id);
+  const hasQuotaReset = sortedConnections.some((conn) => Number.isFinite(getEarliestQuotaResetTime(quotaData[conn.id]?.quotas)));
 
   const selectedProviderLabel =
     providerFilter === "all" ? "All providers" : providerLabel(providerFilter);
@@ -1030,6 +1014,7 @@ export default function ProviderLimits() {
           <button
             type="button"
             onClick={() => setExpiringFirst((prev) => !prev)}
+            disabled={!expiringFirst && !hasQuotaReset}
             aria-pressed={expiringFirst}
             className={`flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors ${expiringFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
             title="Sort accounts by earliest quota reset time"
@@ -1043,8 +1028,8 @@ export default function ProviderLimits() {
           {/* Bulk: disable depleted */}
           <button
             type="button"
-            onClick={handleDisableDepleted}
-            disabled={bulkToggling}
+            onClick={() => bulkSetActive(depletedIds, false)}
+            disabled={bulkToggling || !depletedIds.length}
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-red-500/30 px-2 text-xs text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-50"
             title="Disable connections with depleted quota on the current page"
           >
@@ -1055,8 +1040,8 @@ export default function ProviderLimits() {
           {/* Bulk: enable available */}
           <button
             type="button"
-            onClick={handleEnableAvailable}
-            disabled={bulkToggling}
+            onClick={() => bulkSetActive(availableIds, true)}
+            disabled={bulkToggling || !availableIds.length}
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-emerald-500/30 px-2 text-xs text-emerald-500 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
             title="Enable connections that still have quota on the current page"
           >
@@ -1369,11 +1354,7 @@ export default function ProviderLimits() {
                     </span>
                     <p className="mt-1.5 text-xs text-text-muted">{error}</p>
                   </div>
-                ) : quota?.message ? (
-                  <div className="text-center py-5">
-                    <p className="text-xs text-text-muted">{quota.message}</p>
-                  </div>
-                ) : (
+                ) : !quota?.message || rawQuotas.length > 0 ? (
                   <QuotaTable
                     quotas={visibleQuotas}
                     compact
@@ -1383,9 +1364,9 @@ export default function ProviderLimits() {
                     }
                     onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
                   />
-                )}
+                ) : null}
                 {quota?.message && !error && !isLoading && (
-                  <p className="mt-2 px-1 text-[10px] leading-relaxed text-text-muted">
+                  <p className={rawQuotas.length > 0 ? "mt-2 px-1 text-[10px] leading-relaxed text-text-muted" : "py-5 text-center text-xs text-text-muted"}>
                     {quota.message}
                   </p>
                 )}

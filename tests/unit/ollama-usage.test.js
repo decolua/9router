@@ -10,7 +10,12 @@ import {
   USAGE_SUPPORTED_PROVIDERS,
   USAGE_APIKEY_PROVIDERS,
 } from "../../src/shared/constants/providers.js";
-import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import {
+  getEarliestQuotaResetTime,
+  getQuotaAvailability,
+  parseQuotaData,
+  sortVisibleConnections,
+} from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
 
 const USAGE_URL = "https://ollama.com/api/usage";
 const ME_URL = "https://ollama.com/api/me";
@@ -205,7 +210,8 @@ describe("getUsageForProvider(ollama)", () => {
   it("reports no limits when no known window is present", async () => {
     proxyAwareFetch
       .mockResolvedValueOnce(jsonResponse({ activity: {}, limits: {} }))
-      .mockResolvedValueOnce(jsonResponse({ Plan: "free" }));
+      .mockResolvedValueOnce(jsonResponse({ Plan: "free" }))
+      .mockResolvedValueOnce(jsonResponse({}));
 
     const usage = await getUsageForProvider({
       provider: "ollama",
@@ -213,8 +219,11 @@ describe("getUsageForProvider(ollama)", () => {
       providerSpecificData: {},
     });
 
-    expect(usage.message).toMatch(/no usage limits/i);
+    expect(usage.message).toBe("Ollama Cloud did not report quota data for this connection.");
     expect(usage.quotas).toEqual({});
+    const rows = parseQuotaData("ollama", usage);
+    expect(getQuotaAvailability(rows)).toBe("unknown");
+    expect(getEarliestQuotaResetTime(rows)).toBe(Infinity);
   });
 
   it("surfaces invalid key message on 401", async () => {
@@ -327,6 +336,25 @@ describe("getUsageForProvider(ollama)", () => {
 });
 
 describe("parseQuotaData(ollama)", () => {
+  it("separates real exhaustion from missing rows and leaves undated accounts in their original order", () => {
+    const unknown = { id: "unknown", provider: "ollama", name: "Z" };
+    const anotherUnknown = { id: "other", provider: "ollama", name: "A" };
+    const depleted = { id: "depleted", provider: "ollama", name: "B" };
+    const available = { id: "available", provider: "ollama", name: "C" };
+    const quotas = {
+      unknown: { quotas: [] },
+      other: { quotas: [{ used: 0, total: 0 }] },
+      depleted: { quotas: [{ used: 100, total: 100, resetAt: "2026-11-28T00:00:00Z" }] },
+      available: { quotas: [{ used: 0, total: 100, resetAt: "2026-11-27T00:00:00Z" }] },
+    };
+
+    expect(getQuotaAvailability(quotas.other.quotas)).toBe("unknown");
+    expect(getQuotaAvailability(quotas.depleted.quotas)).toBe("depleted");
+    expect(getQuotaAvailability(quotas.available.quotas)).toBe("available");
+    expect(sortVisibleConnections([unknown, depleted, anotherUnknown, available], quotas, true, "ollama", "default"))
+      .toEqual([available, depleted, unknown, anotherUnknown]);
+  });
+
   it("forwards remainingPercentage for dashboard bars", () => {
     const rows = parseQuotaData("ollama", {
       plan: "Max",

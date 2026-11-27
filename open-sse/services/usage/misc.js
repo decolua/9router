@@ -207,7 +207,7 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
     if (Object.keys(quotas).length === 0) {
       return {
         plan,
-        message: "Ollama Cloud connected. No usage limits reported.",
+        message: "Ollama Cloud did not report quota data for this connection.",
         quotas: {},
       };
     }
