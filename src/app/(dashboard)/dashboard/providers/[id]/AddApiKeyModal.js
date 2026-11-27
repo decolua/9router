@@ -5,6 +5,8 @@ import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
+import AzureDeploymentPoolFields from "@/shared/components/AzureDeploymentPoolFields";
+import { parseAzureDeploymentNames } from "open-sse/providers/azureDeployment.js";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -42,8 +44,11 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     azureEndpoint: "",
     apiVersion: "2024-10-01-preview",
     deployment: "",
+    deploymentMode: "fixed",
+    deploymentNames: "",
     organization: "",
   });
+  const azurePool = parseAzureDeploymentNames(azureData.deploymentNames);
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
   const [bedrockData, setBedrockData] = useState({
     profile: "",
@@ -98,6 +103,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         azureEndpoint: azureData.azureEndpoint,
         apiVersion: azureData.apiVersion,
         deployment: azureData.deployment,
+        deploymentMode: azureData.deploymentMode,
+        ...(azureData.deploymentMode === "pool" ? { enabledModels: azurePool } : {}),
         organization: azureData.organization,
       };
     }
@@ -475,6 +482,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 onChange={(e) => setAzureData({ ...azureData, apiVersion: e.target.value })}
                 placeholder="2024-10-01-preview"
               />
+              <AzureDeploymentPoolFields data={azureData} onChange={setAzureData} />
               <Input
                 label="Organization"
                 value={azureData.organization}
@@ -514,7 +522,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !apiKeySatisfied())) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !apiKeySatisfied())) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization || (azureData.deploymentMode === "pool" && !azurePool.length))) || (isCloudflareAi && !cloudflareData.accountId)}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>

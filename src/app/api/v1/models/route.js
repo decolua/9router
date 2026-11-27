@@ -23,6 +23,7 @@ import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
+import { getAzureDeploymentPool } from "open-sse/providers/azureDeployment.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -499,7 +500,12 @@ export async function buildModelsList(kindFilter, options = {}) {
         || staticAlias
       ).trim();
       const providerModels = PROVIDER_MODELS[staticAlias] || [];
-      const enabledModels = conn?.providerSpecificData?.enabledModels;
+      let enabledModels = conn?.providerSpecificData?.enabledModels;
+      if (providerId === "azure") {
+        const pooledModels = connections.filter((connection) => connection.provider === providerId)
+          .flatMap((connection) => getAzureDeploymentPool(connection.providerSpecificData));
+        enabledModels = [...(Array.isArray(enabledModels) ? enabledModels : []), ...pooledModels];
+      }
       const hasExplicitEnabledModels =
         Array.isArray(enabledModels) && enabledModels.length > 0;
       const isCompatibleProvider =
