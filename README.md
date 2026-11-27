@@ -1311,6 +1311,14 @@ docker run -d --name 9router -p 20128:20128 \
 - `PORT=20128`
 - `HOSTNAME=0.0.0.0`
 
+For browser-based Codex sign-in with Docker bridge networking, add these options to `docker run` before the image name:
+
+```bash
+-e CODEX_OAUTH_CALLBACK_BIND_ALL=true -p 127.0.0.1:1455:1455
+```
+
+Start the sign-in from a browser on the Docker host. The callback listener binds inside the container while the published port is scoped to the host loopback interface.
+
 **Useful commands:**
 
 ```bash

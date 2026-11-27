@@ -199,6 +199,11 @@ export function startCodexProxy(appPort) {
     }
 
     const server = http.createServer(async (req, res) => {
+      if (!isLoopbackOrigin(req.headers.origin)) {
+        res.writeHead(403);
+        res.end("Forbidden");
+        return;
+      }
       const url = new URL(req.url, "http://localhost");
 
       if (url.pathname !== "/callback" && url.pathname !== "/auth/callback") {
@@ -265,7 +270,8 @@ export function startCodexProxy(appPort) {
       stopCodexProxy();
     });
 
-    server.listen(CODEX_PORT, "127.0.0.1", () => {
+    const host = process.env.CODEX_OAUTH_CALLBACK_BIND_ALL === "true" ? "0.0.0.0" : "127.0.0.1";
+    server.listen(CODEX_PORT, host, () => {
       codexProxyServer = server;
       codexProxyTimeout = setTimeout(() => stopCodexProxy(), CODEX_PROXY_TIMEOUT_MS);
       resolve({ success: true });
