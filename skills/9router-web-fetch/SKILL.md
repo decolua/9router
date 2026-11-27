@@ -1,6 +1,6 @@
 ---
 name: 9router-web-fetch
-description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using Ollama Cloud / Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
+description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using Ollama Cloud / Firecrawl / Jina Reader / Tavily Extract / Exa Contents / Keenable. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
 ---
 
 # 9Router — Web Fetch
@@ -61,6 +61,10 @@ curl -X POST $NINEROUTER_URL/v1/web/fetch \
   -H "Content-Type: application/json" \
   -d '{"model":"tavily","url":"https://example.com","format":"markdown","max_characters":0}'
 ```
+
+### Keenable
+
+Configure a Keenable API key in Dashboard > Providers. Select `keenable/fetch` for markdown output.
 
 ### Ollama Cloud
 

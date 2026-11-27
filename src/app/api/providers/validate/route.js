@@ -41,13 +41,15 @@ async function probeWebProvider(provider, apiKey) {
     case "api_key":             url += `?api_key=${encodeURIComponent(apiKey)}&q=ping&engine=google`; break; // searchapi
   }
 
-  // Minimal body for POST endpoints; GET sends nothing
-  if (cfg.method === "POST") {
+  const method = cfg.validateMethod || cfg.method;
+  if (method === "POST") {
     body = JSON.stringify({ query: "ping", q: "ping", url: "https://example.com" });
   }
 
-  const res = await fetch(url, { method: cfg.method, headers, body, signal: AbortSignal.timeout(8000) });
-  return res.status !== 401 && res.status !== 403;
+  const res = await fetch(url, { method, headers, body, signal: AbortSignal.timeout(8000),
+    ...(provider === "keenable" ? { redirect: "error" } : {}),
+  });
+  return provider === "keenable" ? res.ok : res.status !== 401 && res.status !== 403;
 }
 
 // Probe a media provider (tts/embedding/stt/image/video) using *Config.

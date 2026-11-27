@@ -447,6 +447,27 @@ function buildGlmSearchRequest(config, params) {
 
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
+function buildKeenableRequest(config, params) {
+  const { includes, excludes } = parseDomainFilter(params.domainFilter);
+  if (includes.length > 1) throw new Error("Keenable supports only one include domain");
+  if (params.offset) throw new Error("Keenable does not support offset");
+  const publishedAfter = { day: "1d", week: "7d", month: "30d", year: "365d" }[params.timeRange];
+  return {
+    url: config.baseUrl,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": params.token },
+      body: JSON.stringify({
+        query: params.query,
+        max_results: params.maxResults,
+        published_after: publishedAfter,
+        site: includes[0],
+        ...(excludes.length ? { exclude_domains: excludes } : {}),
+      }),
+    },
+  };
+}
+
 const BUILDERS = {
   "serper": buildSerperRequest,
   "brave-search": buildBraveRequest,
@@ -460,6 +481,7 @@ const BUILDERS = {
   "searxng": buildSearxngRequest,
   "xquik": buildXquikRequest,
   "tinyfish": buildTinyfishRequest,
+  "keenable": buildKeenableRequest,
   "ollama-search": buildOllamaSearchRequest,
   "glm": buildGlmSearchRequest,
 };

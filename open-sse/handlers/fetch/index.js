@@ -139,6 +139,9 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
         baseUrl: providerConfig?.baseUrl,
       });
     }
+    if (provider === "keenable") {
+      return await runKeenable({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, baseUrl: providerConfig?.baseUrl });
+    }
     if (provider === "tinyfish") {
       return await runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, baseUrl: providerConfig?.baseUrl });
     }
@@ -147,6 +150,42 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
     log?.("fetch handler error:", err?.message || err);
     return { success: false, status: 502, error: err?.message || "Internal fetch error" };
   }
+}
+
+async function runKeenable({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, baseUrl }) {
+  if (!apiKey) return { success: false, status: 401, error: "No credentials for provider: keenable" };
+
+  const upstreamStart = Date.now();
+  const request = await tryFetch(baseUrl, {
+    method: "POST",
+    redirect: "error",
+    headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+    body: JSON.stringify({
+      urls: [url],
+      ...(Number.isInteger(maxCharacters) && maxCharacters > 0 ? { content: { max_chars: maxCharacters } } : {}),
+    }),
+  }, timeoutMs);
+  if (!request.ok) return { success: false, status: request.timeout ? 504 : 502, error: request.error };
+
+  const upstreamMs = Date.now() - upstreamStart;
+  const { json } = await readJsonOrText(request.res);
+  if (!request.res.ok) return {
+    success: false, status: request.res.status, error: json?.message || json?.error?.message || `Keenable error: ${request.res.status}`,
+  };
+  const page = json?.results?.[0];
+  if (page?.error) return {
+    success: false, status: page.error.status || 502, error: page.error.message || "Keenable could not fetch the page",
+  };
+  if (typeof page?.content !== "string") return { success: false, status: 502, error: "Keenable returned no extractable content" };
+
+  return {
+    success: true,
+    data: {
+      ...buildData({ provider: "keenable", url: page.url || url, title: page.title, format: fmt,
+        text: truncate(page.content, maxCharacters), costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs }),
+      metadata: { author: page.author || null, published_at: page.published_at || null, language: null },
+    },
+  };
 }
 
 async function runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, baseUrl }) {
