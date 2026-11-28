@@ -8,8 +8,6 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
-import ApiModeSelector from "@/shared/components/ApiModeSelector";
-import { API_MODE_DEFAULT, resolveApiMode } from "open-sse/config/apiModeConstants.js";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -27,7 +25,6 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
   const [region, setRegion] = useState("");
-  const [apiMode, setApiMode] = useState(API_MODE_DEFAULT);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -69,10 +66,6 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         const savedRegion = connection.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg.regions[0]?.id || "";
         setRegion(savedRegion);
       }
-      if (providerCfg?.apiModes) {
-        // Show the effective mode: a pre-existing connection without apiMode runs as Chat.
-        setApiMode(resolveApiMode(providerCfg.apiModes, connection.providerSpecificData?.apiMode));
-      }
       setTestResult(null);
       setValidationResult(null);
     }
@@ -86,7 +79,6 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
-  const providerApiModes = connection ? (AI_PROVIDERS?.[connection.provider]?.apiModes || null) : null;
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
@@ -205,10 +197,6 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       // Persist updated region for region-aware providers
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
-      }
-      // Server merges into the stored providerSpecificData, so only the field changes.
-      if (providerApiModes) {
-        updates.providerSpecificData = { ...(updates.providerSpecificData || {}), apiMode };
       }
       
       await onSave(updates);
@@ -357,10 +345,6 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             onChange={(e) => setRegion(e.target.value)}
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
           />
-        )}
-
-        {providerApiModes && (
-          <ApiModeSelector modes={providerApiModes} value={apiMode} onChange={setApiMode} />
         )}
 
         {!isCompatible && !isAzure && !isCloudflareAi && (

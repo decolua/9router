@@ -1,7 +1,6 @@
 import { PROVIDERS } from "../config/providers.js";
 import { OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 import { ROLE } from "../translator/schema/roles.js";
-import { API_MODE_FORMAT, resolveApiMode } from "../config/apiModeConstants.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 const OPENAI_COMPATIBLE_DEFAULTS = {
@@ -152,16 +151,6 @@ export function resolveTransport(provider, sourceFormat) {
   const transports = config?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
   return transports.find(t => t.format === sourceFormat) || null;
-}
-
-// Per-connection forced endpoint (providerSpecificData.apiMode = "chat" | "responses")
-// for providers declaring `apiModes` + matching transports. Returns null for "auto",
-// undeclared providers, or a mode without a transport — the caller then keeps its
-// sourceFormat/model-family routing.
-export function resolveApiModeTransport(provider, credentials = null) {
-  const mode = resolveApiMode(PROVIDERS[provider]?.apiModes, credentials?.providerSpecificData?.apiMode);
-  const format = mode ? API_MODE_FORMAT[mode] : null;
-  return format ? resolveTransport(provider, format) : null;
 }
 
 // Check if last message is from user

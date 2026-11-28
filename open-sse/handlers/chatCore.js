@@ -1,4 +1,4 @@
-import { detectFormat, getTargetFormat, resolveTransport, resolveApiModeTransport } from "../services/provider.js";
+import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
@@ -101,12 +101,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // translated to the Responses body (`input`) yet POSTed to the default Chat
   // Completions URL, and upstream rejects it: "unknown parameter `input`".
   const modelTargetTransport = modelTargetFormat ? resolveTransport(provider, modelTargetFormat) : null;
-  // A connection that pins its endpoint (apiMode "chat" | "responses") overrides both:
-  // the user chose the upstream API explicitly, the translator bridges the client format.
-  const apiModeTransport = resolveApiModeTransport(provider, credentials);
-  const useTransport = apiModeTransport || ((!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat))
+  const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat))
     ? runtimeTransport
-    : modelTargetTransport);
+    : modelTargetTransport;
   // A source-format-matched endpoint keeps the request lossless. Prefer it
   // over a model-level targetFormat, which is only the fallback for clients
   // whose wire format has no supported transport (for example MiniMax-M3:

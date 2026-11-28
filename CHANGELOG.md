@@ -1,8 +1,3 @@
-# Unreleased
-
-## Features
-- **OpenAI**: per-connection API endpoint selector **Auto / Chat / Responses** (Add API Key + Edit Connection, stored as `providerSpecificData.apiMode`, shown as a badge when pinned). Auto keeps Responses clients native on `/v1/responses`, routes GPT-5.6+ / GPT-6 (registry `modelFamilies`) to `/v1/responses` so function tools + reasoning work, and leaves everything else on `/v1/chat/completions`; Chat/Responses pin the endpoint and translate the client format. New connections default to Auto; connections created before this change (no `apiMode`) keep running as Chat until switched. `apiMode` is validated server-side (unknown values fall back to `auto`). Adds `gpt-6-astra`, `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-luna`. Ports the idea of decolua/9router#2547 (fixes #2540, #4031, #5262 upstream).
-
 # v0.5.123 (2026-11-22)
 
 ## Features

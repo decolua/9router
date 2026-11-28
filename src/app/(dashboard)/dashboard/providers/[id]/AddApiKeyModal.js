@@ -5,8 +5,6 @@ import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
-import ApiModeSelector from "@/shared/components/ApiModeSelector";
-import { API_MODE_DEFAULT } from "open-sse/config/apiModeConstants.js";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -31,8 +29,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const apiKeyOptionalWith = AI_PROVIDERS?.[provider]?.apiKeyOptionalWith || null;
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
-  // Registry-declared per-connection endpoint selector (e.g. openai: Auto / Chat / Responses).
-  const providerApiModes = AI_PROVIDERS?.[provider]?.apiModes || null;
 
   const [formData, setFormData] = useState({
     name: "",
@@ -56,7 +52,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     sessionToken: "",
   });
   const [region, setRegion] = useState(defaultRegion);
-  const [apiMode, setApiMode] = useState(API_MODE_DEFAULT);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -95,12 +90,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
 
   const buildProviderSpecificData = () => {
-    const base = buildBaseProviderSpecificData();
-    if (!providerApiModes) return base;
-    return { ...(base || {}), apiMode };
-  };
-
-  const buildBaseProviderSpecificData = () => {
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
       return { baseUrl: formData.ollamaHostUrl.trim() };
     }
@@ -380,9 +369,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             onChange={(e) => setRegion(e.target.value)}
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
           />
-        )}
-        {providerApiModes && (
-          <ApiModeSelector modes={providerApiModes} value={apiMode} onChange={setApiMode} />
         )}
         {isCompatible && (
           <Input

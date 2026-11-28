@@ -31,17 +31,12 @@ export const PROVIDERS = {};
 export const PROVIDER_MODELS = {};
 export const PROVIDER_OAUTH = {};
 export const PROVIDER_MEDIA = {};
-// Registry `modelFamilies` (regex → targetFormat/supportedFormats), keyed by alias like
-// PROVIDER_MODELS. Fallback for models with no per-model format declaration.
-export const PROVIDER_MODEL_FAMILIES = {};
 for (const entry of REGISTRY) {
   if (entry.transport) {
     PROVIDERS[entry.id] = buildTransport(entry.transport, entry.oauth);
     if (entry.transports) PROVIDERS[entry.id].transports = entry.transports;
-    if (entry.apiModes) PROVIDERS[entry.id].apiModes = entry.apiModes;
   }
   if (entry.models !== undefined) PROVIDER_MODELS[entry.alias || entry.id] = entry.models.map(normalizeModel);
-  if (Array.isArray(entry.modelFamilies)) PROVIDER_MODEL_FAMILIES[entry.alias || entry.id] = entry.modelFamilies;
   if (entry.oauth) PROVIDER_OAUTH[entry.id] = entry.oauth;
   // Build PROVIDER_MEDIA from top-level fields (post-migration) + legacy entry.media
   const mediaFields = {};

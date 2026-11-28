@@ -6,7 +6,6 @@ import {
   deleteProviderConnection,
 } from "@/models";
 import { toProviderConnectionResponse, usesAwsCredentialForm } from "@/lib/providerConnectionResponse";
-import { sanitizeApiMode } from "@/lib/providerNormalization";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -135,7 +134,7 @@ export async function PUT(request, { params }) {
         proxyPoolResult.hasProxyPoolField
       )
     ) {
-      const incomingProviderSpecificData = sanitizeApiMode(existing.provider, { ...(providerSpecificData || {}) });
+      const incomingProviderSpecificData = { ...(providerSpecificData || {}) };
       const isAwsCredential = usesAwsCredentialForm(existing.provider);
       // The edit form cannot read the stored token back. An empty password field means
       // keep the saved credential; null explicitly removes it.

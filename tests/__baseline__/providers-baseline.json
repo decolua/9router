@@ -763,23 +763,7 @@
   "openai": {
     "baseUrl": "https://api.openai.com/v1/chat/completions",
     "forceStream": true,
-    "format": "openai",
-    "transports": [
-      {
-        "format": "openai",
-        "baseUrl": "https://api.openai.com/v1/chat/completions"
-      },
-      {
-        "format": "openai-responses",
-        "baseUrl": "https://api.openai.com/v1/responses",
-        "thinkingFormat": "openai-responses"
-      }
-    ],
-    "apiModes": [
-      "auto",
-      "chat",
-      "responses"
-    ]
+    "format": "openai"
   },
   "opencode-go": {
     "baseUrl": "https://opencode.ai/inference/go/openai/v1/chat/completions",

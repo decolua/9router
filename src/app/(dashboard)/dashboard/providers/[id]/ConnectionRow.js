@@ -6,8 +6,6 @@ import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/c
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
-import { AI_PROVIDERS } from "@/shared/constants/providers";
-import { API_MODE_DEFAULT, API_MODE_LABELS, resolveApiMode } from "open-sse/config/apiModeConstants.js";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
@@ -21,9 +19,6 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const boundProxyPool = boundProxyPoolId ? proxyPoolMap.get(boundProxyPoolId) : null;
   const hasLegacyProxy = connection.providerSpecificData?.connectionProxyEnabled === true && !!connection.providerSpecificData?.connectionProxyUrl;
   const hasAnyProxy = !!boundProxyPoolId || hasLegacyProxy;
-  // Pinned upstream endpoint (openai: Chat / Responses); "auto" stays unbadged.
-  const apiMode = resolveApiMode(AI_PROVIDERS?.[connection.provider]?.apiModes, connection.providerSpecificData?.apiMode);
-  const pinnedApiModeLabel = apiMode && apiMode !== API_MODE_DEFAULT ? API_MODE_LABELS[apiMode] : null;
   const proxyDisplayText = boundProxyPool
     ? `Pool: ${boundProxyPool.name}`
     : boundProxyPoolId
@@ -225,11 +220,6 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
-              </Badge>
-            )}
-            {pinnedApiModeLabel && (
-              <Badge variant="info" size="sm">
-                {pinnedApiModeLabel} API
               </Badge>
             )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}

@@ -27,39 +27,7 @@ export default {
     baseUrl: "https://api.openai.com/v1/chat/completions",
     forceStream: true,
   },
-  // Multi-endpoint: the same API key serves Chat Completions and Responses.
-  // Responses clients (Codex, OpenAI SDK) stay native on /v1/responses instead of
-  // the lossy Responses→Chat hop; Chat clients keep /v1/chat/completions.
-  transports: [
-    {
-      format: "openai",
-      baseUrl: "https://api.openai.com/v1/chat/completions",
-    },
-    {
-      format: "openai-responses",
-      baseUrl: "https://api.openai.com/v1/responses",
-      // Strict Responses API: needs reasoning:{effort,summary}, not top-level reasoning_effort.
-      thinkingFormat: "openai-responses",
-    },
-  ],
-  // Per-connection endpoint selector in the dashboard (providerSpecificData.apiMode).
-  apiModes: ["auto", "chat", "responses"],
-  // Auto mode: model families that must use /v1/responses for every client.
-  // GPT-5.6+ and GPT-6 reject function tools + reasoning_effort on
-  // /v1/chat/completions ("use /v1/responses instead", decolua/9router#2540, #4031).
-  // Matches gpt-5.6, gpt-5.6-sol, gpt-6-astra, gpt-6.1-terra…; not gpt-5.5, gpt-4o, gpt-image-*.
-  modelFamilies: [
-    {
-      match: /^gpt-(?:5\.(?:[6-9]|\d{2,})|(?:[6-9]|\d{2,})(?:\.\d+)?)(?:-|$)/i,
-      supportedFormats: ["openai-responses"],
-      targetFormat: "openai-responses",
-    },
-  ],
   models: [
-    { id: "gpt-6-astra", name: "GPT-6 Astra" },
-    { id: "gpt-5.6", name: "GPT-5.6" },
-    { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
-    { id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
     { id: "gpt-5.5", name: "GPT-5.5" },
     { id: "gpt-5.4", name: "GPT-5.4" },
     { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
