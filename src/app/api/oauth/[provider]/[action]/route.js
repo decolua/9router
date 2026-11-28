@@ -247,13 +247,19 @@ export async function GET(request, { params }) {
       const startUrl = searchParams.get("start_url");
       const region = searchParams.get("region");
       const authMethod = searchParams.get("auth_method");
-      const deviceOptions = provider === "kiro"
+      // Enterprise domain (asked in the modal before the device-code request
+      // fires): required for QwenWork enterprise, optional for Qoder CN VPC.
+      const enterpriseDomain = searchParams.get("domain");
+      let deviceOptions = provider === "kiro"
         ? {
             ...(startUrl ? { startUrl } : {}),
             ...(region ? { region } : {}),
             ...(authMethod ? { authMethod } : {}),
           }
         : undefined;
+      if ((provider === "qwenwork-enterprise" || provider === "qoder-cn") && enterpriseDomain) {
+        deviceOptions = { ...(deviceOptions || {}), enterpriseDomain };
+      }
       
       // Providers that don't use PKCE for device code (Grok CLI HAR: plain device_code, no challenge)
       const noPkceDeviceProviders = [
@@ -266,6 +272,7 @@ export async function GET(request, { params }) {
         "codebuddy-intl",
         "qoder",
         "qoder-cn",
+        "qwenwork",
         "grok-cli",
         "muse",
         "glm",
@@ -565,7 +572,7 @@ export async function POST(request, { params }) {
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
         result = await pollForToken(provider, deviceCode, null, extraData);
-      } else if (provider === "qoder" || provider === "qoder-cn") {
+      } else if (provider === "qoder" || provider === "qoder-cn" || provider === "qwenwork" || provider === "qwenwork-enterprise") {
         // Qoder needs both the PKCE verifier (codeVerifier) and the machineId
         // captured at device-code time (extraData._qoderMachineId) so
         // mapTokens can persist it for COSY signing.

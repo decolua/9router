@@ -6,6 +6,7 @@ import {
   deleteProviderConnection,
 } from "@/models";
 import { toProviderConnectionResponse, usesAwsCredentialForm } from "@/lib/providerConnectionResponse";
+import { qoderEnterpriseHostError, validateQoderVpcDomain } from "open-sse/shared/qoder/sites.js";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -156,6 +157,18 @@ export async function PUT(request, { params }) {
         } else {
           updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
         }
+      }
+    }
+    // Server-side namespace guard for Qoder CN enterprise edits (same rule as
+    // create): the merged enterpriseHost must stay within the VPC namespace.
+    if (updateData.providerSpecificData && (existing.provider === "qoder" || existing.provider === "qoder-cn")) {
+      const psd = updateData.providerSpecificData;
+      const hostError = qoderEnterpriseHostError(psd.enterpriseHost);
+      if (hostError) {
+        return NextResponse.json({ error: hostError }, { status: 400 });
+      }
+      if (typeof psd.enterpriseHost === "string" && psd.enterpriseHost.trim()) {
+        psd.enterpriseHost = validateQoderVpcDomain(psd.enterpriseHost);
       }
     }
 

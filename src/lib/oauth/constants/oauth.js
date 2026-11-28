@@ -38,6 +38,39 @@ export const QODER_CONFIG = { ...PROVIDER_OAUTH["qoder"] };
 // Qoder CN (qoder.com.cn) — same device flow as intl Qoder, CN endpoints.
 export const QODER_CN_CONFIG = { ...PROVIDER_OAUTH["qoder-cn"] };
 
+// QwenWork (gateway.qwenwork.cn) — same Qoder device flow, CN Qwen agent
+// endpoints. Extra oauth-block fields vs qoder: clientId + redirectUri are
+// appended to the device-code URL, and userInfoEnvelope "accountContext"
+// switches fetchUserInfo to the {data:{user:{...}}} envelope shape.
+export const QWENWORK_CONFIG = {
+  ...PROVIDER_OAUTH["qwenwork"],
+  // Defensive fallbacks in case the registry block hasn't landed yet.
+  ...(PROVIDER_OAUTH["qwenwork"] ? {} : {
+    loginUrl: "https://gateway.qwenwork.cn/device/selectAccounts",
+    deviceTokenUrl: "https://gateway.qwenwork.cn/api/v1/deviceToken/poll",
+    refreshUrl: "https://gateway.qwenwork.cn/api/v1/deviceToken/refresh",
+    userInfoUrl: "https://gateway.qwenwork.cn/api/v1/adapter/user/account-context?include=user,plan,quota,page,data_sharing",
+  }),
+  clientId: PROVIDER_OAUTH["qwenwork"]?.clientId || "e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb",
+  redirectUri: PROVIDER_OAUTH["qwenwork"]?.redirectUri || "qwenwork-cn://",
+  userInfoEnvelope: "accountContext",
+  siteId: "qwenwork",
+};
+
+// QwenWork enterprise flagship (企业旗舰版) — same protocol as the public
+// cloud, but the deployable lives on the enterprise's own domain, asked at
+// sign-in (device-code request param "domain"). No redirect_uri: the
+// flagship's /device/selectAccounts refuses one. The config's gateway URLs
+// are placeholders — the provider rewrites them onto https://<domain> when
+// the user enters one (see providers/qwenwork-enterprise.js).
+export const QWENWORK_ENTERPRISE_CONFIG = {
+  ...QWENWORK_CONFIG,
+  // No redirect_uri on the enterprise device flow.
+  redirectUri: null,
+  siteId: "qwenwork-enterprise",
+  enterprise: true,
+};
+
 // iFlow OAuth Configuration (Authorization Code)
 export const IFLOW_CONFIG = { ...PROVIDER_OAUTH["iflow"] };
 
@@ -245,6 +278,7 @@ export const PROVIDERS = {
   GEMINI: "gemini-cli",
   QODER: "qoder",
   QODER_CN: "qoder-cn",
+  QWENWORK: "qwenwork",
   IFLOW: "iflow",
   ANTIGRAVITY: "antigravity",
   OPENAI: "openai",

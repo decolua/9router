@@ -22,6 +22,7 @@ import { getZedUsage } from "./usage/zed.js";
 import { getXiaomiMimoUsage } from "./usage/xiaomi-mimo.js";
 import { getCursorUsage } from "./usage/cursor.js";
 import { getClinepassUsage } from "./usage/clinepass.js";
+import { getQwenworkUsage } from "./usage/qwenwork.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
 import { getCommandCodeUsage } from "./usage/commandcode.js";
@@ -34,6 +35,7 @@ import {
   getVercelAiGatewayUsage,
   getQoderUsage,
 } from "./usage/misc.js";
+import { normalizeEnterpriseHost, qoderEnterpriseServiceBase, qoderSiteOf } from "../shared/qoder/sites.js";
 
 /**
  * Get usage data for a provider connection
@@ -50,6 +52,8 @@ const USAGE_HANDLERS = {
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   qoder: (c) => getQoderUsageFor(c),
   "qoder-cn": (c) => getQoderUsageFor(c),
+  qwenwork: (c) => getQwenworkUsage(c.accessToken, qwenworkUsageUrl(c), c.proxyOptions),
+  "qwenwork-enterprise": (c) => getQwenworkUsage(c.accessToken, qwenworkUsageUrl(c), c.proxyOptions),
   iflow: (c) => getIflowUsage(c.accessToken),
   ollama: (c) => getOllamaUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   // OAuth connections store the coding-plan key on accessToken (no apiKey)
@@ -87,7 +91,20 @@ const USAGE_HANDLERS = {
 // provider's own registry usage block (region-correct via c.provider).
 async function getQoderUsageFor(c) {
   const resolved = await resolveQoderCredentials(c, c.proxyOptions).catch(() => null);
-  return getQoderUsage(resolved?.accessToken || c.accessToken, c.proxyOptions, c.provider || "qoder");
+  // Enterprise VPC credentials read quota from their own openapi host — the
+  // registry's public-gateway URL doesn't serve an enterprise deployment.
+  const openApiBase = qoderEnterpriseServiceBase(c, qoderSiteOf(c.provider), "openapi");
+  const usageUrl = openApiBase ? `${openApiBase}/api/v2/quota/usage` : null;
+  return getQoderUsage(resolved?.accessToken || c.accessToken, c.proxyOptions, c.provider || "qoder", usageUrl);
+}
+
+// QwenWork usage URL: the account-context path. An enterprise credential's
+// enterpriseHost overrides the public gateway — the enterprise's tokens
+// never leave the enterprise domain.
+function qwenworkUsageUrl(c) {
+  const host = normalizeEnterpriseHost((c.providerSpecificData || {}).enterpriseHost);
+  if (host) return `https://${host}/api/v1/adapter/user/account-context?include=user,plan,quota`;
+  return U("qwenwork").url;
 }
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {

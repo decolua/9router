@@ -10,6 +10,7 @@ import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
 import { toProviderConnectionResponse } from "@/lib/providerConnectionResponse";
+import { qoderEnterpriseHostError } from "open-sse/shared/qoder/sites.js";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +128,14 @@ export async function POST(request) {
     }
 
     let providerSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
+    // Server-side namespace guard (the modal also checks): a Qoder CN PAT must
+    // never be persisted against a host outside {instance}.vpc.qoder.com.cn.
+    if (provider === "qoder" || provider === "qoder-cn") {
+      const hostError = qoderEnterpriseHostError(providerSpecificData?.enterpriseHost);
+      if (hostError) {
+        return NextResponse.json({ error: hostError }, { status: 400 });
+      }
+    }
 
     // Compatible LLM nodes support multiple API-key connections (key pool); runtime
     // rotates/fails over via getProviderCredentials. Embedding nodes stay single-connection.

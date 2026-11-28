@@ -5,6 +5,8 @@ import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
+import { validateEnterpriseDomain } from "open-sse/shared/qoder/enterpriseDomain.js";
+import { isQoderVpcHost } from "open-sse/shared/qoder/sites.js";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -52,6 +54,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     sessionToken: "",
   });
   const [region, setRegion] = useState(defaultRegion);
+  const [qoderCnDomain, setQoderCnDomain] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -89,6 +92,30 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
 
+  // Qoder CN optional enterprise VPC domain (blank ⇒ public cloud). Stored
+  // as providerSpecificData.enterpriseHost — the runtime routing key that
+  // keeps every request (PAT exchange/chat/model-list/usage) on that host.
+  const qoderCnDomainRaw = provider === "qoder-cn" ? qoderCnDomain.trim() : "";
+  const qoderCnDomainValidated = qoderCnDomainRaw ? validateEnterpriseDomain(qoderCnDomainRaw) : null;
+  const qoderCnDomainHost = qoderCnDomainValidated && isQoderVpcHost(qoderCnDomainValidated) ? qoderCnDomainValidated : null;
+  const qoderCnDomainInvalid = !!qoderCnDomainRaw && !qoderCnDomainHost;
+  // Shared by Single and Bulk so an enterprise PAT is never validated/saved
+  // against the public cloud when a VPC domain was entered.
+  const qoderCnDomainField = provider === "qoder-cn" ? (
+    <>
+      <Input
+        label="接入域名（企业 VPC，可选）"
+        value={qoderCnDomain}
+        onChange={(e) => setQoderCnDomain(e.target.value)}
+        placeholder="your-company.vpc.qoder.com.cn"
+        error={qoderCnDomainInvalid ? "请输入有效的企业 VPC 接入域名（形如 your-company.vpc.qoder.com.cn），不要带路径" : undefined}
+      />
+      <p className="text-xs text-text-muted">
+        企业专属版填写管理员提供的接入域名；留空使用公共云 qoder.com.cn。
+      </p>
+    </>
+  ) : null;
+
   const buildProviderSpecificData = () => {
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
       return { baseUrl: formData.ollamaHostUrl.trim() };
@@ -114,6 +141,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       if (bedrockData.sessionToken.trim()) data.sessionToken = bedrockData.sessionToken.trim();
       return Object.keys(data).length ? data : undefined;
     }
+    if (provider === "qoder-cn" && qoderCnDomainHost) {
+      return { enterpriseHost: qoderCnDomainHost };
+    }
     if (providerRegions && region) {
       return { region };
     }
@@ -132,6 +162,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   };
 
   const handleValidate = async () => {
+    if (qoderCnDomainInvalid) return;
     setValidating(true);
     try {
       const res = await fetch("/api/providers/validate", {
@@ -151,6 +182,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const handleSubmit = async () => {
     if (!provider) return;
     if (!isOllamaLocal && !apiKeySatisfied()) return;
+    if (qoderCnDomainInvalid) return;
     if (!isOllamaLocal) {
       // Non-ollama providers require a name
       if (!formData.name) return;
@@ -192,6 +224,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   };
 
   const handleBulkSubmit = async () => {
+    if (qoderCnDomainInvalid) return;
+    const bulkPsd = buildProviderSpecificData();
     const lines = bulkText.split("\n");
     if (!lines.length) return;
     // Plan collision-free names against existing connections so a generated
@@ -213,7 +247,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           const vres = await fetch("/api/providers/validate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider, apiKey: entry.apiKey }),
+            body: JSON.stringify({ provider, apiKey: entry.apiKey, providerSpecificData: bulkPsd }),
           });
           const vdata = await vres.json().catch(() => ({}));
           isValid = !!vdata.valid;
@@ -229,7 +263,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             name: entry.name,
             priority: 1,
             testStatus: isValid ? "active" : "unknown",
-            ...(entry.providerSpecificData ? { providerSpecificData: entry.providerSpecificData } : {}),
+            ...((bulkPsd || entry.providerSpecificData) ? { providerSpecificData: { ...bulkPsd, ...entry.providerSpecificData } } : {}),
           }),
         });
         if (res.ok) success++;
@@ -273,13 +307,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
             />
+            {qoderCnDomainField}
             {bulkResult && (
               <div className={`text-sm font-medium ${bulkResult.failed > 0 ? "text-yellow-400" : "text-green-400"}`}>
                 ✓ {bulkResult.success} added{bulkResult.failed > 0 ? `, ✗ ${bulkResult.failed} failed` : ""}
               </div>
             )}
             <div className="flex gap-2">
-              <Button onClick={handleBulkSubmit} fullWidth disabled={saving || !bulkText.trim()}>
+              <Button onClick={handleBulkSubmit} fullWidth disabled={saving || !bulkText.trim() || qoderCnDomainInvalid}>
                 {saving ? "Adding..." : "Add All Keys"}
               </Button>
               <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
@@ -338,12 +373,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               className="flex-1"
             />
             <div className="pt-6">
-              <Button onClick={handleValidate} disabled={!apiKeySatisfied() || validating || saving} variant="secondary">
+              <Button onClick={handleValidate} disabled={!apiKeySatisfied() || validating || saving || qoderCnDomainInvalid} variant="secondary">
                 {validating ? "Checking..." : "Check"}
               </Button>
             </div>
           </div>
         )}
+        {qoderCnDomainField}
         {isXaiApiKey && (
           <p className="text-xs text-text-muted">
             Use a direct xAI API key from console.x.ai. This is separate from Grok Build OAuth.
@@ -514,7 +550,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !apiKeySatisfied())) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || qoderCnDomainInvalid || (!isOllamaLocal && (!formData.name || !apiKeySatisfied())) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>

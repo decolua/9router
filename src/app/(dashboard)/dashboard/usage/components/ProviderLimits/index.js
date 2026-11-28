@@ -13,6 +13,7 @@ import {
   getHiddenQuotaRows,
   getQuotaVisibilityKey,
   getConnectionLabel,
+  isSyntheticQoderAccountId,
   getConnectionQuotaRemaining,
   sortVisibleConnections,
   buildLoadingState,
@@ -75,14 +76,15 @@ function kiroMethodLabel(conn) {
 }
 
 function getConnectionSecondaryLabel(connection) {
-  if (connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()) {
-    return connection.email.trim();
+  const primary = getConnectionLabel(connection);
+  const email = connection.email?.trim();
+  if (email && !isSyntheticQoderAccountId(email) && email !== primary) {
+    return email;
   }
-
-  if (connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()) {
-    return connection.displayName.trim();
+  const display = connection.displayName?.trim();
+  if (display && display !== primary) {
+    return display;
   }
-
   return null;
 }
 

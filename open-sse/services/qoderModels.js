@@ -35,6 +35,7 @@ import {
   qoderInferenceBase,
   QODER_STATIC_MODEL_CONFIGS,
 } from "../shared/qoder/constants.js";
+import { qoderSiteOf, qoderInferenceBaseForSite, normalizeEnterpriseHost, qoderEnterpriseServiceBase } from "../shared/qoder/sites.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
@@ -68,9 +69,14 @@ const inflight = new Map();
  * Exchange a Qoder PAT (pt-...) for a short-lived job token (jt-...).
  * This endpoint is plain JSON POST — NOT COSY-signed.
  */
-async function exchangeJobToken(pat, proxyOptions = null, signal = null, region = "intl") {
+async function exchangeJobToken(pat, proxyOptions = null, signal = null, region = "intl", openApiBase = null) {
+  // Enterprise VPC credentials exchange on their own openapi host — the PAT
+  // must never reach the public gateway.
+  const exchangeUrl = openApiBase
+    ? `${openApiBase}/api/v1/jobToken/exchange`
+    : qoderJobTokenExchangeUrl(region);
   const res = await proxyAwareFetch(
-    qoderJobTokenExchangeUrl(region),
+    exchangeUrl,
     {
       method: "POST",
       headers: {
@@ -106,10 +112,10 @@ async function exchangeJobToken(pat, proxyOptions = null, signal = null, region 
  * Resolve the Qoder userId for a job token (needed for COSY signing).
  * Returns "" on any failure — callers fall back to the stored userId.
  */
-async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = null, region = "intl") {
+async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = null, region = "intl", openApiBase = null) {
   try {
     const res = await proxyAwareFetch(
-      qoderUserInfoUrl(region),
+      openApiBase ? `${openApiBase}/api/v1/userinfo` : qoderUserInfoUrl(region),
       {
         method: "GET",
         headers: {
@@ -130,15 +136,15 @@ async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = nu
 }
 
 /**
- * Resolve a PAT to a job-token credential, cached per-PAT-per-region.
+ * Resolve a PAT to a job-token credential, cached per-PAT-per-region-per-host.
  */
-async function resolvePatCredential(pat, proxyOptions = null, signal = null, region = "intl") {
-  const cacheKey = `${region}:${pat}`;
+async function resolvePatCredential(pat, proxyOptions = null, signal = null, region = "intl", openApiBase = null) {
+  const cacheKey = `${region}:${openApiBase || ""}:${pat}`;
   const cached = patJobCache.get(cacheKey);
   if (cached && cached.expiresAt - Date.now() > PAT_REFRESH_BUFFER_MS) return cached;
 
-  const { jobToken, expiresAt } = await exchangeJobToken(pat, proxyOptions, signal, region);
-  const userId = await fetchUserIdForJobToken(jobToken, proxyOptions, signal, region);
+  const { jobToken, expiresAt } = await exchangeJobToken(pat, proxyOptions, signal, region, openApiBase);
+  const userId = await fetchUserIdForJobToken(jobToken, proxyOptions, signal, region, openApiBase);
   const resolved = { accessToken: jobToken, userId, expiresAt };
   patJobCache.set(cacheKey, resolved);
   return resolved;
@@ -154,8 +160,15 @@ async function resolvePatCredential(pat, proxyOptions = null, signal = null, reg
 export async function resolveQoderCredentials(credentials, proxyOptions = null, signal = null, region) {
   const raw = credentials?.apiKey || credentials?.accessToken;
   if (isQoderPat(raw)) {
+    const site = qoderSiteOf(credentials?.provider);
+    // QwenWork sites issue no PATs (site.pat === false); never exchange a
+    // supplied PAT against their host.
+    if (site.pat === false) {
+      throw new Error("This provider does not support personal access tokens");
+    }
     const effRegion = region || qoderRegionOf(credentials?.provider);
-    const resolved = await resolvePatCredential(raw, proxyOptions, signal, effRegion);
+    const openApiBase = qoderEnterpriseServiceBase(credentials, site, "openapi");
+    const resolved = await resolvePatCredential(raw, proxyOptions, signal, effRegion, openApiBase);
     return {
       ...credentials,
       accessToken: resolved.accessToken,
@@ -178,8 +191,12 @@ export async function resolveQoderCredentials(credentials, proxyOptions = null, 
 function cacheKey(credentials) {
   const psd = credentials?.providerSpecificData || {};
   const seed = psd.userId || credentials?.refreshToken || credentials?.accessToken || "anonymous";
-  const region = qoderRegionOf(credentials?.provider);
-  return createHash("sha256").update(`qoder:${region}:${seed}`).digest("hex");
+  // Site id (qoder / qoder-cn / …) keeps catalogs for different deployables
+  // apart; unknown providers fall back to the qoder intl site. The enterprise
+  // host separates a VPC deployable's catalog from the public cloud's.
+  const siteId = qoderSiteOf(credentials?.provider).id;
+  const host = normalizeEnterpriseHost(psd.enterpriseHost) || "";
+  return createHash("sha256").update(`qoder:${siteId}:${host}:${seed}`).digest("hex");
 }
 
 /**
@@ -202,18 +219,21 @@ function cosyCredsFromConnection(credentials) {
  *     rawConfigs: Map<modelKey, modelConfigObject> }
  * or `null` on any error.
  */
-async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, region = "intl") {
+export async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, region = "intl", site = null) {
   const creds = cosyCredsFromConnection(credentials);
   if (!creds.userId || !creds.authToken) return null;
 
   // Intl job-token traffic is rejected by api3 ("Login expired" 403) — the
   // official qodercli serves it from api2 instead; CN uses the single gateway.
-  const modelListUrl = `${qoderInferenceBase(credentials, region)}/algo/api/v2/model/list`;
+  // Other sites (qwenwork…) are single-gateway too: their chat base serves all
+  // token kinds, so the region split does not apply.
+  const siteObj = site || qoderSiteOf(credentials?.provider);
+  const modelListUrl = `${qoderInferenceBaseForSite(credentials, siteObj)}/algo/api/v2/model/list`;
 
   const headers = {
     Accept: "application/json",
     "Accept-Encoding": "identity",
-    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds),
+    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds, { site: siteObj.cosy }),
   };
 
   const controller = new AbortController();
@@ -247,17 +267,32 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, re
     if (signal && abortListener) signal.removeEventListener("abort", abortListener);
   }
 
+  // A deployable with no catalog service (QwenWork's enterprise flagship
+  // answers 503 "Model catalog is unavailable") falls back to the site's
+  // built-in list. Any other status — 500 included — stays a hard miss so
+  // a transient server error isn't masked by stale fallback data.
+  if (response.status === 503 && siteObj.catalog?.fallbackModels) {
+    return { models: null, rawConfigs: null, fallback: siteObj.catalog.fallbackModels };
+  }
   if (!response.ok) return null;
-
   const body = await response.json().catch(() => null);
-  if (!body || !Array.isArray(body.chat)) return null;
-
+  // The listing array is chosen per site: a site whose cosy block declares
+  // `modelScene` (QwenWork ⇒ "qwork") reads that scene; sites without one
+  // (Qoder) read `chat`. The same field names the Cosy-Scene header
+  // (buildCosyHeaders), so one value drives both. A missing array makes the
+  // catalog unusable, an empty one is a valid empty listing.
+  // "auto"/"default"/"" are routing aliases, not models.
+  const scene = typeof siteObj?.cosy?.modelScene === "string" && siteObj.cosy.modelScene ? siteObj.cosy.modelScene : null;
+  const entries = scene
+    ? (Array.isArray(body?.[scene]) ? body[scene] : [])
+    : (Array.isArray(body?.chat) ? body.chat : null);
+  if (!entries) return null;
   const models = [];
   const rawConfigs = new Map();
-  for (const entry of body.chat) {
+  for (const entry of entries) {
     if (!entry || typeof entry !== "object") continue;
-    const key = entry.key;
-    if (!key) continue;
+    const key = typeof entry.key === "string" ? entry.key.trim() : "";
+    if (!key || key === "auto" || key === "default") continue;
 
     // enable:false 的模型仍可在 IDE 使用，保留其配置并展示上游名称。
     rawConfigs.set(key, entry);
@@ -331,8 +366,35 @@ export async function resolveQoderModels(credentials, options = {}) {
   }
 
   const fetchPromise = (async () => {
-    const fetched = await fetchQoderCatalogRaw(resolved, options.signal, options.proxyOptions, region);
+    const fetched = await fetchQoderCatalogRaw(resolved, options.signal, options.proxyOptions, region, qoderSiteOf(resolved?.provider || credentials?.provider));
     if (!fetched) return null;
+    // A 503 fallback (see fetchQoderCatalogRaw) carries the site's raw
+    // listing — normalize it into the same { models, rawConfigs } shape.
+    if (fetched.fallback) {
+      const models = [];
+      const rawConfigs = new Map();
+      for (const entry of fetched.fallback) {
+        if (!entry?.key) continue;
+        rawConfigs.set(entry.key, entry);
+        models.push({
+          id: entry.key,
+          name: `${entry.display_name || entry.key}`,
+          contextLength: Number(entry.max_input_tokens) || 131_072,
+          isVL: !!entry.is_vl,
+          isReasoning: !!entry.is_reasoning,
+          maxOutputTokens: Number(entry.max_output_tokens) || 0,
+          description: entry.description || "",
+        });
+      }
+      const entry = {
+        expiresAt: Date.now() + CACHE_TTL_MS,
+        models,
+        rawConfigs,
+        fetched: true,
+      };
+      catalogCache.set(key, entry);
+      return entry;
+    }
     const entry = {
       expiresAt: Date.now() + CACHE_TTL_MS,
       models: fetched.models,

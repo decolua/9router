@@ -102,3 +102,9 @@ graphify-out/*
 start-dev-silent.cjs
 debug.log
 .scratch/
+
+# ohmypi configs
+.omp/
+
+# OpenSpec local working dirs
+openspec/

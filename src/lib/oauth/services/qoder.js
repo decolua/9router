@@ -98,6 +98,11 @@ export class QoderService {
       machine_id: machineId,
       nonce,
     });
+    // QwenWork's device flow requires the OAuth app identity on the
+    // device-code URL (client_id + redirect_uri, per the desktop client).
+    // Plain qoder/qoder-cn configs omit both fields and stay byte-identical.
+    if (this.config.clientId) params.set("client_id", this.config.clientId);
+    if (this.config.redirectUri) params.set("redirect_uri", this.config.redirectUri);
 
     return {
       verificationUriComplete: `${this.loginUrl()}?${params.toString()}`,
@@ -186,10 +191,16 @@ export class QoderService {
       });
       if (!response.ok) return { name: "", email: "" };
       const body = await response.json();
+      let user = body;
+      if (this.config.userInfoEnvelope === "accountContext") {
+        // QwenWork wraps the profile in an account-context envelope:
+        // { data: { user: { id, name, email, organization, ... }, plan, quota } }
+        user = body?.data?.user ?? body ?? {};
+      }
       return {
-        name: (body.name || body.username || "").trim(),
-        email: (body.email || "").trim(),
-        organizationId: (body.organization_id || "").trim(),
+        name: (user.name || user.username || "").trim(),
+        email: (user.email || "").trim(),
+        organizationId: (user.organization_id || user?.organization?.id || "").toString().trim(),
       };
     } catch {
       return { name: "", email: "" };

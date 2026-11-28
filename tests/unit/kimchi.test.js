@@ -187,6 +187,9 @@ function findExistingOAuth(all, incoming) {
   const incomingWs = incoming.providerSpecificData?.chatgptAccountId;
   return all.find((c) => {
     if (c.authType !== "oauth" || c.email !== incomingEmail) return false;
+    const incomingHost = incoming.providerSpecificData?.enterpriseHost || "";
+    const existingHost = c.providerSpecificData?.enterpriseHost || "";
+    if (incomingHost !== existingHost) return false;
     const existingWs = c.providerSpecificData?.chatgptAccountId;
     if (incomingWs && existingWs) return incomingWs === existingWs;
     if (incomingWs && !existingWs) return false;
@@ -233,5 +236,15 @@ describe("kimchi OAuth dedup", () => {
     const ws2 = { authType: "oauth", email: "a@b.com", providerSpecificData: { chatgptAccountId: "ws2" } };
     assert.equal(findExistingOAuth([ws1], ws1dup), ws1);
     assert.equal(findExistingOAuth([ws1], ws2), undefined);
+  });
+
+  it("same email but enterprise VPC vs public cloud = NO match (distinct identities)", () => {
+    const pub = { authType: "oauth", email: "x@y.com", providerSpecificData: {} };
+    const vpc = { authType: "oauth", email: "x@y.com", providerSpecificData: { enterpriseHost: "acme.vpc.qoder.com.cn" } };
+    const vpc2 = { authType: "oauth", email: "x@y.com", providerSpecificData: { enterpriseHost: "other.vpc.qoder.com.cn" } };
+    assert.equal(findExistingOAuth([pub], vpc), undefined);
+    assert.equal(findExistingOAuth([vpc], pub), undefined);
+    assert.equal(findExistingOAuth([vpc], vpc2), undefined);
+    assert.equal(findExistingOAuth([vpc], { ...vpc }), vpc);
   });
 });

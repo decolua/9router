@@ -12,7 +12,7 @@ import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
 import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
-import { NO_AUTH_PROVIDER_IDS, LIVE_CATALOG_PROVIDERS, liveModelCaps } from "@/shared/utils/selectableModels";
+import { NO_AUTH_PROVIDER_IDS, LIVE_CATALOG_PROVIDERS, getSelectableCatalogModels, liveModelCaps } from "@/shared/utils/selectableModels";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -158,6 +158,7 @@ export default function ModelSelectModal({
   const zedModels = useLiveProviderModels(isOpen, zedConnectionIds, "Zed");
   const claudeModels = useLiveProviderModels(isOpen, claudeConnectionIds, "Claude");
   const commandcodeModels = useLiveProviderModels(isOpen, commandcodeConnectionIds, "CommandCode");
+  const qwenworkEnterpriseModels = useLiveProviderModels(isOpen, liveConnectionIdsByProvider["qwenwork-enterprise"], "QwenWork Enterprise");
 
 
   const fetchCombos = async () => {
@@ -238,6 +239,7 @@ export default function ModelSelectModal({
       zed: zedModels,
       claude: claudeModels,
       commandcode: commandcodeModels,
+      "qwenwork-enterprise": qwenworkEnterpriseModels,
     };
 
     // Kinds where the provider IS the model (no per-model selection needed)
@@ -419,10 +421,7 @@ export default function ModelSelectModal({
           hasModels: mergedModels.length > 0,
         };
       } else {
-        const liveModels = liveModelsByProvider[providerId] || [];
-        const hardcodedModels = liveModels.length > 0
-          ? liveModels
-          : getModelsByProviderId(providerId);
+        const hardcodedModels = getSelectableCatalogModels(providerId, liveModelsByProvider[providerId]);
         const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
 
         // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider
@@ -513,7 +512,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels, claudeModels, commandcodeModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels, claudeModels, commandcodeModels, qwenworkEnterpriseModels]);
 
   // Parse search query into structured query (regex, positive tokens, negative tokens)
   const parsedQuery = useMemo(() => parseSearchQuery(searchQuery), [searchQuery]);

@@ -26,6 +26,7 @@ import {
   QODER_MAX_PAYLOAD_BYTES,
   qoderInferenceBase,
 } from "./constants.js";
+import { qoderEnterpriseServiceBase, qoderSiteOf } from "./sites.js";
 
 const IMAGE_MIME_RE = /^image\//i;
 const DATA_URI_RE = /data:[^;]+;base64,[A-Za-z0-9+/=\s]+/g;
@@ -82,9 +83,13 @@ function extractUrlFromUploadResponse(json) {
   return null;
 }
 
-async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions, signal }) {
+async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions, signal, site = null }) {
   const requestId = uuidv4();
-  const url = `${qoderInferenceBase(credentials)}${`/algo${QODER_IMAGE_UPLOAD_SIG_PATH}`}?request_id=${requestId}`;
+  // Enterprise VPC credentials upload to their own gateway host — the tokens
+  // and the file bytes must never leave the enterprise domains.
+  const uploadBase = qoderEnterpriseServiceBase(credentials, site || qoderSiteOf(credentials?.provider), "gateway")
+    || qoderInferenceBase(credentials);
+  const url = `${uploadBase}${`/algo${QODER_IMAGE_UPLOAD_SIG_PATH}`}?request_id=${requestId}`;
   const { boundary, body } = buildMultipartFile(buffer, {
     fileName: `image.${mimeExt(mediaType)}`,
     mediaType: mediaType || "application/octet-stream",
@@ -100,6 +105,7 @@ async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions
     // Qoder's upload signer expects the ASCII decimal multipart length, while
     // the request body and integrity headers must continue to describe `body`.
     signatureBody: Buffer.from(String(body.length), "ascii"),
+    site: site?.cosy,
   });
   const headers = {
     ...cosyHeaders,
@@ -124,7 +130,7 @@ async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions
   return uploaded;
 }
 
-async function uploadImageData({ base64, mediaType, credentials, proxyOptions, signal, log, uploadFn, cache }) {
+async function uploadImageData({ base64, mediaType, credentials, proxyOptions, signal, log, uploadFn, cache, site = null }) {
   const compact = String(base64 || "").replace(/\s/g, "");
   if (!compact) return null;
   const bytes = decodedBytes(compact);
@@ -143,7 +149,7 @@ async function uploadImageData({ base64, mediaType, credentials, proxyOptions, s
 
   const doUpload = uploadFn || defaultUploadImage;
   try {
-    const url = await doUpload({ buffer, mediaType, credentials, proxyOptions, signal });
+    const url = await doUpload({ buffer, mediaType, credentials, proxyOptions, signal, site });
     if (typeof url === "string" && url) {
       cache?.set(digest, url);
       return { url, bytes, mime: mediaType };
@@ -294,11 +300,12 @@ export async function rewriteQoderMessageAttachments(messages, {
   proxyOptions = null,
   signal = null,
   uploadFn = null,
+  site = null,
 } = {}) {
   const stats = { imageUrls: [], uploaded: 0, stubbed: 0 };
   if (!Array.isArray(messages) || messages.length === 0) return stats;
 
-  const ctx = { credentials, log, proxyOptions, signal, uploadFn, cache: new Map() };
+  const ctx = { credentials, log, proxyOptions, signal, uploadFn, site, cache: new Map() };
 
   for (const msg of messages) {
     if (!msg || typeof msg !== "object") continue;

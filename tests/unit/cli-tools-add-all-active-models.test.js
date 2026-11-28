@@ -187,6 +187,17 @@ describe("live per-account catalogs", () => {
     expect(row.caps).toEqual({ vision: true, reasoning: true, contextWindow: 1000000, maxOutput: undefined });
   });
 
+  it("uses the QwenWork Enterprise alias for live catalog models", () => {
+    const groups = buildModelGroups({
+      connections: [{ id: "enterprise-1", provider: "qwenwork-enterprise", isActive: true }],
+      liveModels: {
+        "qwenwork-enterprise": [{ id: "qwenwork-enterprise/glm-5.3", name: "GLM-5.3" }],
+      },
+    });
+
+    expect(groups["qwenwork-enterprise"].models.map((model) => model.value)).toEqual(["qwwe/glm-5.3"]);
+  });
+
   it("keeps providers whose catalog rows carry no capability fields", () => {
     const values = collectModelValues(
       buildModelGroups({

@@ -302,13 +302,13 @@ export async function getVercelAiGatewayUsage(apiKey, proxyOptions = null) {
   }
 }
 
-export async function getQoderUsage(accessToken, proxyOptions = null, providerId = "qoder") {
+export async function getQoderUsage(accessToken, proxyOptions = null, providerId = "qoder", usageUrl = null) {
   if (!accessToken) {
     return { message: "Qoder usage unavailable: no access token" };
   }
   try {
     const response = await proxyAwareFetch(
-      U(providerId).url,
+      usageUrl || U(providerId).url,
       {
         method: "GET",
         headers: {
@@ -352,7 +352,7 @@ export async function getQoderUsage(accessToken, proxyOptions = null, providerId
     const resetAt = expiresAtMs && !neverExpires ? new Date(expiresAtMs).toISOString() : null;
     const quotas = {
       user: {
-        total: Number(userQuota.total) || 0,
+        total: Number(userQuota.total ?? userQuota.cap) || 0,
         used: Number(userQuota.used) || 0,
         remaining: Number(userQuota.remaining) || 0,
         unit: userQuota.unit || "credits",
@@ -360,7 +360,10 @@ export async function getQoderUsage(accessToken, proxyOptions = null, providerId
         neverExpires,
       },
       organization: {
-        total: Number(orgQuota.total) || 0,
+        // Enterprise VPC reports the org package ceiling as `cap` (no `total`);
+        // public cloud uses `total`. Accept either so the 3000-credit enterprise
+        // grant isn't parsed as a 0/0 bucket.
+        total: Number(orgQuota.total ?? orgQuota.cap) || 0,
         used: Number(orgQuota.used) || 0,
         remaining: Number(orgQuota.remaining) || 0,
         unit: orgQuota.unit || "credits",

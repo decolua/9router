@@ -518,6 +518,20 @@ PROVIDER_CAPABILITIES["qoder"] = {
 // Qoder CN serves the identical model catalog from the CN gateway, so it shares
 // the intl Qoder capability table verbatim (vision/reasoning/contextWindow).
 PROVIDER_CAPABILITIES["qoder-cn"] = PROVIDER_CAPABILITIES["qoder"];
+
+// QwenWork (千问办公) model capability table. is_vl / is_reasoning /
+// max_input_tokens copied from the public cloud's list per magpie PR #319,
+// not verified against a flagship — all three models are text-only, 128k
+// context.
+PROVIDER_CAPABILITIES["qwenwork"] = {
+  "flash":              { contextWindow: 131072 },
+  "pro":                { contextWindow: 131072 },
+  "qwen3.8-max-preview": { contextWindow: 131072 },
+};
+// QwenWork enterprise flagship (qwenwork-enterprise) serves the same model
+// catalog from the enterprise's own host, so it shares the public-cloud
+// capability table verbatim.
+PROVIDER_CAPABILITIES["qwenwork-enterprise"] = PROVIDER_CAPABILITIES["qwenwork"];
 PROVIDER_CAPABILITIES.cx = PROVIDER_CAPABILITIES.codex;
 PROVIDER_CAPABILITIES.dv = PROVIDER_CAPABILITIES["devin-cli"];
 PROVIDER_CAPABILITIES.devin = PROVIDER_CAPABILITIES["devin-cli"];

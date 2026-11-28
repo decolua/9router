@@ -5,7 +5,7 @@
 
 export default {
   id: "minimax-code-global",
-  priority: 80,
+  priority: 86,
   alias: "mmg",
   display: {
     name: "MiniMax Code (Global)",
