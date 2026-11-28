@@ -160,6 +160,12 @@ export async function createProviderConnection(data) {
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find(c => {
         if (c.authType !== "oauth" || c.email !== data.email) return false;
+        // Enterprise VPC vs public cloud (or different VPC instances) are
+        // distinct identities even for the same email — never collapse one
+        // onto the other (qoder-cn / qwenwork-enterprise share a provider id).
+        const incomingHost = data.providerSpecificData?.enterpriseHost || "";
+        const existingHost = c.providerSpecificData?.enterpriseHost || "";
+        if (incomingHost !== existingHost) return false;
 
         // Codex/OpenAI can issue multiple OAuth grants for the same email.
         // Refresh tokens are rotated single-use; collapsing a new login onto an

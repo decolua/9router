@@ -8,6 +8,7 @@ import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
+import { qoderVpcHosts } from "open-sse/shared/qoder/sites.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
 import { GROK_CLI_PAGER_USER_AGENT, GROK_CLI_VERSION } from "open-sse/config/grokCli.js";
 import {
@@ -484,6 +485,35 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       return { valid: true, error: warn, warning: warn, refreshed, newTokens };
     }
   }
+  if (connection.provider === "qoder-cn" && (connection.providerSpecificData || {}).enterpriseHost) {
+    // Enterprise VPC: probe the connection's own openapi host (the registry's
+    // public openapi host doesn't serve an enterprise deployment).
+    const host = qoderVpcHosts(connection.providerSpecificData.enterpriseHost)?.openapi;
+    if (!host) {
+      return { valid: false, error: "Invalid enterprise VPC domain", refreshed, newTokens };
+    }
+    try {
+      const res = await fetchWithConnectionProxy(
+        `https://${host}/api/v1/userinfo`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+        effectiveProxy,
+      );
+      if (res.ok) return { valid: true, error: null, refreshed, newTokens };
+      if (res.status === 401) {
+        return { valid: false, error: "Invalid or expired token", refreshed, newTokens };
+      }
+      if (res.status === 403) {
+        return { valid: false, error: "Access denied", refreshed, newTokens };
+      }
+      // Host-side failures (5xx, DNS, firewall) say nothing about the token:
+      // keep the connection active and surface the reason as a soft warning.
+      const warn = `Could not verify token: API returned ${res.status}`;
+      return { valid: true, error: warn, warning: warn, refreshed, newTokens };
+    } catch (err) {
+      const warn = `Could not verify token: ${err.message}`;
+      return { valid: true, error: warn, warning: warn, refreshed, newTokens };
+    }
+  }
 
 
   try {
@@ -949,10 +979,18 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "qoder":
       case "qoder-cn": {
-        // PAT (pt-...) exchange → job token. A successful exchange proves the PAT.
-        const exchangeUrl = provider === "qoder-cn"
-          ? "https://openapi.qoder.com.cn/api/v1/jobToken/exchange"
-          : "https://openapi.qoder.sh/api/v1/jobToken/exchange";
+        // PAT (pt-...) exchange → job token. A successful exchange proves the
+        // PAT. Enterprise VPC connections exchange on their own domain.
+        const webHost = String((connection.providerSpecificData || {}).enterpriseHost || "").trim().toLowerCase();
+        const entHost = webHost ? qoderVpcHosts(webHost)?.openapi : "";
+        if (webHost && !entHost) {
+          return { valid: false, error: "Invalid enterprise VPC domain" };
+        }
+        const exchangeUrl = entHost
+          ? `https://${entHost}/api/v1/jobToken/exchange`
+          : provider === "qoder-cn"
+            ? "https://openapi.qoder.com.cn/api/v1/jobToken/exchange"
+            : "https://openapi.qoder.sh/api/v1/jobToken/exchange";
         const raw = connection.apiKey || "";
         const pat = raw.startsWith("pt-") ? raw : `pt-${raw}`;
         const exRes = await fetchWithConnectionProxy(

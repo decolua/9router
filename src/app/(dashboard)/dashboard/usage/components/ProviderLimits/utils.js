@@ -607,6 +607,7 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "qoder":
+      case "qoder-cn":
       case "qwenwork":
       case "qwenwork-enterprise":
         // Qoder ships a `user` quota, an optional `organization` quota and —

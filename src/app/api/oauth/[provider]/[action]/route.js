@@ -247,8 +247,8 @@ export async function GET(request, { params }) {
       const startUrl = searchParams.get("start_url");
       const region = searchParams.get("region");
       const authMethod = searchParams.get("auth_method");
-      // QwenWork enterprise: the user's company domain (asked in the modal
-      // before the device-code request fires).
+      // Enterprise domain (asked in the modal before the device-code request
+      // fires): required for QwenWork enterprise, optional for Qoder CN VPC.
       const enterpriseDomain = searchParams.get("domain");
       let deviceOptions = provider === "kiro"
         ? {
@@ -257,7 +257,7 @@ export async function GET(request, { params }) {
             ...(authMethod ? { authMethod } : {}),
           }
         : undefined;
-      if (provider === "qwenwork-enterprise" && enterpriseDomain) {
+      if ((provider === "qwenwork-enterprise" || provider === "qoder-cn") && enterpriseDomain) {
         deviceOptions = { ...(deviceOptions || {}), enterpriseDomain };
       }
       

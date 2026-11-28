@@ -14,6 +14,7 @@ import {
   isNousApiKeyAccepted,
 } from "open-sse/services/nous.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { qoderEnterpriseHostError, validateQoderVpcDomain } from "open-sse/shared/qoder/sites.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -631,10 +632,26 @@ export async function POST(request) {
         case "qoder-cn":
         case "qwenwork":
         case "qwenwork-enterprise": {
+          // Server-side namespace guard: reject a Qoder CN enterprise host
+          // outside the VPC namespace before exchanging the PAT anywhere.
+          let qoderPsd = providerSpecificData;
+          if (provider === "qoder" || provider === "qoder-cn") {
+            const hostError = qoderEnterpriseHostError(providerSpecificData?.enterpriseHost);
+            if (hostError) {
+              isValid = false;
+              error = hostError;
+              break;
+            }
+            // Canonicalize to the bare VPC host so an https:// input resolves
+            // the same way it was validated (runtime rejects scheme-form hosts).
+            if (typeof providerSpecificData?.enterpriseHost === "string" && providerSpecificData.enterpriseHost.trim()) {
+              qoderPsd = { ...providerSpecificData, enterpriseHost: validateQoderVpcDomain(providerSpecificData.enterpriseHost) };
+            }
+          }
           // PAT (pt-...) needs the job-token exchange before it can sign
           // anything — the generic OpenAI-compat probe below can't validate it.
           try {
-            const resolved = await resolveQoderCredentials({ provider, apiKey, providerSpecificData }, null, AbortSignal.timeout(8000));
+            const resolved = await resolveQoderCredentials({ provider, apiKey, providerSpecificData: qoderPsd }, null, AbortSignal.timeout(8000));
             const result = await resolveQoderModels(resolved, { forceRefresh: true });
             isValid = !!result?.models?.length;
           } catch (err) {

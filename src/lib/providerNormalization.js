@@ -1,4 +1,5 @@
 import { AI_PROVIDERS } from "../shared/constants/providers.js";
+import { validateQoderVpcDomain } from "open-sse/shared/qoder/sites.js";
 
 /**
  * Detect xAI Grok models by id pattern (grok-*, Grok_*, etc).
@@ -39,6 +40,14 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
     ).trim();
 
     if (baseUrl) next.baseUrl = baseUrl;
+  }
+
+  // Qoder CN enterprise: normalize the access domain to a bare host within the
+  // VPC namespace (accepts an https:// address like the sign-in prompt). An
+  // invalid value is left for the route's namespace guard to reject.
+  if ((provider === "qoder" || provider === "qoder-cn") && typeof next.enterpriseHost === "string" && next.enterpriseHost.trim()) {
+    const host = validateQoderVpcDomain(next.enterpriseHost);
+    if (host) next.enterpriseHost = host;
   }
 
   return Object.keys(next).length > 0 ? next : null;

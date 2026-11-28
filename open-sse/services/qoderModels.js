@@ -35,7 +35,7 @@ import {
   qoderInferenceBase,
   QODER_STATIC_MODEL_CONFIGS,
 } from "../shared/qoder/constants.js";
-import { qoderSiteOf, qoderInferenceBaseForSite } from "../shared/qoder/sites.js";
+import { qoderSiteOf, qoderInferenceBaseForSite, normalizeEnterpriseHost, qoderEnterpriseServiceBase } from "../shared/qoder/sites.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
@@ -69,9 +69,14 @@ const inflight = new Map();
  * Exchange a Qoder PAT (pt-...) for a short-lived job token (jt-...).
  * This endpoint is plain JSON POST — NOT COSY-signed.
  */
-async function exchangeJobToken(pat, proxyOptions = null, signal = null, region = "intl") {
+async function exchangeJobToken(pat, proxyOptions = null, signal = null, region = "intl", openApiBase = null) {
+  // Enterprise VPC credentials exchange on their own openapi host — the PAT
+  // must never reach the public gateway.
+  const exchangeUrl = openApiBase
+    ? `${openApiBase}/api/v1/jobToken/exchange`
+    : qoderJobTokenExchangeUrl(region);
   const res = await proxyAwareFetch(
-    qoderJobTokenExchangeUrl(region),
+    exchangeUrl,
     {
       method: "POST",
       headers: {
@@ -107,10 +112,10 @@ async function exchangeJobToken(pat, proxyOptions = null, signal = null, region 
  * Resolve the Qoder userId for a job token (needed for COSY signing).
  * Returns "" on any failure — callers fall back to the stored userId.
  */
-async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = null, region = "intl") {
+async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = null, region = "intl", openApiBase = null) {
   try {
     const res = await proxyAwareFetch(
-      qoderUserInfoUrl(region),
+      openApiBase ? `${openApiBase}/api/v1/userinfo` : qoderUserInfoUrl(region),
       {
         method: "GET",
         headers: {
@@ -131,15 +136,15 @@ async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = nu
 }
 
 /**
- * Resolve a PAT to a job-token credential, cached per-PAT-per-region.
+ * Resolve a PAT to a job-token credential, cached per-PAT-per-region-per-host.
  */
-async function resolvePatCredential(pat, proxyOptions = null, signal = null, region = "intl") {
-  const cacheKey = `${region}:${pat}`;
+async function resolvePatCredential(pat, proxyOptions = null, signal = null, region = "intl", openApiBase = null) {
+  const cacheKey = `${region}:${openApiBase || ""}:${pat}`;
   const cached = patJobCache.get(cacheKey);
   if (cached && cached.expiresAt - Date.now() > PAT_REFRESH_BUFFER_MS) return cached;
 
-  const { jobToken, expiresAt } = await exchangeJobToken(pat, proxyOptions, signal, region);
-  const userId = await fetchUserIdForJobToken(jobToken, proxyOptions, signal, region);
+  const { jobToken, expiresAt } = await exchangeJobToken(pat, proxyOptions, signal, region, openApiBase);
+  const userId = await fetchUserIdForJobToken(jobToken, proxyOptions, signal, region, openApiBase);
   const resolved = { accessToken: jobToken, userId, expiresAt };
   patJobCache.set(cacheKey, resolved);
   return resolved;
@@ -155,8 +160,15 @@ async function resolvePatCredential(pat, proxyOptions = null, signal = null, reg
 export async function resolveQoderCredentials(credentials, proxyOptions = null, signal = null, region) {
   const raw = credentials?.apiKey || credentials?.accessToken;
   if (isQoderPat(raw)) {
+    const site = qoderSiteOf(credentials?.provider);
+    // QwenWork sites issue no PATs (site.pat === false); never exchange a
+    // supplied PAT against their host.
+    if (site.pat === false) {
+      throw new Error("This provider does not support personal access tokens");
+    }
     const effRegion = region || qoderRegionOf(credentials?.provider);
-    const resolved = await resolvePatCredential(raw, proxyOptions, signal, effRegion);
+    const openApiBase = qoderEnterpriseServiceBase(credentials, site, "openapi");
+    const resolved = await resolvePatCredential(raw, proxyOptions, signal, effRegion, openApiBase);
     return {
       ...credentials,
       accessToken: resolved.accessToken,
@@ -180,9 +192,11 @@ function cacheKey(credentials) {
   const psd = credentials?.providerSpecificData || {};
   const seed = psd.userId || credentials?.refreshToken || credentials?.accessToken || "anonymous";
   // Site id (qoder / qoder-cn / …) keeps catalogs for different deployables
-  // apart; unknown providers fall back to the qoder intl site.
+  // apart; unknown providers fall back to the qoder intl site. The enterprise
+  // host separates a VPC deployable's catalog from the public cloud's.
   const siteId = qoderSiteOf(credentials?.provider).id;
-  return createHash("sha256").update(`qoder:${siteId}:${seed}`).digest("hex");
+  const host = normalizeEnterpriseHost(psd.enterpriseHost) || "";
+  return createHash("sha256").update(`qoder:${siteId}:${host}:${seed}`).digest("hex");
 }
 
 /**

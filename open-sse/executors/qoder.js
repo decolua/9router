@@ -35,7 +35,7 @@ import {
   getQoderStaticModelConfig,
   qoderInferenceBase,
 } from "../shared/qoder/constants.js";
-import { qoderSiteOf, qoderInferenceBaseForSite } from "../shared/qoder/sites.js";
+import { qoderSiteOf, qoderInferenceBaseForSite, qoderEnterpriseServiceBase } from "../shared/qoder/sites.js";
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
 import { encodeDataUri } from "../translator/concerns/image.js";
@@ -833,7 +833,11 @@ export class QoderExecutor extends BaseExecutor {
      * replays" (endpoint missing, erroring, or answering an unknown shape).
      */
     const fetchQueueStatus = async (modelKey, queueType, requestSetId, requestId, sessionId) => {
-      const statusUrl = qoderQueueStatusUrl(qoderInferenceBase(credentials, this.region), {
+      // Enterprise VPC credentials poll their own gateway host; the public
+      // cloud keeps the region's gateway split.
+      const queueBase = qoderEnterpriseServiceBase(credentials, this.site, "gateway")
+        || qoderInferenceBase(credentials, this.region);
+      const statusUrl = qoderQueueStatusUrl(queueBase, {
         requestSetId,
         modelKey,
         queueType,

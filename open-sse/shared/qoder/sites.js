@@ -23,6 +23,7 @@
  */
 
 import { QODER_RSA_PUBLIC_KEY, qoderInferenceBase } from "./constants.js";
+import { validateEnterpriseDomain } from "./enterpriseDomain.js";
 
 export const QODER_SITE_QODER = Object.freeze({
   id: "qoder",
@@ -63,6 +64,10 @@ export const QODER_SITE_QODER_CN = Object.freeze({
   catalog: Object.freeze({ fallbackModels: null }),
   usage: Object.freeze({ kind: "quotaApi" }),
   pat: true,
+  // Optional enterprise VPC ({instance}.vpc.qoder.com.cn): sign-in may take
+  // an access domain; credentials with providerSpecificData.enterpriseHost
+  // route every request to that host (see qoderInferenceBaseForSite).
+  // enabled stays false — unlike qwenwork-enterprise, the domain is optional.
   enterprise: Object.freeze({ enabled: false }),
 });
 
@@ -166,14 +171,14 @@ export function qoderSiteOf(providerId) {
  * token kinds, so its chat base is the answer outright.
  *
  * An enterprise credential's `providerSpecificData.enterpriseHost` (the
- * domain captured at sign-in) overrides everything: the enterprise's
- * tokens must never leave the enterprise domain, so the chat host is
- * always https://<enterpriseHost> regardless of the site table's
- * placeholder bases.
+ * web access domain captured at sign-in) overrides the placeholder bases.
+ * Qoder CN VPC splits into web/openapi/gateway hosts (chat → gateway);
+ * QwenWork enterprise is a single host. The enterprise's tokens never
+ * leave its own domains.
  */
 export function qoderInferenceBaseForSite(credentials, site) {
-  const enterpriseHost = normalizeEnterpriseHost(credentials?.providerSpecificData?.enterpriseHost);
-  if (enterpriseHost) return `https://${enterpriseHost}`;
+  const enterpriseBase = qoderEnterpriseServiceBase(credentials, site, "gateway");
+  if (enterpriseBase) return enterpriseBase;
   if (site && site.id !== "qoder") return site.bases.chat;
   return qoderInferenceBase(credentials);
 }
@@ -184,6 +189,95 @@ export function normalizeEnterpriseHost(host) {
   const value = host.trim().toLowerCase();
   if (!value) return null;
   return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(value) ? value : null;
+}
+
+/** The Qoder CN enterprise VPC web-domain namespace: {id}.vpc.qoder.com.cn. */
+export const QODER_VPC_SUFFIX = ".vpc.qoder.com.cn";
+
+/** True when host is a Qoder CN VPC web access domain (instance label + suffix). */
+export function isQoderVpcHost(host) {
+  const h = normalizeEnterpriseHost(host);
+  if (!h || !h.endsWith(QODER_VPC_SUFFIX) || h.length <= QODER_VPC_SUFFIX.length) return false;
+  const id = h.slice(0, h.length - QODER_VPC_SUFFIX.length);
+  return !id.includes("."); // a single instance label, not nested subdomains
+}
+
+/**
+ * Split a Qoder CN VPC web access domain into its service hosts. The instance
+ * mirrors the public-cloud split (openapi.qoder.com.cn / gateway.qoder.com.cn):
+ *   {id}.vpc.qoder.com.cn         → web console (login page, session-gated)
+ *   {id}-openapi.vpc.qoder.com.cn → device flow / PAT exchange / userinfo / quota
+ *   {id}-gateway.vpc.qoder.com.cn → COSY-signed chat / model list / refresh
+ * Returns null unless the host is in the Qoder VPC namespace (so a typo or an
+ * unrelated domain can never receive enterprise credentials).
+ */
+export function qoderVpcHosts(webHost) {
+  const host = normalizeEnterpriseHost(webHost);
+  if (!isQoderVpcHost(host)) return null;
+  const id = host.slice(0, host.length - QODER_VPC_SUFFIX.length);
+  return {
+    web: host,
+    openapi: `${id}-openapi${QODER_VPC_SUFFIX}`,
+    gateway: `${id}-gateway${QODER_VPC_SUFFIX}`,
+  };
+}
+
+/** True for the Qoder deployables (intl + CN); QwenWork sites are not Qoder. */
+function isQoderSite(site) {
+  return site?.id === "qoder" || site?.id === "qoder-cn";
+}
+
+/** Shared error for a Qoder enterprise host outside the VPC namespace. */
+export const QODER_VPC_DOMAIN_ERROR =
+  "Invalid enterprise VPC domain (expected {instance}.vpc.qoder.com.cn)";
+
+/**
+ * Validate a user/API-supplied Qoder CN access domain: a bare host or https://
+ * address (like the sign-in prompt), but ONLY within {instance}.vpc.qoder.com.cn.
+ * Returns the normalized bare host, or null for blank/invalid input.
+ */
+export function validateQoderVpcDomain(input) {
+  const host = validateEnterpriseDomain(input);
+  return host && isQoderVpcHost(host) ? host : null;
+}
+
+/**
+ * Server-side namespace guard: null when enterpriseHost is absent (public
+ * cloud) or a valid Qoder VPC host; an error string when it is non-blank but
+ * malformed/out-of-namespace. Used by the validate/create APIs so an invalid
+ * domain is rejected before any credential is exchanged or persisted.
+ */
+export function qoderEnterpriseHostError(input) {
+  if (input == null) return null; // absent ⇒ public cloud
+  if (typeof input !== "string") return QODER_VPC_DOMAIN_ERROR; // reject arrays/objects/numbers
+  if (!input.trim()) return null;
+  return validateQoderVpcDomain(input) ? null : QODER_VPC_DOMAIN_ERROR;
+}
+
+/**
+ * Enterprise service base URL for a credential, by role ("gateway" for chat /
+ * model list / refresh / queue / uploads, "openapi" for device flow / PAT /
+ * userinfo / quota). The VPC split is detected from the DOMAIN ITSELF so
+ * live-chat credentials (no top-level provider, site falls back to intl) still
+ * route correctly. A Qoder-site credential whose enterpriseHost is non-blank
+ * but outside the VPC namespace FAILS CLOSED (throws) — its tokens must never
+ * reach an unrelated domain or silently fall back to the public cloud.
+ * QwenWork enterprise keeps a single host for every role. Null when absent.
+ */
+export function qoderEnterpriseServiceBase(credentials, site, role = "gateway") {
+  const raw = credentials?.providerSpecificData?.enterpriseHost;
+  const host = normalizeEnterpriseHost(raw);
+  if (isQoderSite(site)) {
+    const present = raw != null && !(typeof raw === "string" && !raw.trim());
+    if (present && !isQoderVpcHost(host)) {
+      throw new Error(QODER_VPC_DOMAIN_ERROR);
+    }
+    if (!host) return null;
+    const vpc = qoderVpcHosts(host);
+    return `https://${role === "openapi" ? vpc.openapi : vpc.gateway}`;
+  }
+  if (!host) return null;
+  return `https://${host}`;
 }
 export function isQoderFamilyProvider(providerId) {
   return Object.prototype.hasOwnProperty.call(QODER_SITES, providerId);

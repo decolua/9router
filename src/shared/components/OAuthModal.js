@@ -179,7 +179,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           return;
         }
 
-        if (data.error === "expired_token" || data.error === "access_denied" || data.fatal) {
+        // Hard failures must surface, not silently retry until the deadline:
+        // poll_failed means the poll endpoint itself errored (e.g. an
+        // enterprise VPC gateway answering 401); invalid_request means the
+        // request is malformed (e.g. a bad enterprise domain) — neither
+        // resolves by waiting.
+        if (data.error === "expired_token" || data.error === "access_denied" || data.error === "poll_failed" || data.error === "invalid_request" || data.fatal) {
           throw new Error(data.errorDescription || data.error);
         }
 
@@ -268,12 +273,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     if (!popupRef.current) setStep("input"); // popup blocked → fall back to manual paste
   }, [stopOwnedProxy]);
 
-  // QwenWork enterprise: validate the company domain locally (shape only —
-  // the route re-validates with validateEnterpriseDomain), then start the
-  // device flow against that host.
+  // Enterprise domain step: validate the company domain locally (shape only
+  // — the route re-validates with validateEnterpriseDomain), then start the
+  // device flow against that host. Qoder CN's domain is optional: blank
+  // means the public cloud (qoder.com.cn).
   const handleDomainSubmit = () => {
     const value = enterpriseDomain.trim();
-    if (!value) {
+    if (!value && provider !== "qoder-cn") {
       setDomainError("请输入企业域名");
       return;
     }
@@ -333,6 +339,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (provider === "qwenwork-enterprise") {
           deviceCodeUrl.searchParams.set("domain", enterpriseDomainRef.current || "");
         }
+        // Qoder CN: optional enterprise VPC domain (blank ⇒ public cloud).
+        if (provider === "qoder-cn" && enterpriseDomainRef.current) {
+          deviceCodeUrl.searchParams.set("domain", enterpriseDomainRef.current);
+        }
         const res = await fetch(deviceCodeUrl.toString());
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
@@ -361,6 +371,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _qoderVerifier: data.codeVerifier,
               // The enterprise flow keys its poll+mapTokens on the domain.
               _qwenworkDomain: data._qwenworkDomain,
+              // Qoder CN's optional VPC flow keys poll+mapTokens on the domain.
+              _qoderDomain: data._qoderDomain,
             }
           : (provider === "kimi" || provider === "kimi-coding")
           ? { _kimiDeviceId: data._kimiDeviceId }
@@ -521,7 +533,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     setIsDeviceCode(false);
     setDeviceData(null);
     setPolling(false);
-    setStep(provider === "qwenwork-enterprise" ? "domain" : "waiting");
+    setStep(provider === "qwenwork-enterprise" || provider === "qoder-cn" ? "domain" : "waiting");
     setAuthMode("browser");
     setPasteToken("");
     setEnterpriseDomain("");
@@ -537,10 +549,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         .then((data) => setIdeStatus(data))
         .catch(() => setIdeStatus({ installed: false, path: null }));
     }
-    // QwenWork enterprise asks for the company domain first — no network
-    // call until the user submits one (startOAuthFlow runs from
-    // handleDomainSubmit; every later request targets that host).
-    if (provider === "qwenwork-enterprise") return;
+    // QwenWork enterprise asks for the company domain first; Qoder CN offers
+    // an optional one (blank = public cloud). No network call until the user
+    // submits the step (startOAuthFlow runs from handleDomainSubmit; every
+    // later request targets the chosen host).
+    if (provider === "qwenwork-enterprise" || provider === "qoder-cn") return;
     startOAuthFlowRef.current();
   }, [isOpen, provider]);
 
@@ -939,20 +952,25 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           </>
         )}
 
-        {/* QwenWork enterprise: company domain input before the device flow */}
-        {step === "domain" && provider === "qwenwork-enterprise" && (
+        {/* Enterprise domain input before the device flow: required for
+            QwenWork enterprise, optional for Qoder CN (blank = public cloud) */}
+        {step === "domain" && (provider === "qwenwork-enterprise" || provider === "qoder-cn") && (
           <>
             <div className="text-center py-2">
               <p className="text-sm text-text-muted mb-1">
-                千问办公旗舰版部署在你企业自己的域名上：
+                {provider === "qoder-cn"
+                  ? "企业专属版（VPC）部署在你企业自己的域名上："
+                  : "千问办公旗舰版部署在你企业自己的域名上："}
               </p>
               <p className="text-xs text-text-muted">
-                输入企业管理后台地址栏的域名（如 your-company.vpc.qwenwork.cn，或 https:// 开头的完整地址），不要带路径。
+                {provider === "qoder-cn"
+                  ? "输入管理员提供的接入域名（如 your-company.vpc.qoder.com.cn，或 https:// 开头的完整地址），不要带路径。留空则使用公共云 qoder.com.cn。"
+                  : "输入企业管理后台地址栏的域名（如 your-company.vpc.qwenwork.cn，或 https:// 开头的完整地址），不要带路径。"}
               </p>
             </div>
             <Input
-              label="企业域名"
-              placeholder="your-company.vpc.qwenwork.cn"
+              label={provider === "qoder-cn" ? "接入域名（可选）" : "企业域名"}
+              placeholder={provider === "qoder-cn" ? "your-company.vpc.qoder.com.cn" : "your-company.vpc.qwenwork.cn"}
               value={enterpriseDomain}
               onChange={(e) => {
                 setEnterpriseDomain(e.target.value);
@@ -963,7 +981,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             />
             <div className="flex gap-2 mt-2">
               <Button onClick={handleDomainSubmit} variant="primary" fullWidth>
-                继续
+                {provider === "qoder-cn" ? "继续（留空使用公共云）" : "继续"}
               </Button>
             </div>
           </>

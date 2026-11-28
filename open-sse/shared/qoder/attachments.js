@@ -26,6 +26,7 @@ import {
   QODER_MAX_PAYLOAD_BYTES,
   qoderInferenceBase,
 } from "./constants.js";
+import { qoderEnterpriseServiceBase, qoderSiteOf } from "./sites.js";
 
 const IMAGE_MIME_RE = /^image\//i;
 const DATA_URI_RE = /data:[^;]+;base64,[A-Za-z0-9+/=\s]+/g;
@@ -84,7 +85,11 @@ function extractUrlFromUploadResponse(json) {
 
 async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions, signal, site = null }) {
   const requestId = uuidv4();
-  const url = `${qoderInferenceBase(credentials)}${`/algo${QODER_IMAGE_UPLOAD_SIG_PATH}`}?request_id=${requestId}`;
+  // Enterprise VPC credentials upload to their own gateway host — the tokens
+  // and the file bytes must never leave the enterprise domains.
+  const uploadBase = qoderEnterpriseServiceBase(credentials, site || qoderSiteOf(credentials?.provider), "gateway")
+    || qoderInferenceBase(credentials);
+  const url = `${uploadBase}${`/algo${QODER_IMAGE_UPLOAD_SIG_PATH}`}?request_id=${requestId}`;
   const { boundary, body } = buildMultipartFile(buffer, {
     fileName: `image.${mimeExt(mediaType)}`,
     mediaType: mediaType || "application/octet-stream",

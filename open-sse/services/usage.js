@@ -35,7 +35,7 @@ import {
   getVercelAiGatewayUsage,
   getQoderUsage,
 } from "./usage/misc.js";
-import { normalizeEnterpriseHost } from "../shared/qoder/sites.js";
+import { normalizeEnterpriseHost, qoderEnterpriseServiceBase, qoderSiteOf } from "../shared/qoder/sites.js";
 
 /**
  * Get usage data for a provider connection
@@ -91,7 +91,11 @@ const USAGE_HANDLERS = {
 // provider's own registry usage block (region-correct via c.provider).
 async function getQoderUsageFor(c) {
   const resolved = await resolveQoderCredentials(c, c.proxyOptions).catch(() => null);
-  return getQoderUsage(resolved?.accessToken || c.accessToken, c.proxyOptions, c.provider || "qoder");
+  // Enterprise VPC credentials read quota from their own openapi host — the
+  // registry's public-gateway URL doesn't serve an enterprise deployment.
+  const openApiBase = qoderEnterpriseServiceBase(c, qoderSiteOf(c.provider), "openapi");
+  const usageUrl = openApiBase ? `${openApiBase}/api/v2/quota/usage` : null;
+  return getQoderUsage(resolved?.accessToken || c.accessToken, c.proxyOptions, c.provider || "qoder", usageUrl);
 }
 
 // QwenWork usage URL: the account-context path. An enterprise credential's
