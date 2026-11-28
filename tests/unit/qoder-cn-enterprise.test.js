@@ -396,7 +396,7 @@ describe("upload destination", () => {
 });
 
 describe("enterprise VPC quota shape (orgResourcePackage.cap, no userQuota)", () => {
-  // Real szhq-openapi.vpc.qoder.com.cn/api/v2/quota/usage response: the
+  // Real-shape enterprise quota/usage response (synthetic acme instance): the
   // enterprise grant lives in orgResourcePackage with a `cap` (no `total`),
   // and there is no userQuota block at all.
   const VPC_BODY = {

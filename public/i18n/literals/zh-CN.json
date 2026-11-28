@@ -1415,5 +1415,20 @@
   "Singapore": "新加坡",
   "Europe · Amsterdam": "欧洲 · 阿姆斯特丹",
   "Russia": "俄罗斯",
-  "India": "印度"
+  "India": "印度",
+  "Enter your company domain": "请输入企业域名",
+  "The Enterprise Dedicated edition (VPC) runs on your company's own domain:": "企业专属版（VPC）部署在你企业自己的域名上：",
+  "QwenWork Enterprise runs on your company's own domain:": "千问办公旗舰版部署在你企业自己的域名上：",
+  "Enter the access domain provided by your admin (e.g. your-company.vpc.qoder.com.cn, or a full https:// address), without a path. Leave blank to use the public cloud qoder.com.cn.": "输入管理员提供的接入域名（如 your-company.vpc.qoder.com.cn，或 https:// 开头的完整地址），不要带路径。留空则使用公共云 qoder.com.cn。",
+  "Enter the domain from your company admin console's address bar (e.g. your-company.vpc.qwenwork.cn, or a full https:// address), without a path.": "输入企业管理后台地址栏的域名（如 your-company.vpc.qwenwork.cn，或 https:// 开头的完整地址），不要带路径。",
+  "Access domain (optional)": "接入域名（可选）",
+  "Company domain": "企业域名",
+  "Continue (blank = public cloud)": "继续（留空使用公共云）",
+  "Enter a valid company domain (e.g. your-company.vpc.qwenwork.cn, or a full https:// address), without a path": "请输入有效的企业域名（如 your-company.vpc.qwenwork.cn，或 https:// 开头的完整地址），不要带路径",
+  "Enter your company domain at sign-in (the domain in the admin console address bar). No PAT support.": "登录时输入企业域名（企业管理后台地址栏的域名），无 PAT 支持",
+  "Standard": "标准",
+  "Advanced": "高级",
+  "Fetch QwenWork Models": "获取 QwenWork 模型",
+  "Please add an active QwenWork connection first": "请先添加一个活跃的 QwenWork 连接",
+  "QwenWork Enterprise": "QwenWork 企业版"
 }

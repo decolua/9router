@@ -610,12 +610,16 @@ export default function ProviderDetailPage() {
     }
   };
 
+  // QwenWork (both editions) rides the same Qoder COSY catalog protocol, so
+  // the import button and its prefix stripping cover it too.
+  const isQwenWorkProvider = providerId === "qwenwork" || providerId === "qwenwork-enterprise";
+
   // Fetch Qoder model list and automatically add to available models
   const handleImportQoderModels = async () => {
     if (importingQoderModels) return;
     const activeConnection = connections.find((conn) => conn.isActive !== false);
     if (!activeConnection) {
-      alert(translate("Please add an active Qoder connection first"));
+      alert(translate(isQwenWorkProvider ? "Please add an active QwenWork connection first" : "Please add an active Qoder connection first"));
       return;
     }
 
@@ -660,7 +664,7 @@ export default function ProviderDetailPage() {
         
         // Qoder model ID format may be "qoder/auto", "qoder-cn/auto" or "auto",
         // need to remove the provider prefix before storing.
-        const cleanModelId = modelId.replace(/^(qoder-cn|qoder)\//, "");
+        const cleanModelId = modelId.replace(/^(qoder-cn|qoder|qwenwork-enterprise|qwenwork)\//, "");
         const alreadyExists = customModels.some(
           (entry) => entry.providerAlias === providerStorageAlias && entry.id === cleanModelId && (entry.kind || entry.type || "llm") === "llm"
         ) || Object.values(modelAliases).includes(`${providerStorageAlias}/${cleanModelId}`);
@@ -1295,8 +1299,8 @@ export default function ProviderDetailPage() {
           Add Model
         </button>
 
-        {/* Import Qoder models button — only show for qoder/qoder-cn provider */}
-        {(providerId === "qoder" || providerId === "qoder-cn") && connections.some((conn) => conn.isActive !== false) && (
+        {/* Import Qoder-family models button — qoder/qoder-cn and QwenWork */}
+        {(providerId === "qoder" || providerId === "qoder-cn" || isQwenWorkProvider) && connections.some((conn) => conn.isActive !== false) && (
           <button
             onClick={handleImportQoderModels}
             disabled={importingQoderModels}
@@ -1305,7 +1309,7 @@ export default function ProviderDetailPage() {
             <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
               {importingQoderModels ? "progress_activity" : "download"}
             </span>
-            {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
+            {importingQoderModels ? translate("Fetching...") : translate(isQwenWorkProvider ? "Fetch QwenWork Models" : "Fetch Qoder Models")}
           </button>
         )}
 

@@ -280,7 +280,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const handleDomainSubmit = () => {
     const value = enterpriseDomain.trim();
     if (!value && provider !== "qoder-cn") {
-      setDomainError("请输入企业域名");
+      setDomainError("Enter your company domain");
       return;
     }
     enterpriseDomainRef.current = value;
@@ -959,17 +959,17 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             <div className="text-center py-2">
               <p className="text-sm text-text-muted mb-1">
                 {provider === "qoder-cn"
-                  ? "企业专属版（VPC）部署在你企业自己的域名上："
-                  : "千问办公旗舰版部署在你企业自己的域名上："}
+                  ? "The Enterprise Dedicated edition (VPC) runs on your company's own domain:"
+                  : "QwenWork Enterprise runs on your company's own domain:"}
               </p>
               <p className="text-xs text-text-muted">
                 {provider === "qoder-cn"
-                  ? "输入管理员提供的接入域名（如 your-company.vpc.qoder.com.cn，或 https:// 开头的完整地址），不要带路径。留空则使用公共云 qoder.com.cn。"
-                  : "输入企业管理后台地址栏的域名（如 your-company.vpc.qwenwork.cn，或 https:// 开头的完整地址），不要带路径。"}
+                  ? "Enter the access domain provided by your admin (e.g. your-company.vpc.qoder.com.cn, or a full https:// address), without a path. Leave blank to use the public cloud qoder.com.cn."
+                  : "Enter the domain from your company admin console's address bar (e.g. your-company.vpc.qwenwork.cn, or a full https:// address), without a path."}
               </p>
             </div>
             <Input
-              label={provider === "qoder-cn" ? "接入域名（可选）" : "企业域名"}
+              label={provider === "qoder-cn" ? "Access domain (optional)" : "Company domain"}
               placeholder={provider === "qoder-cn" ? "your-company.vpc.qoder.com.cn" : "your-company.vpc.qwenwork.cn"}
               value={enterpriseDomain}
               onChange={(e) => {
@@ -981,7 +981,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             />
             <div className="flex gap-2 mt-2">
               <Button onClick={handleDomainSubmit} variant="primary" fullWidth>
-                {provider === "qoder-cn" ? "继续（留空使用公共云）" : "继续"}
+                {provider === "qoder-cn" ? "Continue (blank = public cloud)" : "Continue"}
               </Button>
             </div>
           </>

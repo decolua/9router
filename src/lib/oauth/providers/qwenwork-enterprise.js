@@ -43,7 +43,7 @@ export default {
   requestDeviceCode: async (cfg, codeChallenge, options = {}) => {
     const domain = validateEnterpriseDomain(options.enterpriseDomain ?? "");
     if (!domain) {
-      throw new Error("请输入有效的企业域名（如 your-company.vpc.qwenwork.cn，或 https:// 开头的完整地址），不要带路径");
+      throw new Error("Enter a valid company domain (e.g. your-company.vpc.qwenwork.cn, or a full https:// address), without a path");
     }
     // The public-cloud siteId stays in the config for mapTokens; the per-site
     // gateway URLs are rewritten onto the enterprise host for this attempt.

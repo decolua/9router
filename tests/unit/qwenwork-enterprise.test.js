@@ -29,6 +29,7 @@ import {
 import { QoderExecutor } from "../../open-sse/executors/qoder.js";
 import { getQwenworkUsage } from "../../open-sse/services/usage/qwenwork.js";
 import { fetchQoderCatalogRaw } from "../../open-sse/services/qoderModels.js";
+import { parseQuotaData, getRemainingPercentage, getConnectionLabel } from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
 
 const ENT_HOST = "acme.vpc.qwenwork.cn";
 const ENT_CREDS = {
@@ -199,13 +200,62 @@ describe("enterprise usage envelope", () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ data: { plan: { name: "旗舰版" }, quota: { total: 200, used: 50, remaining: 150 } } }),
+          json: async () => ({ data: { plan: { name: "旗舰版", user_type: "enterprise", is_personal_version: false }, quota: { total: 200, used: 50, remaining: 150 } } }),
         };
       },
     });
     expect(r.planName).toBe("旗舰版");
-    expect(r.quotas.user.total).toBe(200);
+    expect(r.quotas.organization.total).toBe(200);
+    expect(r.quotas.user).toBeUndefined();
     expect(calls[0].startsWith(`https://${ENT_HOST}/`)).toBe(true);
     expect(calls[0]).not.toContain("gateway.qwenwork.cn");
+  });
+
+  it("renders one Organization row, no empty Personal row (Qoder CN VPC convention)", async () => {
+    globalThis.__stubFetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { plan: { name: "Enterprise", user_type: "enterprise", is_personal_version: false }, quota: { total: 10000, used: 7200, remaining: 2800 } } }),
+    });
+    const r = await getQwenworkUsage("dt-ent", `https://${ENT_HOST}/api/v1/adapter/user/account-context?include=user,plan,quota`, {
+      proxyFetch: globalThis.__stubFetch,
+    });
+    const rows = parseQuotaData("qwenwork-enterprise", r);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe("Organization");
+    expect(rows[0].total).toBe(10000);
+    expect(getRemainingPercentage(rows[0])).toBe(28);
+  });
+
+  it("personal public-cloud plans keep the Personal row", async () => {
+    globalThis.__stubFetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { plan: { name: "个人版", user_type: "personal", is_personal_version: true }, quota: { total: 100, used: 40, remaining: 60 } } }),
+    });
+    const r = await getQwenworkUsage("dt-pers", "https://gateway.qwenwork.cn/api/v1/adapter/user/account-context?include=user,plan,quota", {
+      proxyFetch: globalThis.__stubFetch,
+    });
+    const rows = parseQuotaData("qwenwork", r);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe("Personal");
+  });
+});
+
+describe("enterprise connection labels", () => {
+  // Upstream enterprise profiles carry no email, so mapTokens synthesizes
+  // qoder-user-<uuid> for dedup; the client API masks it to qoder-us***.
+  // Neither form may hide the real displayName on the quota card.
+  const SYNTH = "qoder-user-00000000-0000-0000-0000-000000000000";
+
+  it("prefers displayName over the synthetic id (raw and masked)", () => {
+    const conn = { name: SYNTH, email: SYNTH, displayName: `Example User (${ENT_HOST})` };
+    expect(getConnectionLabel(conn)).toBe(`Example User (${ENT_HOST})`);
+    expect(getConnectionLabel({ ...conn, name: "qoder-us***" })).toBe(`Example User (${ENT_HOST})`);
+  });
+
+  it("keeps real names/emails first for ordinary connections", () => {
+    expect(getConnectionLabel({ name: "Alice", email: "alice@example.com", displayName: "Alice A" })).toBe("Alice");
+    expect(getConnectionLabel({ name: SYNTH, email: SYNTH })).toBe(SYNTH);
   });
 });

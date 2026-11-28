@@ -22,11 +22,18 @@ export const QUOTA_SORT_OPTIONS = [
 ];
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
+// Qoder-family device flows synthesize `qoder-user-<uuid>` as the dedup email
+// when the upstream profile carries no email (QwenWork enterprise). The client
+// API masks long ids to `qoder-us***`; neither form is a human label, so cards
+// prefer the real displayName over them.
+export function isSyntheticQoderAccountId(value) {
+  return typeof value === "string" && (value.startsWith("qoder-user-") || value === "qoder-us***");
+}
+
 export function getConnectionLabel(connection) {
-  return connection.name?.trim()
-    || connection.email?.trim()
-    || connection.displayName?.trim()
-    || null;
+  const candidates = [connection.name, connection.email, connection.displayName];
+  const real = candidates.find((v) => v?.trim() && !isSyntheticQoderAccountId(v.trim()));
+  return (real || candidates.find((v) => v?.trim()))?.trim() || null;
 }
 
 export function getConnectionQuotaRemaining(connection, quotaData) {

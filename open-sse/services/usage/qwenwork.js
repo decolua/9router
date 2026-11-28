@@ -64,9 +64,15 @@ export async function getQwenworkUsage(accessToken, url, proxyOptions = null) {
       const total = Number(q.total);
       const remaining = Number(q.remaining);
       const used = Number.isFinite(Number(q.used)) ? Number(q.used) : (Number.isFinite(total) && Number.isFinite(remaining) ? total - remaining : NaN);
+      // The enterprise flagship's single pool is the organization's credit
+      // grant (plan.user_type "enterprise" / is_personal_version false), the
+      // same shape Qoder CN VPC reports as orgResourcePackage: file it under
+      // `organization` so the dashboard labels it "Organization" and skips
+      // the empty personal row. Personal public-cloud accounts keep `user`.
+      const bucket = plan.user_type === "enterprise" || plan.is_personal_version === false ? "organization" : "user";
       if (Number.isFinite(total) && total > 0 && Number.isFinite(used) && used >= 0) {
         result.quotas = {
-          user: {
+          [bucket]: {
             total,
             used,
             remaining: Number.isFinite(remaining) ? remaining : total - used,

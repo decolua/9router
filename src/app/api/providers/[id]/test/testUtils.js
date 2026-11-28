@@ -97,7 +97,7 @@ const OAUTH_TEST_CONFIG = {
     refreshable: false,
   },
   qwenwork: {
-    // Same shape as qoder, QwenWork CN gateway host (oauth-only, no PAT).
+    // Same shape as qoder, QwenWork gateway host (oauth-only, no PAT).
     url: "https://gateway.qwenwork.cn/api/v1/userinfo",
     method: "GET",
     authHeader: "Authorization",

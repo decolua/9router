@@ -136,8 +136,8 @@ export const QODER_SITE_QWENWORK_ENTERPRISE = Object.freeze({
   // (magpie PR #319, QWORK_FALLBACK_LISTING.qwork).
   catalog: Object.freeze({
     fallbackModels: [
-      { key: "flash", display_name: "标准", is_vl: false, is_reasoning: false, max_input_tokens: 131072 },
-      { key: "pro", display_name: "高级", is_vl: false, is_reasoning: false, max_input_tokens: 131072 },
+      { key: "flash", display_name: "Standard", is_vl: false, is_reasoning: false, max_input_tokens: 131072 },
+      { key: "pro", display_name: "Advanced", is_vl: false, is_reasoning: false, max_input_tokens: 131072 },
       { key: "qwen3.8-max-preview", display_name: "Qwen3.8-Max", is_vl: false, is_reasoning: false, max_input_tokens: 131072 },
     ],
   }),

@@ -10,7 +10,7 @@ export default {
   alias: "qwwe",
   uiAlias: "qwwe",
   display: {
-    name: "QwenWork 企业版",
+    name: "QwenWork Enterprise",
     icon: "hub",
     color: "#6D28D9",
     website: "https://qwenwork.cn",
@@ -21,7 +21,7 @@ export default {
   category: "oauth",
   authModes: ["oauth"],
   hasOAuth: true,
-  authHint: "登录时输入企业域名（企业管理后台地址栏的域名），无 PAT 支持",
+  authHint: "Enter your company domain at sign-in (the domain in the admin console address bar). No PAT support.",
   transport: {
     baseUrl: "https://gateway.qwenwork.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
     headers: {},
@@ -32,8 +32,8 @@ export default {
     },
   },
   models: [
-    { id: "flash", name: "标准" },
-    { id: "pro", name: "高级" },
+    { id: "flash", name: "Standard" },
+    { id: "pro", name: "Advanced" },
     { id: "qwen3.8-max-preview", name: "Qwen3.8-Max" },
   ],
   oauth: {
