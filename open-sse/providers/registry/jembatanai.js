@@ -13,7 +13,7 @@ export default {
     textIcon: "JA",
     website: "https://jembatanai.com/?utm_campaign=9router",
     notice: {
-      text: "OpenAI-compatible gateway. Model ids carry the vendor (e.g. anthropic/claude-sonnet-5) and are fetched live per key. Subscription keys: unlimited tokens under a fair-use policy, paced at 30 requests per minute per key (25 on daily plans); a 2M-token trial key is available.",
+      text: "OpenAI-compatible gateway. Model ids carry the vendor (e.g. anthropic/claude-sonnet-5) and are fetched live per key. Use a Token Plan or pay-per-use key here (metered, billed per token). Unlimited plan keys are for direct use from your own app or tool only and are refused through gateway or router software.",
       apiKeyUrl: "https://t.me/jembatanai_bot?start=9router",
     },
   },
