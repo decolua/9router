@@ -13,7 +13,7 @@ export default {
     textIcon: "JA",
     website: "https://jembatanai.com/?utm_campaign=9router",
     notice: {
-      text: "OpenAI-compatible gateway. Model ids carry the vendor (e.g. anthropic/claude-sonnet-5) and are fetched live per key. Pay-per-use (PAYG) / Token Plan keys only. Unlimited plan keys violate JembatanAI ToS sections 2.1 to 2.3 and risk permanent suspension with no refund.",
+      text: "OpenAI-compatible gateway. Model ids carry the vendor (e.g. anthropic/claude-sonnet-5) and are fetched live per key. Pay-per-use (PAYG), Token Plan and Unlimited Reseller Gateway keys only. Any other Unlimited plan key violates JembatanAI ToS sections 2.1 to 2.3 and risks permanent suspension with no refund.",
       apiKeyUrl: "https://t.me/jembatanai_bot?start=9router",
     },
   },
