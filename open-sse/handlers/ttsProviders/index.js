@@ -2,7 +2,7 @@
 import googleTts from "./googleTts.js";
 import edgeTts, { fetchEdgeTtsVoices } from "./edgeTts.js";
 import localDevice, { fetchLocalDeviceVoices } from "./localDevice.js";
-import elevenlabs, { fetchElevenLabsVoices } from "./elevenlabs.js";
+import elevenlabs, { fetchElevenLabsVoices, fetchElevenLabsModels } from "./elevenlabs.js";
 import openai from "./openai.js";
 import openrouter from "./openrouter.js";
 import gemini, { fetchGeminiVoices } from "./gemini.js";
@@ -55,4 +55,4 @@ export const VOICE_FETCHERS = {
 };
 
 // Re-export for backward compat
-export { fetchEdgeTtsVoices, fetchLocalDeviceVoices, fetchElevenLabsVoices, fetchGeminiVoices };
+export { fetchEdgeTtsVoices, fetchLocalDeviceVoices, fetchElevenLabsVoices, fetchElevenLabsModels, fetchGeminiVoices };

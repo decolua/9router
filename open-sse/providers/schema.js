@@ -20,6 +20,9 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  * @property {Object}  [oauth]        OAuth flow config (see OAuthConfig). Builds PROVIDER_OAUTH[id].
  * @property {Object}  [media]        Non-LLM services (see MediaConfig). Builds PROVIDER_MEDIA[id].
  * @property {Array}   [models]       Model list; omit = no model key, [] = explicit empty.
+ *                                   Each entry may declare `params: [...]` — extra request
+ *                                   params the model requires (e.g. ["input_type"] for
+ *                                   NVIDIA's asymmetric embedding models).
  * @property {Object}  [features]     Feature flags, e.g. {usage:true}.
  * @property {Object}  [thinkingConfig] Reasoning UI: {options:[...],defaultMode}.
  * @property {boolean} [passthroughModels] Forward client model id untouched.

@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { extractTextContent } from "../formats/gemini.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -158,7 +159,8 @@ export function openaiToClaudeResponse(chunk, state) {
   }
 
   // Handle regular content
-  if (delta?.content) {
+  const textContent = extractTextContent(delta?.content);
+  if (textContent) {
     stopThinkingBlock(state, results);
 
     if (!state.textBlockStarted) {
@@ -175,7 +177,7 @@ export function openaiToClaudeResponse(chunk, state) {
     results.push({
       type: "content_block_delta",
       index: state.textBlockIndex,
-      delta: { type: "text_delta", text: delta.content }
+      delta: { type: "text_delta", text: textContent }
     });
   }
 

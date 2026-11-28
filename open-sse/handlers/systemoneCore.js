@@ -1,10 +1,44 @@
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
-import { getModelUpstreamId } from "../config/providerModels.js";
+import { getModelMeta, getModelUpstreamId } from "../config/providerModels.js";
 import { generateSessionId } from "../executors/opencode-zen.js";
 
 const OPENCODE_PROVIDERS = new Set(["opencode", "opencode-zen"]);
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Validate System One request payload at the trust boundary.
+ * Decision models (Clef, Jev, Drex) take `questions`; extraction models such as
+ * Cloudflare `@cf/cloudflare/clairic` declare `payloadShape: "fields"` and take
+ * `fields` instead. Unregistered custom models accept either map shape.
+ */
+export function validateSystemonePayload(body, provider, model, customPayloadShape = null) {
+  if (!body || body.state === undefined || body.state === null) {
+    return "Missing required field: state";
+  }
+  const meta = provider && model ? getModelMeta(provider, model) : null;
+  const shape = customPayloadShape || meta?.payloadShape || (meta ? "questions" : null);
+  if (shape === "fields") {
+    if (!isPlainObject(body.fields)) {
+      return "Missing required field: fields";
+    }
+    return null;
+  }
+  if (shape === "questions") {
+    if (!isPlainObject(body.questions)) {
+      return "Missing required field: questions";
+    }
+    return null;
+  }
+  if (!isPlainObject(body.questions) && !isPlainObject(body.fields)) {
+    return "Missing required field: questions";
+  }
+  return null;
+}
 
 /**
  * Resolve the System One URL. A saved host override is joined with the registry
@@ -26,7 +60,8 @@ export function buildSystemoneUrl(override, cfg) {
 /**
  * Core System One (Jev) handler — native decision payload pass-through.
  * URL/headers come from the registry's systemoneConfig; body and JSON response
- * are forwarded untouched (decision models have no chat translation layer).
+ * are forwarded untouched (decision models have no chat translation layer), except that
+ * Cloudflare's { result } envelope is unwrapped.
  *
  * @returns {Promise<{ success: boolean, response: Response, usage?: object, status?: number, error?: string }>}
  */
@@ -37,7 +72,7 @@ export async function handleSystemoneCore({
   log,
   onRequestSuccess,
 }) {
-  const { provider, model } = modelInfo;
+  const { provider, model, upstreamModelId: customUpstreamModelId, payloadShape: customPayloadShape } = modelInfo;
   const cfg = PROVIDER_MEDIA[provider]?.systemoneConfig;
   let targetUrl = buildSystemoneUrl(credentials?.providerSpecificData?.baseUrl, cfg);
   if (!targetUrl) {
@@ -61,12 +96,10 @@ export async function handleSystemoneCore({
     targetUrl = targetUrl.replace(/\{model\}/g, model);
   }
 
-  // Validate input at the trust boundary; question-level shape is upstream's job.
-  if (body.state === undefined || body.state === null) {
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: state");
-  }
-  if (!body.questions || typeof body.questions !== "object" || Array.isArray(body.questions)) {
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: questions");
+  // Validate input at the trust boundary; field/question schema details are upstream's job.
+  const payloadError = validateSystemonePayload(body, provider, model, customPayloadShape);
+  if (payloadError) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, payloadError);
   }
 
   // noAuth free lanes carry accessToken "public" from the credential stub.
@@ -78,8 +111,11 @@ export async function handleSystemoneCore({
     // Zen lanes expect the official client session header; other providers don't need it.
     ...(OPENCODE_PROVIDERS.has(provider) ? { "x-opencode-session": generateSessionId() } : {}),
   };
-  // Cloudflare validates the body model as a short selector (e.g. "clef-flash"), not the full id.
-  const requestBody = { ...body, model: getModelUpstreamId(provider, model) || model };
+  // Cloudflare validates the body model as a short selector (e.g. "clef", "clef-omni", "clairic"), not the full id.
+  const customSelector = typeof customUpstreamModelId === "string" && customUpstreamModelId.trim()
+    ? customUpstreamModelId.trim()
+    : null;
+  const requestBody = { ...body, model: customSelector || getModelUpstreamId(provider, model) || model };
 
   log?.debug?.("SYSTEMONE", `${provider.toUpperCase()} | ${model}`);
 
@@ -111,6 +147,12 @@ export async function handleSystemoneCore({
     responseBody = await providerResponse.json();
   } catch {
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+  }
+
+  // Cloudflare's REST API wraps the answer as { result: {...}, success, errors, messages }.
+  // Callers speak System One, so hand them the inner result like any other provider's.
+  if (responseBody?.result?.answers && !responseBody.answers) {
+    responseBody = responseBody.result;
   }
 
   if (onRequestSuccess) await onRequestSuccess();
