@@ -144,4 +144,35 @@ describe("fetchPublic: redirect-target re-validation from #3714", () => {
     await expect(fetchPublic("http://127.0.0.1/steal")).rejects.toThrow();
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it("allows a trusted (deployment-configured) internal origin", async () => {
+    global.fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+
+    const res = await fetchPublic("http://localhost:8888/search", {}, {
+      trustedOrigins: ["http://localhost:8888"],
+    });
+
+    expect(await res.text()).toBe("ok");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("still blocks a redirect out of a trusted origin to a different internal host", async () => {
+    global.fetch = vi.fn(async () => new Response(null, {
+      status: 302,
+      headers: { Location: "http://127.0.0.1:22/" },
+    }));
+
+    await expect(fetchPublic("http://localhost:8888/search", {}, {
+      trustedOrigins: ["http://localhost:8888"],
+    })).rejects.toThrow(/Blocked URL/);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a trusted origin that does not match the request origin", async () => {
+    global.fetch = vi.fn();
+    await expect(fetchPublic("http://169.254.169.254/latest/meta-data", {}, {
+      trustedOrigins: ["http://localhost:8888"],
+    })).rejects.toThrow(/Blocked URL/);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });
