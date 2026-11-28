@@ -58,6 +58,15 @@ function successResult(data) {
   return { success: true, data, response: jsonResponse(data, 200) };
 }
 
+/** Origin of the deployment-configured endpoint, which may legitimately be internal. */
+function configuredOrigin(providerConfig) {
+  try {
+    return [new URL(providerConfig.baseUrl).origin];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Run a single dedicated search provider attempt.
  * @returns {Promise<{success:boolean, status?:number, error?:string, data?:object}>}
@@ -101,7 +110,12 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   log?.info?.("SEARCH", `${provider.id} | "${params.query.slice(0, 80)}" | type=${params.searchType}`);
 
   try {
-    const resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+    // The provider's own endpoint is admin-configured and may be internal
+    // (self-hosted SearXNG on loopback / a private Docker network). Client
+    // overrides and every redirect still go through the SSRF guard.
+    const resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal }, {
+      trustedOrigins: configuredOrigin(providerConfig),
+    });
     clearTimeout(timer);
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");

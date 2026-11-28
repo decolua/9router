@@ -194,13 +194,32 @@ export async function assertPublicUrlResolved(rawUrl) {
   }
 }
 
+// True when the URL's origin is one the caller vouches for (an admin/deployment
+// configured endpoint, e.g. a self-hosted SearXNG on loopback or a private
+// Docker network). Such origins skip the public-only rule; nothing else does.
+function isTrustedOrigin(rawUrl, trustedOrigins) {
+  if (!trustedOrigins.length) return false;
+  try {
+    return trustedOrigins.includes(new URL(rawUrl).origin);
+  } catch {
+    return false;
+  }
+}
+
 // fetch() with SSRF-safe manual redirect handling: each hop's target is
 // re-validated through assertPublicUrlResolved before being followed, so a
 // validated public URL can't 30x its way to an internal target. Bounded to
 // maxRedirects hops (fetch's own default following behavior has no bound
 // relevant here since we never let it auto-follow).
-export async function fetchPublic(url, init = {}, { maxRedirects = 5 } = {}) {
-  await assertPublicUrlResolved(url);
+//
+// trustedOrigins exempts deployment-configured endpoints (which may be internal)
+// from the public-only rule; every other hop — including a redirect out of a
+// trusted origin — still goes through the full guard.
+export async function fetchPublic(url, init = {}, { maxRedirects = 5, trustedOrigins = [] } = {}) {
+  const assertAllowed = async (target) => {
+    if (!isTrustedOrigin(target, trustedOrigins)) await assertPublicUrlResolved(target);
+  };
+  await assertAllowed(url);
   let currentUrl = url;
   for (let hop = 0; ; hop++) {
     const res = await fetch(currentUrl, { ...init, redirect: "manual" });
@@ -209,7 +228,7 @@ export async function fetchPublic(url, init = {}, { maxRedirects = 5 } = {}) {
     if (!location) return res;
     if (hop >= maxRedirects) throw new Error("Blocked URL: too many redirects");
     const nextUrl = new URL(location, currentUrl).toString();
-    await assertPublicUrlResolved(nextUrl);
+    await assertAllowed(nextUrl);
     currentUrl = nextUrl;
   }
 }
