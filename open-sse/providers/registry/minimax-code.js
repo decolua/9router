@@ -11,7 +11,7 @@
 
 export default {
   id: "minimax-code",
-  priority: 80,
+  priority: 87,
   alias: "mm",
   display: {
     name: "MiniMax Code",
